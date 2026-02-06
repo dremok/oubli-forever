@@ -3,6 +3,7 @@ import { Whispers } from './whispers/Whispers'
 import { CursorGlow } from './ui/CursorGlow'
 import { AmbientDrone } from './sound/AmbientDrone'
 import { ForgettingMachine } from './forgetting/ForgettingMachine'
+import { MemoryDrift } from './drift/MemoryDrift'
 
 // OUBLI — the first breath
 
@@ -14,8 +15,9 @@ const engine = new ThresholdEngine(canvas)
 const whispers = new Whispers()
 const cursorGlow = new CursorGlow()
 const drone = new AmbientDrone()
+const drift = new MemoryDrift()
 
-// The forgetting machine — dissolved letters become particles
+// The forgetting machine — dissolved letters become particles AND drifting text
 const forgettingMachine = new ForgettingMachine(canvas, (x, y, hue) => {
   engine.injectParticle(x, y, hue)
 })
@@ -35,6 +37,9 @@ setTimeout(() => {
 
 // Phase 4: Sound awakens on first interaction
 drone.init()
+
+// Phase 5: Memory drift — text fragments float and degrade
+drift.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()
