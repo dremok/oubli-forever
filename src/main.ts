@@ -16,6 +16,9 @@ import { MemoryArchive } from './memory/MemoryArchive'
 import { ExtinctionWhispers } from './whispers/ExtinctionWhispers'
 import { PresenceHeatmap } from './ui/PresenceHeatmap'
 import { SessionClock } from './ui/SessionClock'
+import { VisitorLog } from './ui/VisitorLog'
+import { DreamSynthesizer } from './dreams/DreamSynthesizer'
+import { InteractionCues } from './ui/InteractionCues'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -53,6 +56,7 @@ voice.onSpoken((text) => {
   const memText = journal.getMemories().map(m => m.currentText).join(' ')
   asciiVoid.updateMemoryText(memText)
   constellations.addMemory(memory)
+  dreams.addMemory(text)
 })
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
@@ -69,6 +73,8 @@ const forgettingMachine = new ForgettingMachine(
     asciiVoid.updateMemoryText(memText)
     // New memory becomes a star in the constellation
     constellations.addMemory(memory)
+    // Feed the dream synthesizer
+    dreams.addMemory(text)
   }
 )
 
@@ -132,6 +138,14 @@ heatmap.start()
 const clock = new SessionClock()
 clock.start()
 
+// Visitor Log — how many times you've returned
+const _visitor = new VisitorLog()
+
+// Dream Synthesizer — the system recombines your memories into surreal sentences
+const dreams = new DreamSynthesizer()
+dreams.loadMemories(journal.getMemories().map(m => m.currentText))
+dreams.start()
+
 // The cursor leaves traces of light
 cursorGlow.init()
 
@@ -149,6 +163,11 @@ window.addEventListener('keydown', () => {
   titleOverlay.style.transition = 'opacity 3s ease'
   titleOverlay.style.opacity = '0.15'
 }, { once: true })
+
+// Interaction Cues — subtle hints about what's possible
+const cues = new InteractionCues()
+cues.setVoiceSupported(voice.isSupported())
+cues.start()
 
 // Oubli breathes
 const memCount = journal.getCount()
