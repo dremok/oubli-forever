@@ -55,6 +55,23 @@ const fragments: string[] = [
   "heat death: the final forgetting",
   "light remembers direction. darkness forgets everything.",
   "between two heartbeats, everything changes",
+
+  // Interaction affordances — the void hints at what it wants
+  "your words become light when you give them to the void",
+  "the void listens when you hold the longest key",
+  "press a letter and the world becomes text",
+  "somewhere a key unlocks the archive of everything you've said",
+  "click the void. it sings back.",
+  "some particles remember your trail — if you ask them",
+  "the void maps where your eyes have been",
+  "time is dissolving in the corner of your vision",
+  "the void changes color when you speak with feeling",
+  "the void is an instrument. your cursor is the bow.",
+  "somewhere between the keys, hidden rooms are sleeping",
+  "old words bleed through from visits you've forgotten",
+  "the void knows what time it is. it breathes differently at night.",
+  "speak into the darkness. hold the space. let it hear you.",
+  "your memories become constellations in the deep",
 ]
 
 export class Whispers {

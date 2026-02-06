@@ -2,16 +2,13 @@
  * INTERACTION CUES — the void whispers what it wants
  *
  * Rather than explicit UI instructions, Oubli gives subtle hints
- * about available interactions through visual cues:
+ * about available interactions through visual cues that feel like
+ * part of the void's dreaming:
  *
- * - A faint blinking cursor appears after 10s of no typing
- *   (suggesting the forgetting machine is ready)
- * - The edges pulse faintly pink when idle for 30s
- *   (suggesting movement/exploration)
- * - A tiny microphone icon flickers near center after 60s
- *   (suggesting voice input is available)
- * - Faint letter 'a' 'm' 'h' shimmer at edges occasionally
- *   (suggesting keyboard shortcuts exist)
+ * - A faint blinking cursor appears after idle (suggesting typing)
+ * - Key glyphs drift at the edges like ghost letters
+ * - A breathing circle suggests voice input
+ * - Tiny poetic labels explain what each key unlocks
  *
  * These cues fade in gently and disappear when the user interacts.
  * They're more like memories of instructions than instructions
@@ -22,12 +19,13 @@
  */
 
 interface Cue {
-  type: 'cursor' | 'keys' | 'voice' | 'explore'
+  type: 'cursor' | 'keys' | 'voice' | 'click'
   x: number
   y: number
   alpha: number
   targetAlpha: number
   char?: string
+  label?: string
   born: number
 }
 
@@ -45,6 +43,7 @@ export class InteractionCues {
   private hasTyped = false
   private hasSpoken = false
   private hasUsedKeys = false
+  private hasClicked = false
   private voiceSupported = false
 
   constructor() {
@@ -76,6 +75,7 @@ export class InteractionCues {
 
     window.addEventListener('click', () => {
       this.lastInteraction = this.frame
+      this.hasClicked = true
     })
   }
 
@@ -115,8 +115,8 @@ export class InteractionCues {
   private update() {
     const idleTime = this.frame - this.lastInteraction
 
-    // Typing hint — faint blinking cursor after 15s idle
-    if (idleTime > 15 * 60 && !this.hasTyped && !this.cues.find(c => c.type === 'cursor')) {
+    // Typing hint — faint blinking cursor after 12s idle
+    if (idleTime > 12 * 60 && !this.hasTyped && !this.cues.find(c => c.type === 'cursor')) {
       this.cues.push({
         type: 'cursor',
         x: this.width / 2,
@@ -127,13 +127,13 @@ export class InteractionCues {
       })
     }
 
-    // Key hints — after 45s, show faint letters at edges
-    if (idleTime > 45 * 60 && !this.hasUsedKeys && !this.cues.find(c => c.type === 'keys')) {
+    // Key hints — after 30s, show keys with dreamy labels
+    if (idleTime > 30 * 60 && !this.hasUsedKeys && !this.cues.find(c => c.type === 'keys')) {
       const keys = [
-        { char: 'a', x: this.width - 30, y: this.height / 2 - 45 },
-        { char: 'm', x: this.width - 30, y: this.height / 2 - 15 },
-        { char: 'h', x: this.width - 30, y: this.height / 2 + 15 },
-        { char: 't', x: this.width - 30, y: this.height / 2 + 45 },
+        { char: 'a', label: 'see as text', x: this.width - 40, y: this.height / 2 - 60 },
+        { char: 'm', label: 'memories', x: this.width - 40, y: this.height / 2 - 20 },
+        { char: 'h', label: 'your heat', x: this.width - 40, y: this.height / 2 + 20 },
+        { char: 't', label: 'trails', x: this.width - 40, y: this.height / 2 + 60 },
       ]
       for (const k of keys) {
         this.cues.push({
@@ -141,15 +141,16 @@ export class InteractionCues {
           x: k.x,
           y: k.y,
           alpha: 0,
-          targetAlpha: 0.12,
+          targetAlpha: 0.15,
           char: k.char,
+          label: k.label,
           born: this.frame,
         })
       }
     }
 
-    // Voice hint — after 20s, pulsing circle near center
-    if (idleTime > 20 * 60 && !this.hasSpoken && this.voiceSupported &&
+    // Voice hint — after 18s, pulsing circle
+    if (idleTime > 18 * 60 && !this.hasSpoken && this.voiceSupported &&
         !this.cues.find(c => c.type === 'voice')) {
       this.cues.push({
         type: 'voice',
@@ -157,6 +158,18 @@ export class InteractionCues {
         y: this.height * 0.35,
         alpha: 0,
         targetAlpha: 0.25,
+        born: this.frame,
+      })
+    }
+
+    // Click hint — after 40s, subtle note about clicking
+    if (idleTime > 40 * 60 && !this.hasClicked && !this.cues.find(c => c.type === 'click')) {
+      this.cues.push({
+        type: 'click',
+        x: this.width / 2,
+        y: this.height * 0.65,
+        alpha: 0,
+        targetAlpha: 0.12,
         born: this.frame,
       })
     }
@@ -190,40 +203,56 @@ export class InteractionCues {
         case 'voice':
           this.renderVoiceHint(ctx, cue)
           break
+        case 'click':
+          this.renderClickHint(ctx, cue)
+          break
       }
     }
   }
 
   private renderCursorHint(ctx: CanvasRenderingContext2D, cue: Cue) {
-    // Blinking cursor — the forgetting machine awaits
     const blink = Math.sin(this.frame * 0.06) > 0
 
     if (blink) {
       ctx.fillStyle = `rgba(255, 215, 0, ${cue.alpha})`
       ctx.fillRect(cue.x - 1, cue.y - 14, 2, 28)
     }
+
+    // Tiny label below
+    const labelAlpha = cue.alpha * 0.5
+    ctx.font = `300 10px 'Cormorant Garamond', serif`
+    ctx.textAlign = 'center'
+    ctx.fillStyle = `rgba(255, 215, 0, ${labelAlpha})`
+    ctx.fillText('type a memory', cue.x, cue.y + 24)
   }
 
   private renderKeyHint(ctx: CanvasRenderingContext2D, cue: Cue) {
     if (!cue.char) return
 
-    // Faint letter shimmer
     const shimmer = Math.sin(this.frame * 0.02 + cue.y * 0.1) * 0.5 + 0.5
 
+    // Key letter
     ctx.font = '300 13px monospace'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = `rgba(255, 20, 147, ${cue.alpha * shimmer})`
     ctx.fillText(cue.char, cue.x, cue.y)
 
-    // Tiny bracket around the letter
-    ctx.strokeStyle = `rgba(255, 20, 147, ${cue.alpha * shimmer * 0.4})`
+    // Bracket
+    ctx.strokeStyle = `rgba(255, 20, 147, ${cue.alpha * shimmer * 0.3})`
     ctx.lineWidth = 0.5
     ctx.strokeRect(cue.x - 9, cue.y - 9, 18, 18)
+
+    // Dreamy label to the left
+    if (cue.label) {
+      ctx.font = `300 9px 'Cormorant Garamond', serif`
+      ctx.textAlign = 'right'
+      ctx.fillStyle = `rgba(255, 215, 0, ${cue.alpha * shimmer * 0.5})`
+      ctx.fillText(cue.label, cue.x - 16, cue.y + 1)
+    }
   }
 
   private renderVoiceHint(ctx: CanvasRenderingContext2D, cue: Cue) {
-    // Pulsing circle — like a microphone waiting
     const pulse = Math.sin(this.frame * 0.04) * 0.5 + 0.5
     const radius = 8 + pulse * 4
 
@@ -233,11 +262,35 @@ export class InteractionCues {
     ctx.lineWidth = 1
     ctx.stroke()
 
-    // "hold spacebar to speak" hint below
-    ctx.font = `300 12px 'Cormorant Garamond', serif`
+    // Outer ring
+    ctx.beginPath()
+    ctx.arc(cue.x, cue.y, radius + 6, 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(255, 20, 147, ${cue.alpha * pulse * 0.15})`
+    ctx.lineWidth = 0.5
+    ctx.stroke()
+
+    // Label
+    ctx.font = `300 11px 'Cormorant Garamond', serif`
     ctx.textAlign = 'center'
-    ctx.fillStyle = `rgba(255, 215, 0, ${cue.alpha * 0.7})`
-    ctx.fillText('hold spacebar to speak', cue.x, cue.y + radius + 16)
+    ctx.fillStyle = `rgba(255, 215, 0, ${cue.alpha * 0.6})`
+    ctx.fillText('hold spacebar to speak', cue.x, cue.y + radius + 18)
+  }
+
+  private renderClickHint(ctx: CanvasRenderingContext2D, cue: Cue) {
+    const breathe = Math.sin(this.frame * 0.03) * 0.5 + 0.5
+
+    // A small ripple circle suggesting "click"
+    const radius = 4 + breathe * 3
+    ctx.beginPath()
+    ctx.arc(cue.x, cue.y, radius, 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(255, 20, 147, ${cue.alpha * (0.4 + breathe * 0.4)})`
+    ctx.lineWidth = 0.5
+    ctx.stroke()
+
+    ctx.font = `300 10px 'Cormorant Garamond', serif`
+    ctx.textAlign = 'center'
+    ctx.fillStyle = `rgba(255, 215, 0, ${cue.alpha * 0.4})`
+    ctx.fillText('click the void', cue.x, cue.y + radius + 14)
   }
 
   destroy() {
