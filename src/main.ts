@@ -20,6 +20,7 @@ import { VisitorLog } from './ui/VisitorLog'
 import { DreamSynthesizer } from './dreams/DreamSynthesizer'
 import { InteractionCues } from './ui/InteractionCues'
 import { ParticleTrails } from './effects/ParticleTrails'
+import { ResonanceMap } from './sound/ResonanceMap'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -164,6 +165,9 @@ window.addEventListener('keydown', () => {
   titleOverlay.style.transition = 'opacity 3s ease'
   titleOverlay.style.opacity = '0.15'
 }, { once: true })
+
+// Resonance Map — click anywhere to play the void like an instrument
+const _resonance = new ResonanceMap()
 
 // Particle Trails — press 't' for comet-like afterimages
 const trails = new ParticleTrails()
