@@ -13,6 +13,7 @@ import { MemoryConstellations } from './memory/MemoryConstellations'
 import { VoiceOfAbsence } from './voice/VoiceOfAbsence'
 import { DigitalDecay } from './data/DigitalDecay'
 import { MemoryArchive } from './memory/MemoryArchive'
+import { ExtinctionWhispers } from './whispers/ExtinctionWhispers'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -116,6 +117,10 @@ decay.start()
 // Memory Archive — press 'm' to view stored memories
 const archive = new MemoryArchive()
 archive.setMemorySource(() => journal.getMemories())
+
+// Extinction Whispers — words from dying languages drift through the void
+const extinction = new ExtinctionWhispers()
+extinction.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()
