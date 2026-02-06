@@ -24,6 +24,7 @@ import { ResonanceMap } from './sound/ResonanceMap'
 import { Palimpsest } from './narrative/Palimpsest'
 import { ColorMemory } from './effects/ColorMemory'
 import { GhostTyping } from './narrative/GhostTyping'
+import { GentleGuide } from './ui/GentleGuide'
 import { CircadianVoid } from './time/CircadianVoid'
 import { DriftEngine } from './drift/DriftEngine'
 import { DeviceDrift } from './input/DeviceDrift'
@@ -245,6 +246,10 @@ driftEngine.onChange((state) => {
 const cues = new InteractionCues()
 cues.setVoiceSupported(voice.isSupported())
 cues.start()
+
+// Gentle Guide — shows interaction hints on first few visits
+const guide = new GentleGuide()
+guide.show(voice.isSupported())
 
 // Oubli breathes
 const memCount = journal.getCount()
