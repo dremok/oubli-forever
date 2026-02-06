@@ -219,40 +219,109 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - Screen blend mode compositing at half resolution
     - Particles leave luminous tails — visual persistence of vision
 
+20. **Resonance Map** (`src/sound/ResonanceMap.ts`)
+    - Click anywhere to play pentatonic tones — the void is an instrument
+    - Y position → pitch (octaves 3-5), X position → timbre (sine to harmonics)
+    - Bell-like envelope with 3-second reverb tail
+    - Visual ripple circles expand from click point
+    - Pink-to-gold hue shift based on pitch
+
+21. **Palimpsest** (`src/narrative/Palimpsest.ts`)
+    - Ghost text from previous sessions bleeds through
+    - Saves last 50 texts to localStorage
+    - Fragments appear at random positions/angles, very faint
+    - 15% chance of mirrored text
+    - Very slow breathing animation (phase in/out)
+
+22. **Color Memory** (`src/effects/ColorMemory.ts`)
+    - Emotional tone of words shifts the void's color temperature
+    - Warm words (love, joy, summer) → gold/pink overlay
+    - Cold words (lost, alone, winter) → blue/violet overlay
+    - CSS overlay with mix-blend-mode: color, persists in localStorage
+    - Connected to both typing and voice callbacks
+
+23. **Circadian Void** (`src/time/CircadianVoid.ts`)
+    - Void breathes with Earth's day/night cycle
+    - Bloom strengthens at night, fog thickens
+    - Dawn/dusk bring golden warmth, night goes cool blue
+    - Moon phase calculated (no API) — shown as emoji indicator top-left
+    - Moon phase modulates particle energy (full moon = more active)
+
+24. **Drift Navigation** (`src/drift/DriftEngine.ts`) — ERA 3
+    - 5 states of consciousness: void, deep, burn, garden, archive
+    - Press 1-5 to drift between states
+    - Each drift reconfigures: particles (speed, size, gravity, hue, saturation),
+      visuals (bloom, fog, background color, grain), sound (frequency, volume)
+    - Transitions are slow cubic interpolations (~5 seconds)
+    - Drift label appears centered during transitions
+    - GLSL hue shift + saturation uniforms added to VoidRenderer
+    - AmbientDrone gains frequency/volume multiplier methods
+    - Architecturally: same 30K particles, same audio graph, different parameters
+
+25. **Enhanced Affordances**
+    - Whispers now include poetic interaction hints woven into the void's voice
+    - InteractionCues show sooner with dreamy labels (not just letters)
+    - Typing hint at 12s, voice hint at 18s, key hints at 30s, click at 40s, drifts at 50s
+    - Each key shows a poetic label: 'a' → "see as text", 'm' → "memories"
+    - Memory Archive redesigned as discreet right-side panel (was centered modal)
+    - Archive won't trigger while typing into forgetting machine
+
+### Drift States
+| Key | Name | Particles | Colors | Sound | Vibe |
+|-----|------|-----------|--------|-------|------|
+| 1 | The Void | Normal | Pink/gold/violet | Full drone | Default cosmic |
+| 2 | The Deep | Slow, large | Ocean blues/teals | Low, filtered | Subaquatic, heavy |
+| 3 | The Burn | Fast, small | Reds/oranges | Bright, energetic | Entropy, fire |
+| 4 | The Garden | Medium, clustered | Greens/golds | Warm, melodic | Organic growth |
+| 5 | The Archive | Near-still | Desaturated grays | Barely audible | Frozen museum |
+
 ### Keyboard Shortcuts
 - **Type + Enter**: Submit memory to forgetting machine
 - **Hold Spacebar**: Speak memory (Web Speech API)
 - **'a'**: Toggle ASCII Void mode
-- **'m'**: Open Memory Archive
+- **'m'**: Open Memory Archive (slides from right)
 - **'h'**: Toggle Presence Heatmap
 - **'t'**: Toggle Particle Trails
+- **1-5**: Drift between consciousness states
 - **Escape**: Close archive / clear input
 
+### Thematic Connections (Updated)
+- Drift states ↔ States of consciousness, lucid dreaming
+- Circadian modulation ↔ Biological rhythms, chronobiology
+- Moon phase ↔ Tidal forces, lunacy, menstrual cycles
+- Color memory ↔ Synesthesia, emotional landscapes
+- Palimpsest ↔ Archaeology, manuscript history, urban layers
+- Resonance map ↔ Theremin, singing bowls, musica universalis
+- Affordance whispers ↔ The void developing self-awareness
+
 ### Backlog (Prioritized)
-1. **Navigation / Rooms** — non-linear drift between different experiential spaces
-2. **FAL Image Generation** — AI-generated memory imagery woven into the void
-3. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
-4. **Neural Network Visualization** — visible connections between particle clusters
-5. **Extinct Sounds Library** — sounds of things that no longer exist
-6. **Scroll-driven memory decay** — scrolling forward forgets, scrolling back recovers
-7. **WebGPU particle system** — 1M+ particles with compute shaders
-8. **Wayback Machine CDX API** — real-time link rot queries
-9. **Endangered Languages** — ELAR data, dying languages as dying memories
-10. **IUCN Red List** — species extinction data visualization
+1. **WebGPU particle system** — TSL compute shaders, 1M+ particles (Three.js r171 supports this)
+2. **Strudel pattern engine** — algorithmic music that degrades, `.degrade()` = sonic forgetting
+3. **Wayback Machine CDX API** — live link rot data for DigitalDecay
+4. **Data sonification** — extinction/dead website data become ambient sounds
+5. **Device Orientation** — mobile gyroscope controls camera drift
+6. **FAL Image Generation** — AI-generated memory imagery woven into the void
+7. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
+8. **WebNN semantic embeddings** — memory constellations clustered by meaning
+9. **CSS Paint API (Houdini)** — overlay elements with living, decaying backgrounds
+10. **Ambient Light Sensor** — void responds to room brightness (Chrome flag)
 
 ### Technologies Used
-- Three.js (WebGL), GLSL shaders, Web Audio API, Canvas 2D (overlays), TypeScript, Vite
-- Post-processing: UnrealBloomPass, custom ShaderPass (grain, aberration, vignette)
+- Three.js (WebGL), custom GLSL shaders (hue shift, saturation, size uniforms)
+- Web Audio API (generative drone, tonal engine, resonance instrument, reverb)
 - Web Speech API (speech recognition for voice input)
-- localStorage (memory persistence with degradation)
+- Canvas 2D (overlays: ASCII, palimpsest, cues, heatmap, clock, trails, ripples)
+- localStorage (memory persistence, color memory, palimpsest, visitor log)
+- CSS transitions and blend modes (color memory overlay, drift label)
+- TypeScript, Vite
 
 ### Technologies To Explore Next
-- WebGPU compute shaders (1M+ particles), ElevenLabs API, FAL API, WASM/Rust audio, View Transition API, Web MIDI, Strudel/Glicol, CSS scroll-triggered animations, WebCodecs, Wayback Machine CDX API
+- WebGPU compute shaders via TSL, Strudel/TidalCycles, Wayback CDX API, Device Orientation API, WebNN, CSS Paint API (Houdini), View Transition API, Ambient Light Sensor, Web Bluetooth (heartrate), ElevenLabs API, FAL API
 
 ### Deployment
 - Railway: https://oubli-forever-production.up.railway.app
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 2, Feature 22 — Particle Trails*
-*"the most beautiful things are the ones we almost forgot"*
+*Last updated: Era 3, Feature 25 — Drift Navigation + Enhanced Affordances*
+*"consciousness drifts between states like tides between shores"*
