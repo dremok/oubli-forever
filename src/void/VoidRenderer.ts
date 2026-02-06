@@ -415,6 +415,20 @@ export class VoidRenderer {
     return densities
   }
 
+  /** Adjust bloom strength (default ~1.2) */
+  setBloomStrength(strength: number) {
+    if (this.bloomPass) {
+      this.bloomPass.strength = strength
+    }
+  }
+
+  /** Adjust fog density */
+  setFogDensity(density: number) {
+    if (this.scene.fog instanceof THREE.FogExp2) {
+      this.scene.fog.density = density
+    }
+  }
+
   /** Expose scene for external systems to add objects */
   getScene(): THREE.Scene {
     return this.scene

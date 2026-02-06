@@ -23,6 +23,7 @@ import { ParticleTrails } from './effects/ParticleTrails'
 import { ResonanceMap } from './sound/ResonanceMap'
 import { Palimpsest } from './narrative/Palimpsest'
 import { ColorMemory } from './effects/ColorMemory'
+import { CircadianVoid } from './time/CircadianVoid'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -188,6 +189,17 @@ const _resonance = new ResonanceMap()
 // Particle Trails — press 't' for comet-like afterimages
 const trails = new ParticleTrails()
 trails.setSource(canvas)
+
+// Circadian Void — the void breathes with the Earth's day/night cycle
+const circadian = new CircadianVoid()
+voidRenderer.setBloomStrength(circadian.getBloomStrength())
+voidRenderer.setFogDensity(circadian.getFogDensity())
+
+// Update circadian influence every 30 seconds
+setInterval(() => {
+  voidRenderer.setBloomStrength(circadian.getBloomStrength())
+  voidRenderer.setFogDensity(circadian.getFogDensity())
+}, 30000)
 
 // Interaction Cues — subtle hints about what's possible
 const cues = new InteractionCues()
