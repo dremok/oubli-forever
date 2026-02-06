@@ -14,6 +14,7 @@ import { VoiceOfAbsence } from './voice/VoiceOfAbsence'
 import { DigitalDecay } from './data/DigitalDecay'
 import { MemoryArchive } from './memory/MemoryArchive'
 import { ExtinctionWhispers } from './whispers/ExtinctionWhispers'
+import { PresenceHeatmap } from './ui/PresenceHeatmap'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -121,6 +122,10 @@ archive.setMemorySource(() => journal.getMemories())
 // Extinction Whispers — words from dying languages drift through the void
 const extinction = new ExtinctionWhispers()
 extinction.start()
+
+// Presence Heatmap — your attention mapped, slowly cooling (press 'h' to see)
+const heatmap = new PresenceHeatmap()
+heatmap.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()
