@@ -15,6 +15,7 @@ import { DigitalDecay } from './data/DigitalDecay'
 import { MemoryArchive } from './memory/MemoryArchive'
 import { ExtinctionWhispers } from './whispers/ExtinctionWhispers'
 import { PresenceHeatmap } from './ui/PresenceHeatmap'
+import { SessionClock } from './ui/SessionClock'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -126,6 +127,10 @@ extinction.start()
 // Presence Heatmap — your attention mapped, slowly cooling (press 'h' to see)
 const heatmap = new PresenceHeatmap()
 heatmap.start()
+
+// Session Clock — time that forgets itself
+const clock = new SessionClock()
+clock.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()
