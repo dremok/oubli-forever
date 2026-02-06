@@ -19,6 +19,7 @@ import { SessionClock } from './ui/SessionClock'
 import { VisitorLog } from './ui/VisitorLog'
 import { DreamSynthesizer } from './dreams/DreamSynthesizer'
 import { InteractionCues } from './ui/InteractionCues'
+import { ParticleTrails } from './effects/ParticleTrails'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -163,6 +164,10 @@ window.addEventListener('keydown', () => {
   titleOverlay.style.transition = 'opacity 3s ease'
   titleOverlay.style.opacity = '0.15'
 }, { once: true })
+
+// Particle Trails — press 't' for comet-like afterimages
+const trails = new ParticleTrails()
+trails.setSource(canvas)
 
 // Interaction Cues — subtle hints about what's possible
 const cues = new InteractionCues()
