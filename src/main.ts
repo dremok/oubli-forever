@@ -10,6 +10,7 @@ import { GreatReset } from './events/GreatReset'
 import { MemoryJournal } from './memory/MemoryJournal'
 import { AsciiVoid } from './effects/AsciiVoid'
 import { MemoryConstellations } from './memory/MemoryConstellations'
+import { VoiceOfAbsence } from './voice/VoiceOfAbsence'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -37,6 +38,17 @@ asciiVoid.updateMemoryText(allMemoryText)
 // Connect constellations to the Three.js scene — memories become stars
 constellations.connect(voidRenderer.getScene(), voidRenderer.getCamera())
 constellations.loadMemories(journal.getMemories())
+
+// Voice of Absence — speak memories into the void (hold spacebar)
+const voice = new VoiceOfAbsence()
+voice.onSpoken((text) => {
+  // Spoken memories follow the same path as typed ones
+  const memory = journal.addMemory(text)
+  drift.addUserMemory(text)
+  const memText = journal.getMemories().map(m => m.currentText).join(' ')
+  asciiVoid.updateMemoryText(memText)
+  constellations.addMemory(memory)
+})
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
 const forgettingMachine = new ForgettingMachine(
@@ -117,4 +129,7 @@ window.addEventListener('keydown', () => {
 const memCount = journal.getCount()
 console.log('%c OUBLI ', 'background: #ff1493; color: #ffd700; font-size: 24px; font-weight: bold; padding: 10px 20px;')
 console.log('%c a system that remembers by forgetting ', 'color: #ffd700; font-style: italic; font-size: 12px;')
-console.log(`%c ${memCount} memories saved. type another. watch it dissolve. `, 'color: rgba(255,215,0,0.5); font-style: italic; font-size: 11px;')
+console.log(`%c ${memCount} memories saved. type or hold spacebar to speak. watch it dissolve. `, 'color: rgba(255,215,0,0.5); font-style: italic; font-size: 11px;')
+if (voice.isSupported()) {
+  console.log('%c voice recognition active — hold spacebar to speak into the void ', 'color: rgba(255,20,147,0.5); font-style: italic; font-size: 11px;')
+}
