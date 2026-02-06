@@ -194,12 +194,38 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - Opacity decreases with time — the clock fades
     - Inspired by Dalí's melting clocks
 
+16. **Visitor Log** (`src/ui/VisitorLog.ts`)
+    - Tracks visit count in localStorage
+    - First-visit date degrades with each return visit
+    - Poetic descriptions: "first passage", "return #5", "42 lives lived here"
+
+17. **Dream Synthesizer** (`src/dreams/DreamSynthesizer.ts`)
+    - Every 2-4 minutes, recombines memory fragments into surreal sentences
+    - Uses template-based combination and word-level interleaving (cut-up technique)
+    - 20 built-in dream seeds + user memories as material
+    - Lavender text with glow, slowly fading and drifting upward
+    - Dreams blur in and out — the system's subconscious processing
+
+18. **Interaction Cues** (`src/ui/InteractionCues.ts`)
+    - Subtle visual hints that appear after idle periods
+    - 15s idle: blinking golden cursor (typing hint)
+    - 45s idle: faint [a] [m] [h] [t] keys at right edge
+    - 60s idle: pulsing circle with "hold space" (voice hint)
+    - All cues vanish instantly on any interaction
+
+19. **Particle Trails** (`src/effects/ParticleTrails.ts`)
+    - Press 't' to toggle comet-like afterimages
+    - Frame accumulation via semi-transparent fade overlay
+    - Screen blend mode compositing at half resolution
+    - Particles leave luminous tails — visual persistence of vision
+
 ### Keyboard Shortcuts
 - **Type + Enter**: Submit memory to forgetting machine
 - **Hold Spacebar**: Speak memory (Web Speech API)
 - **'a'**: Toggle ASCII Void mode
 - **'m'**: Open Memory Archive
 - **'h'**: Toggle Presence Heatmap
+- **'t'**: Toggle Particle Trails
 - **Escape**: Close archive / clear input
 
 ### Backlog (Prioritized)
@@ -228,5 +254,5 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 2, Feature 18 — Session Clock*
+*Last updated: Era 2, Feature 22 — Particle Trails*
 *"the most beautiful things are the ones we almost forgot"*

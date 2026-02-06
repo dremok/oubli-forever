@@ -63,7 +63,7 @@ export class InteractionCues {
     window.addEventListener('keydown', (e) => {
       this.lastInteraction = this.frame
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) this.hasTyped = true
-      if (e.key === 'a' || e.key === 'm' || e.key === 'h') this.hasUsedKeys = true
+      if (e.key === 'a' || e.key === 'm' || e.key === 'h' || e.key === 't') this.hasUsedKeys = true
       if (e.code === 'Space') this.hasSpoken = true
       // Clear all cues on interaction
       for (const cue of this.cues) cue.targetAlpha = 0
@@ -130,9 +130,10 @@ export class InteractionCues {
     // Key hints — after 45s, show faint letters at edges
     if (idleTime > 45 * 60 && !this.hasUsedKeys && !this.cues.find(c => c.type === 'keys')) {
       const keys = [
-        { char: 'a', x: this.width - 30, y: this.height / 2 - 30 },
-        { char: 'm', x: this.width - 30, y: this.height / 2 },
-        { char: 'h', x: this.width - 30, y: this.height / 2 + 30 },
+        { char: 'a', x: this.width - 30, y: this.height / 2 - 45 },
+        { char: 'm', x: this.width - 30, y: this.height / 2 - 15 },
+        { char: 'h', x: this.width - 30, y: this.height / 2 + 15 },
+        { char: 't', x: this.width - 30, y: this.height / 2 + 45 },
       ]
       for (const k of keys) {
         this.cues.push({
