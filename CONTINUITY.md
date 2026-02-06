@@ -61,22 +61,84 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - **View Transition API**: New browser API for smooth morphing transitions
 - **On-chain generative art (Bootloader/Tezos)**: Permanent yet evolving art stored on-chain
 
+4. **Ambient Drone** (`src/sound/AmbientDrone.ts`)
+   - Golden-ratio harmonics (55Hz, 89Hz, 110Hz, 165Hz, 136Hz "Om")
+   - Filtered noise — cosmic background hiss
+   - 6-second reverb tail
+   - Slow modulation — frequencies drift, volumes shift
+   - Mouse Y position shapes harmonic balance
+   - Connected to heartbeat pulse
+
+5. **The Forgetting Machine** (`src/forgetting/ForgettingMachine.ts`)
+   - Type a memory, press Enter, watch letters dissolve
+   - Each letter drifts, rotates, glows, then dies
+   - Dead letters spawn particles into the void
+   - Pink-to-gold gradient across the text
+
+6. **Memory Drift** (`src/drift/MemoryDrift.ts`)
+   - Text fragments float through the void, degrading character by character
+   - Vowels fade first, word-initial consonants persist longest
+   - Characters glitch (░▒▓█) before dying
+   - "Excitability" per character determines survival time
+   - Fragments from philosophy, neuroscience, digital culture, memes, poetry
+
+7. **The Heartbeat** (`src/pulse/Heartbeat.ts`)
+   - System-wide pulse starting at 72 bpm
+   - Decays asymptotically toward 8 bpm
+   - Vignette darkens on beat, warm center glow
+   - Connected to drone and void renderer
+   - The longer you stay, the slower time moves
+
+8. **The Void** (`src/void/VoidRenderer.ts`) — ERA 2 EVOLUTION
+   - WebGL/Three.js with 30,000 particles in 3D space
+   - Custom GLSL vertex + fragment shaders
+   - Unreal Bloom post-processing — particles radiate light
+   - Film grain + chromatic aberration + vignette shader
+   - Camera drifts like floating consciousness
+   - Mouse position influences camera drift
+   - Exponential fog for depth
+   - Additive blending — light accumulates
+   - Beat intensity modulates particle expansion
+
+### Aesthetic
+- **Era 1→2 Palette**: Deep void (#020108), hot pink, gold, diamond white, deep violet
+- **Post-processing**: Bloom (strength 1.2), film grain (0.08), chromatic aberration at edges, vignette
+- **Font**: Cormorant Garamond — elegant serif, light weight
+- **Vibe**: Cosmic nebula. 3D memory cosmos. Particles as proto-memories suspended in deep space. Analog imperfection as rebellion against AI polish.
+
+### Thematic Connections
+- Particles ↔ Neurons (memory drift: memories physically migrate)
+- Forgetting waves ↔ Sleep consolidation
+- Cursor attraction ↔ Attention shapes memory
+- Trail fade ↔ Memory decay curves
+- Heartbeat slowing ↔ Time dilation in deep states / approaching death
+- Text degradation ↔ Alzheimer's progression / word-finding difficulty
+- Film grain ↔ Analog imperfection, anti-AI aesthetic (2026 trend)
+- Bloom ↔ How memories feel brighter than reality
+- Camera drift ↔ Consciousness floating between memories
+- Particle respawn ↔ Memory reconsolidation — old memories die, new ones form
+
 ### Backlog (Prioritized)
-1. **Ambient Soundscape** — Web Audio API generative drones that breathe with the particles
-2. **The Forgetting Machine** — type a memory, watch it dissolve letter by letter
-3. **Memory Drift** — particles that carry text fragments, migrate and reform (inspired by neuroscience)
-4. **The Great Reset** — a periodic event where the entire visual system resets/morphs
-5. **Three.js migration** — move to WebGL for depth, 3D memory palace
-6. **Generative music** — ElevenLabs + Web Audio for evolving soundscape
-7. **Navigation system** — non-linear drift between "rooms" of experience
-8. **Railway deployment** — get it live
+1. **Generative Tonal System** — particles drive music, cluster harmonics evolve
+2. **The Great Reset** — periodic system-wide visual/sonic reset event
+3. **Navigation / Rooms** — non-linear drift between different experiential spaces
+4. **FAL Image Generation** — AI-generated memory imagery woven into the void
+5. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
+6. **Neural Network Visualization** — visible connections between particle clusters
+7. **Extinct Sounds Library** — sounds of things that no longer exist
+8. **Scroll-driven memory decay** — scrolling forward forgets, scrolling back recovers
 
 ### Technologies Used
-- Canvas 2D, TypeScript, Vite, GSAP (available but not yet used)
+- Three.js (WebGL), GLSL shaders, Web Audio API, Canvas 2D (overlays), TypeScript, Vite
+- Post-processing: UnrealBloomPass, custom ShaderPass (grain, aberration, vignette)
 
 ### Technologies To Explore Next
-- Web Audio API, WebGL/Three.js, WebGPU, GLSL shaders, View Transition API, Web MIDI, Web Speech API, WASM, ElevenLabs API, FAL API
+- WebGPU compute shaders (1M+ particles), ElevenLabs API, FAL API, Web Speech API, WASM, View Transition API, Web MIDI, Tone.js
+
+### Deployment
+- Railway: https://oubli-forever-production.up.railway.app
+- Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 1, Feature 1 — The Threshold*
+*Last updated: Era 2, Feature 8 — The Void (WebGL)*
 *"the most beautiful things are the ones we almost forgot"*
