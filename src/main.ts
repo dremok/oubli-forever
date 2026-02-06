@@ -28,6 +28,10 @@ import { GentleGuide } from './ui/GentleGuide'
 import { CircadianVoid } from './time/CircadianVoid'
 import { DriftEngine } from './drift/DriftEngine'
 import { DeviceDrift } from './input/DeviceDrift'
+import { RoomManager } from './rooms/RoomManager'
+import { createVoidRoom } from './rooms/TheVoid'
+import { createStudyRoom } from './rooms/TheStudy'
+import { createInstrumentRoom } from './rooms/TheInstrument'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -250,6 +254,58 @@ cues.start()
 // Gentle Guide — shows interaction hints on first few visits
 const guide = new GentleGuide()
 guide.show(voice.isSupported())
+
+// Room System — the house of Oubli
+// Rooms are connected by passages like a labyrinthine house
+const roomManager = new RoomManager()
+
+// Register rooms
+roomManager.addRoom(createVoidRoom())
+roomManager.addRoom(createStudyRoom(() => journal.getMemories()))
+roomManager.addRoom(createInstrumentRoom())
+
+// Define the house map — convoluted, non-obvious connections
+// The Void is the central hub
+roomManager.addPassage({
+  from: 'void', to: 'study', position: 'left',
+  hint: 'a quiet room, through here...',
+})
+roomManager.addPassage({
+  from: 'void', to: 'instrument', position: 'right',
+  hint: 'something hums beyond...',
+})
+
+// The Study — exit through the ceiling (you entered from the left of the void,
+// but you leave through the top of the study — the house doesn't map linearly)
+roomManager.addPassage({
+  from: 'study', to: 'void', position: 'top',
+  hint: 'the darkness above...',
+})
+// Hidden passage from Study to Instrument — only appears after writing 50+ words
+roomManager.addPassage({
+  from: 'study', to: 'instrument', position: 'bottom',
+  hint: 'music beneath the floorboards...',
+  condition: () => {
+    try {
+      const text = localStorage.getItem('oubli-study') || ''
+      return text.trim().split(/\s+/).length >= 50
+    } catch { return false }
+  },
+})
+
+// The Instrument — exit through the left wall (asymmetric with entry)
+roomManager.addPassage({
+  from: 'instrument', to: 'void', position: 'left',
+  hint: 'silence waits...',
+})
+// Hidden passage from Instrument to Study — always available but through the top
+roomManager.addPassage({
+  from: 'instrument', to: 'study', position: 'top',
+  hint: 'a desk, a pen, a thought...',
+})
+
+// Show the void's doorways after the initial animation settles
+setTimeout(() => roomManager.init(), 15000)
 
 // Oubli breathes
 const memCount = journal.getCount()
