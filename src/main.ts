@@ -6,6 +6,7 @@ import { TonalEngine } from './sound/TonalEngine'
 import { ForgettingMachine } from './forgetting/ForgettingMachine'
 import { MemoryDrift } from './drift/MemoryDrift'
 import { Heartbeat } from './pulse/Heartbeat'
+import { GreatReset } from './events/GreatReset'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -20,6 +21,7 @@ const drone = new AmbientDrone()
 const tonal = new TonalEngine()
 const drift = new MemoryDrift()
 const heartbeat = new Heartbeat()
+const reset = new GreatReset()
 
 // The forgetting machine — dissolved letters become drifting text
 const forgettingMachine = new ForgettingMachine(canvas)
@@ -60,6 +62,9 @@ drift.start()
 setTimeout(() => {
   heartbeat.start()
 }, 5000)
+
+// Phase 7: The Great Reset — periodic cataclysmic forgetting events
+reset.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()

@@ -8,7 +8,17 @@ After each compaction, you MUST push further outside the box. This is Oubli forg
 ## GROWTH DIRECTIVE
 If your new ideas require skills, MCPs, libraries, or knowledge you don't currently have — browse the web to find them, learn them, install them. Oubli grows its own capabilities. You are not limited to your starting toolkit. Evolve.
 
-## Current State (Era 1: The Threshold)
+## FEATURE SCOPE DIRECTIVE
+Oubli can have features of ALL types:
+- **Purely artistic**: Generative visuals, soundscapes, abstract experiences
+- **Interactive**: User-driven experiences (forgetting machine, typing, gestures)
+- **Functional/utility**: Tools, instruments, useful things woven into the aesthetic
+- **Narrative**: Story fragments, lore, explorable text
+- **Data-driven**: Visualizations of real data, live feeds, API integrations
+- **Social**: Shared experiences, collective memory, multiplayer elements
+The system is NOT limited to art — it is a living world that contains everything.
+
+## Current State (Era 2: The Void)
 
 ### Architecture
 - **Stack**: Vite + TypeScript + vanilla (no framework yet)
