@@ -19,7 +19,7 @@
  */
 
 interface Cue {
-  type: 'cursor' | 'keys' | 'voice' | 'click'
+  type: 'cursor' | 'keys' | 'voice' | 'click' | 'drift'
   x: number
   y: number
   alpha: number
@@ -162,6 +162,29 @@ export class InteractionCues {
       })
     }
 
+    // Drift hints — after 50s, show number keys for drifts
+    if (idleTime > 50 * 60 && !this.cues.find(c => c.type === 'drift')) {
+      const drifts = [
+        { char: '1', label: 'void', x: 30, y: this.height - 80 },
+        { char: '2', label: 'deep', x: 60, y: this.height - 80 },
+        { char: '3', label: 'burn', x: 90, y: this.height - 80 },
+        { char: '4', label: 'garden', x: 120, y: this.height - 80 },
+        { char: '5', label: 'archive', x: 150, y: this.height - 80 },
+      ]
+      for (const d of drifts) {
+        this.cues.push({
+          type: 'drift',
+          x: d.x,
+          y: d.y,
+          alpha: 0,
+          targetAlpha: 0.1,
+          char: d.char,
+          label: d.label,
+          born: this.frame,
+        })
+      }
+    }
+
     // Click hint — after 40s, subtle note about clicking
     if (idleTime > 40 * 60 && !this.hasClicked && !this.cues.find(c => c.type === 'click')) {
       this.cues.push({
@@ -205,6 +228,9 @@ export class InteractionCues {
           break
         case 'click':
           this.renderClickHint(ctx, cue)
+          break
+        case 'drift':
+          this.renderKeyHint(ctx, cue)
           break
       }
     }

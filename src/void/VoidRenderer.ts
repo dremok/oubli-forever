@@ -36,6 +36,7 @@ const vertexShader = `
 
   uniform float uTime;
   uniform float uBeatIntensity;
+  uniform float uSizeMul;
 
   void main() {
     vLife = aLife;
@@ -56,8 +57,8 @@ const vertexShader = `
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     vDistToCamera = -mvPosition.z;
 
-    // Size attenuation — closer particles are larger
-    float size = aSize * (300.0 / -mvPosition.z);
+    // Size attenuation — closer particles are larger, scaled by drift
+    float size = aSize * uSizeMul * (300.0 / -mvPosition.z);
 
     // Life affects size — dying particles shrink
     float lifeFade = smoothstep(0.0, 0.15, aLife) * smoothstep(1.0, 0.85, aLife);
@@ -79,6 +80,8 @@ const fragmentShader = `
   varying float vDistToCamera;
 
   uniform float uTime;
+  uniform float uHueShift;
+  uniform float uSatMul;
 
   // HSL to RGB conversion
   vec3 hsl2rgb(float h, float s, float l) {
@@ -99,9 +102,9 @@ const fragmentShader = `
     // Life affects opacity
     float lifeFade = smoothstep(0.0, 0.15, vLife) * smoothstep(1.0, 0.85, vLife);
 
-    // Color from hue — normalized 0-1 range
-    float h = vHue;
-    float s = 0.7 + vMemoryStrength * 0.2;
+    // Color from hue — normalized 0-1 range, shifted by drift state
+    float h = fract(vHue + uHueShift);
+    float s = (0.7 + vMemoryStrength * 0.2) * uSatMul;
     float l = 0.5 + glow * 0.3;
     vec3 color = hsl2rgb(h, s, l);
 
@@ -182,6 +185,12 @@ export class VoidRenderer {
   private mouseY = 0
   private cameraAngle = 0
   private cameraDrift = { x: 0, y: 0, z: 0 }
+  // Drift modulation
+  private driftSpeedMul = 1.0
+  private driftSizeMul = 1.0
+  private driftGravityMul = 1.0
+  private driftHueShift = 0
+  private driftSaturation = 0.7
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -261,6 +270,9 @@ export class VoidRenderer {
       uniforms: {
         uTime: { value: 0 },
         uBeatIntensity: { value: 0 },
+        uHueShift: { value: 0 },
+        uSatMul: { value: 1.0 },
+        uSizeMul: { value: 1.0 },
       },
       transparent: true,
       depthWrite: false,
@@ -336,15 +348,17 @@ export class VoidRenderer {
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const i3 = i * 3
 
-        // Apply velocity
-        this.positions[i3] += this.velocities[i3]
-        this.positions[i3 + 1] += this.velocities[i3 + 1]
-        this.positions[i3 + 2] += this.velocities[i3 + 2]
+        // Apply velocity (modulated by drift speed)
+        const spd = this.driftSpeedMul
+        this.positions[i3] += this.velocities[i3] * spd
+        this.positions[i3 + 1] += this.velocities[i3 + 1] * spd
+        this.positions[i3 + 2] += this.velocities[i3 + 2] * spd
 
-        // Slow drift toward center (gravity of memory)
-        const dx = -this.positions[i3] * 0.0001
-        const dy = -this.positions[i3 + 1] * 0.0001
-        const dz = -this.positions[i3 + 2] * 0.0001
+        // Slow drift toward center (gravity of memory), modulated by drift
+        const grav = 0.0001 * this.driftGravityMul
+        const dx = -this.positions[i3] * grav
+        const dy = -this.positions[i3 + 1] * grav
+        const dz = -this.positions[i3 + 2] * grav
         this.velocities[i3] += dx
         this.velocities[i3 + 1] += dy
         this.velocities[i3 + 2] += dz
@@ -379,6 +393,9 @@ export class VoidRenderer {
 
       // Update time uniforms
       this.material.uniforms.uTime.value = this.time
+      this.material.uniforms.uHueShift.value = this.driftHueShift
+      this.material.uniforms.uSatMul.value = this.driftSaturation / 0.7
+      this.material.uniforms.uSizeMul.value = this.driftSizeMul
       this.grainPass.uniforms.uTime.value = this.time
 
       // Render with post-processing
@@ -413,6 +430,37 @@ export class VoidRenderer {
     }
 
     return densities
+  }
+
+  /** Set drift-state particle speed multiplier */
+  setDriftSpeed(mul: number) { this.driftSpeedMul = mul }
+
+  /** Set drift-state particle size multiplier */
+  setDriftSize(mul: number) { this.driftSizeMul = mul }
+
+  /** Set drift-state gravity multiplier */
+  setDriftGravity(mul: number) { this.driftGravityMul = mul }
+
+  /** Set drift-state hue shift (0-1) */
+  setDriftHueShift(shift: number) { this.driftHueShift = shift }
+
+  /** Set drift-state saturation (0-1) */
+  setDriftSaturation(sat: number) { this.driftSaturation = sat }
+
+  /** Set background color */
+  setBackgroundColor(r: number, g: number, b: number) {
+    const color = (r << 16) | (g << 8) | b
+    this.renderer.setClearColor(color, 1)
+    if (this.scene.fog instanceof THREE.FogExp2) {
+      this.scene.fog.color.setHex(color)
+    }
+  }
+
+  /** Set film grain intensity */
+  setGrainIntensity(intensity: number) {
+    if (this.grainPass) {
+      this.grainPass.uniforms.uIntensity.value = intensity
+    }
   }
 
   /** Adjust bloom strength (default ~1.2) */

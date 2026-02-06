@@ -24,6 +24,7 @@ import { ResonanceMap } from './sound/ResonanceMap'
 import { Palimpsest } from './narrative/Palimpsest'
 import { ColorMemory } from './effects/ColorMemory'
 import { CircadianVoid } from './time/CircadianVoid'
+import { DriftEngine } from './drift/DriftEngine'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -200,6 +201,25 @@ setInterval(() => {
   voidRenderer.setBloomStrength(circadian.getBloomStrength())
   voidRenderer.setFogDensity(circadian.getFogDensity())
 }, 30000)
+
+// Drift Engine — consciousness moves between states (press 1-5)
+const driftEngine = new DriftEngine()
+driftEngine.onChange((state) => {
+  // Particle modulation
+  voidRenderer.setDriftSpeed(state.speedMultiplier)
+  voidRenderer.setDriftSize(state.sizeMultiplier)
+  voidRenderer.setDriftGravity(state.gravityMultiplier)
+  voidRenderer.setDriftHueShift(state.hueShift)
+  voidRenderer.setDriftSaturation(state.saturation)
+  // Visual modulation
+  voidRenderer.setBackgroundColor(state.bgColor[0], state.bgColor[1], state.bgColor[2])
+  voidRenderer.setBloomStrength(state.bloomStrength)
+  voidRenderer.setFogDensity(state.fogDensity)
+  voidRenderer.setGrainIntensity(state.grainIntensity)
+  // Sound modulation
+  drone.setFrequencyMultiplier(state.droneFreqMultiplier)
+  drone.setVolumeMultiplier(state.droneVolume)
+})
 
 // Interaction Cues — subtle hints about what's possible
 const cues = new InteractionCues()

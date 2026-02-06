@@ -236,6 +236,27 @@ export class AmbientDrone {
     }
   }
 
+  /** Drift modulation — shift all drone frequencies by a multiplier */
+  setFrequencyMultiplier(mul: number) {
+    if (!this.ctx || this.drones.length === 0) return
+    const now = this.ctx.currentTime
+    for (let i = 0; i < this.drones.length; i++) {
+      this.drones[i].frequency.linearRampToValueAtTime(
+        this.baseFreqs[i] * mul,
+        now + 8
+      )
+    }
+  }
+
+  /** Drift modulation — set master volume multiplier */
+  setVolumeMultiplier(mul: number) {
+    if (!this.masterGain || !this.ctx) return
+    this.masterGain.gain.linearRampToValueAtTime(
+      0.12 * mul,
+      this.ctx.currentTime + 6
+    )
+  }
+
   destroy() {
     if (this.modulationInterval) {
       clearInterval(this.modulationInterval)
