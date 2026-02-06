@@ -21,6 +21,7 @@ import { DreamSynthesizer } from './dreams/DreamSynthesizer'
 import { InteractionCues } from './ui/InteractionCues'
 import { ParticleTrails } from './effects/ParticleTrails'
 import { ResonanceMap } from './sound/ResonanceMap'
+import { Palimpsest } from './narrative/Palimpsest'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -59,6 +60,7 @@ voice.onSpoken((text) => {
   asciiVoid.updateMemoryText(memText)
   constellations.addMemory(memory)
   dreams.addMemory(text)
+  palimpsest.addText(text)
 })
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
@@ -77,6 +79,8 @@ const forgettingMachine = new ForgettingMachine(
     constellations.addMemory(memory)
     // Feed the dream synthesizer
     dreams.addMemory(text)
+    // Add to palimpsest — will appear as ghost text in future sessions
+    palimpsest.addText(text)
   }
 )
 
@@ -165,6 +169,10 @@ window.addEventListener('keydown', () => {
   titleOverlay.style.transition = 'opacity 3s ease'
   titleOverlay.style.opacity = '0.15'
 }, { once: true })
+
+// Palimpsest — ghosts of previous sessions' text bleed through
+const palimpsest = new Palimpsest()
+palimpsest.start()
 
 // Resonance Map — click anywhere to play the void like an instrument
 const _resonance = new ResonanceMap()
