@@ -349,6 +349,27 @@ export class ThresholdEngine {
     animate()
   }
 
+  /** Inject a particle from an external source (e.g., dissolved letters) */
+  injectParticle(x: number, y: number, hue: number) {
+    if (this.particles.length >= this.maxParticles) return
+
+    this.particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: (Math.random() - 0.5) * 1.5,
+      life: 300 + Math.random() * 400,
+      maxLife: 700,
+      size: 2 + Math.random() * 2,
+      hue,
+      saturation: 80,
+      lightness: 65,
+      alpha: 0.8,
+      trail: [],
+      memoryStrength: 0.8 + Math.random() * 0.2, // strong memories from words
+      birthTime: this.time,
+    })
+  }
+
   destroy() {
     cancelAnimationFrame(this.frameId)
   }
