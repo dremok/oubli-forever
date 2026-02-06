@@ -23,8 +23,10 @@ import { ParticleTrails } from './effects/ParticleTrails'
 import { ResonanceMap } from './sound/ResonanceMap'
 import { Palimpsest } from './narrative/Palimpsest'
 import { ColorMemory } from './effects/ColorMemory'
+import { GhostTyping } from './narrative/GhostTyping'
 import { CircadianVoid } from './time/CircadianVoid'
 import { DriftEngine } from './drift/DriftEngine'
+import { DeviceDrift } from './input/DeviceDrift'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -159,6 +161,11 @@ const dreams = new DreamSynthesizer()
 dreams.loadMemories(journal.getMemories().map(m => m.currentText))
 dreams.start()
 
+// Ghost Typing — the void types your memories back at you when idle
+const ghostTyping = new GhostTyping()
+ghostTyping.loadMemories(journal.getMemories())
+ghostTyping.start()
+
 // The cursor leaves traces of light
 cursorGlow.init()
 
@@ -167,6 +174,17 @@ window.addEventListener('mousemove', (e) => {
   drone.setPresence(
     e.clientX / window.innerWidth,
     e.clientY / window.innerHeight,
+    true
+  )
+})
+
+// Device Drift — mobile gyroscope controls camera on tilt
+const deviceDrift = new DeviceDrift()
+deviceDrift.onOrientation((tiltX, tiltY) => {
+  voidRenderer.setDeviceTilt(tiltX, tiltY)
+  drone.setPresence(
+    0.5 + tiltX * 0.5,
+    0.5 + tiltY * 0.5,
     true
   )
 })

@@ -175,6 +175,9 @@ export class MemoryConstellations {
       this.camera.matrixWorldInverse
     )
 
+    // Draw connection lines between memories that share words
+    this.renderConnections(ctx, projScreenMatrix)
+
     for (const node of this.nodes) {
       // Animate new memories growing in
       if (node.birthTime > 0) {
@@ -272,6 +275,66 @@ export class MemoryConstellations {
         ctx.font = `300 ${Math.max(8, 9 * proximity)}px 'Cormorant Garamond', serif`
         ctx.fillStyle = `rgba(255, 255, 255, ${textAlpha * 0.3})`
         ctx.fillText(`${degradePercent}% forgotten`, screenX, lineY + fontSize * 1.4)
+      }
+    }
+  }
+
+  /** Draw faint connection lines between memories that share words */
+  private renderConnections(ctx: CanvasRenderingContext2D, projScreenMatrix: THREE.Matrix4) {
+    if (this.nodes.length < 2 || !this.camera) return
+
+    // Build word sets for each visible node (cached per frame)
+    const visibleNodes: { node: ConstellationNode; screenX: number; screenY: number; words: Set<string> }[] = []
+
+    for (const node of this.nodes) {
+      const pos3 = node.mesh.position.clone()
+      pos3.project(this.camera)
+      if (pos3.z > 1) continue
+
+      const screenX = (pos3.x * 0.5 + 0.5) * this.width
+      const screenY = (-pos3.y * 0.5 + 0.5) * this.height
+      if (screenX < -100 || screenX > this.width + 100 ||
+          screenY < -100 || screenY > this.height + 100) continue
+
+      const dist = node.mesh.position.distanceTo(this.camera.position)
+      if (dist > 500) continue
+
+      const words = new Set(
+        node.memory.currentText.toLowerCase().split(/\W+/).filter(w => w.length > 2)
+      )
+      visibleNodes.push({ node, screenX, screenY, words })
+    }
+
+    // Check pairs for shared words
+    for (let i = 0; i < visibleNodes.length; i++) {
+      for (let j = i + 1; j < visibleNodes.length; j++) {
+        const a = visibleNodes[i]
+        const b = visibleNodes[j]
+
+        let shared = 0
+        for (const word of a.words) {
+          if (b.words.has(word)) shared++
+        }
+
+        if (shared === 0) continue
+
+        // Line strength based on overlap and proximity
+        const lineAlpha = Math.min(shared * 0.06, 0.15)
+
+        // Draw a gentle curved line
+        ctx.beginPath()
+        ctx.moveTo(a.screenX, a.screenY)
+
+        // Slight curve via control point
+        const midX = (a.screenX + b.screenX) / 2
+        const midY = (a.screenY + b.screenY) / 2
+        const offset = Math.sin(this.time * 0.005 + i + j) * 20
+        ctx.quadraticCurveTo(midX + offset, midY + offset, b.screenX, b.screenY)
+
+        const hue = (a.node.memory.hue + b.node.memory.hue) * 0.5 * 360
+        ctx.strokeStyle = `hsla(${hue}, 50%, 60%, ${lineAlpha})`
+        ctx.lineWidth = 0.5
+        ctx.stroke()
       }
     }
   }

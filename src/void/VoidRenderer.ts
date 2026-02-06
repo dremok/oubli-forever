@@ -432,6 +432,13 @@ export class VoidRenderer {
     return densities
   }
 
+  /** Set device orientation influence on camera */
+  setDeviceTilt(tiltX: number, tiltY: number) {
+    // Blend with mouse-based camera drift
+    this.mouseX = tiltX * 2
+    this.mouseY = tiltY * 2
+  }
+
   /** Set drift-state particle speed multiplier */
   setDriftSpeed(mul: number) { this.driftSpeedMul = mul }
 
