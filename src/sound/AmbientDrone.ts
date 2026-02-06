@@ -51,12 +51,12 @@ export class AmbientDrone {
       // Remove listeners after first trigger
       window.removeEventListener('click', startOnGesture)
       window.removeEventListener('touchstart', startOnGesture)
-      window.removeEventListener('mousemove', startOnGesture)
+      window.removeEventListener('keydown', startOnGesture)
     }
 
     window.addEventListener('click', startOnGesture)
     window.addEventListener('touchstart', startOnGesture)
-    window.addEventListener('mousemove', startOnGesture, { once: true })
+    window.addEventListener('keydown', startOnGesture)
 
     return false
   }

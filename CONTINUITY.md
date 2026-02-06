@@ -170,6 +170,38 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - Spawn interval: 45-90 seconds, with initial 20-second delay
     - Data-driven art: real web history as material
 
+13. **Extinction Whispers** (`src/whispers/ExtinctionWhispers.ts`)
+    - Words from endangered and extinct languages appear every 30-75s
+    - 30+ curated entries with word, meaning, language, region, speaker count
+    - Pale blue for extinct, teal for endangered
+    - Includes notes like "last speaker died 2010"
+    - Words drift upward — ascending / departing
+    - Longer linger time than regular whispers (12-15 seconds)
+
+14. **Presence Heatmap** (`src/ui/PresenceHeatmap.ts`)
+    - Tracks cursor position on a low-res grid (48 cells)
+    - Heat accumulates at cursor, cools over time
+    - Press 'h' to toggle visibility
+    - Always recording even when invisible
+    - Color ramp: deep violet → pink → white-gold
+    - Inspired by eye-tracking studies and desire paths
+
+15. **Session Clock** (`src/ui/SessionClock.ts`)
+    - Shows elapsed time in the void (HH:MM:SS)
+    - Digits degrade over time: wrong digits, underscores, glitch chars
+    - By 30 minutes, clock is barely legible
+    - Label "time in the void" also degrades
+    - Opacity decreases with time — the clock fades
+    - Inspired by Dalí's melting clocks
+
+### Keyboard Shortcuts
+- **Type + Enter**: Submit memory to forgetting machine
+- **Hold Spacebar**: Speak memory (Web Speech API)
+- **'a'**: Toggle ASCII Void mode
+- **'m'**: Open Memory Archive
+- **'h'**: Toggle Presence Heatmap
+- **Escape**: Close archive / clear input
+
 ### Backlog (Prioritized)
 1. **Navigation / Rooms** — non-linear drift between different experiential spaces
 2. **FAL Image Generation** — AI-generated memory imagery woven into the void
@@ -196,5 +228,5 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 2, Feature 15 — Digital Decay*
+*Last updated: Era 2, Feature 18 — Session Clock*
 *"the most beautiful things are the ones we almost forgot"*
