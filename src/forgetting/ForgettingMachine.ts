@@ -102,6 +102,9 @@ export class ForgettingMachine {
         return
       }
 
+      // Don't capture number keys 1-5 when no text is being typed (reserved for drift navigation)
+      if ('12345'.includes(e.key) && this.inputText.length === 0) return
+
       // Only accept printable characters
       if (e.key.length === 1 && this.inputText.length < 120) {
         this.inputText += e.key

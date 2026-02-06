@@ -135,6 +135,17 @@ const DRIFT_STATES: Record<string, DriftState> = {
 
 type DriftListener = (current: DriftState, progress: number) => void
 
+// Edge zone size for click navigation
+const EDGE_ZONE = 60
+
+// Map screen edges to drifts
+const EDGE_DRIFTS: { region: string; drift: string; label: string }[] = [
+  { region: 'top', drift: 'burn', label: 'the burn' },
+  { region: 'bottom', drift: 'deep', label: 'the deep' },
+  { region: 'left', drift: 'garden', label: 'the garden' },
+  { region: 'right', drift: 'archive', label: 'the archive' },
+]
+
 export class DriftEngine {
   private current: DriftState
   private target: DriftState
@@ -146,6 +157,10 @@ export class DriftEngine {
   private labelTimeout: number | null = null
   private frameId = 0
   private animating = false
+  private typingCheck: (() => boolean) | null = null
+  private edgeHints: HTMLDivElement[] = []
+  private mouseX = 0
+  private mouseY = 0
 
   constructor() {
     this.current = { ...DRIFT_STATES.void }
@@ -167,14 +182,47 @@ export class DriftEngine {
     `
     document.body.appendChild(this.labelEl)
 
-    this.bindKeys()
+    this.createEdgeHints()
+    this.bindEvents()
     this.startLoop()
   }
 
-  private bindKeys() {
+  /** Set a function that returns true when the user is actively typing */
+  setTypingCheck(check: () => boolean) {
+    this.typingCheck = check
+  }
+
+  private createEdgeHints() {
+    const positions: Record<string, string> = {
+      top: 'top: 8px; left: 50%; transform: translateX(-50%);',
+      bottom: 'bottom: 8px; left: 50%; transform: translateX(-50%);',
+      left: 'left: 8px; top: 50%; transform: translateY(-50%);',
+      right: 'right: 8px; top: 50%; transform: translateY(-50%);',
+    }
+
+    for (const edge of EDGE_DRIFTS) {
+      const hint = document.createElement('div')
+      hint.style.cssText = `
+        position: fixed; ${positions[edge.region]}
+        z-index: 80; pointer-events: none;
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300; font-size: 10px;
+        letter-spacing: 2px; text-transform: lowercase;
+        color: rgba(255, 20, 147, 0.0);
+        transition: color 1.5s ease;
+      `
+      hint.textContent = edge.label
+      document.body.appendChild(hint)
+      this.edgeHints.push(hint)
+    }
+  }
+
+  private bindEvents() {
+    // Keyboard shortcuts (only when not typing)
     window.addEventListener('keydown', (e) => {
       if (document.activeElement?.tagName === 'INPUT' ||
           document.activeElement?.tagName === 'TEXTAREA') return
+      if (this.typingCheck?.()) return
 
       switch (e.key) {
         case '1': this.driftTo('void'); break
@@ -184,6 +232,75 @@ export class DriftEngine {
         case '5': this.driftTo('archive'); break
       }
     })
+
+    // Track mouse for edge hints
+    window.addEventListener('mousemove', (e) => {
+      this.mouseX = e.clientX
+      this.mouseY = e.clientY
+      this.updateEdgeHints()
+    })
+
+    // Click near edges to drift
+    window.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' ||
+          target.tagName === 'A' || target.closest('[data-no-resonance]')) return
+
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const x = e.clientX
+      const y = e.clientY
+
+      // Check if click is in an edge zone
+      if (y < EDGE_ZONE) {
+        this.driftTo('burn')
+      } else if (y > h - EDGE_ZONE) {
+        this.driftTo('deep')
+      } else if (x < EDGE_ZONE) {
+        this.driftTo('garden')
+      } else if (x > w - EDGE_ZONE) {
+        this.driftTo('archive')
+      }
+      // Clicking center doesn't change drift — that's for the resonance map
+    })
+
+    // Double-click center to return to void
+    window.addEventListener('dblclick', (e) => {
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const x = e.clientX
+      const y = e.clientY
+
+      // Only if not in an edge zone
+      if (x > EDGE_ZONE && x < w - EDGE_ZONE &&
+          y > EDGE_ZONE && y < h - EDGE_ZONE) {
+        this.driftTo('void')
+      }
+    })
+  }
+
+  private updateEdgeHints() {
+    const w = window.innerWidth
+    const h = window.innerHeight
+
+    for (let i = 0; i < EDGE_DRIFTS.length; i++) {
+      const edge = EDGE_DRIFTS[i]
+      const hint = this.edgeHints[i]
+      let nearEdge = false
+
+      switch (edge.region) {
+        case 'top': nearEdge = this.mouseY < EDGE_ZONE * 1.5; break
+        case 'bottom': nearEdge = this.mouseY > h - EDGE_ZONE * 1.5; break
+        case 'left': nearEdge = this.mouseX < EDGE_ZONE * 1.5; break
+        case 'right': nearEdge = this.mouseX > w - EDGE_ZONE * 1.5; break
+      }
+
+      // Don't show hint for current drift
+      const isCurrent = this.target.name === edge.drift
+      const alpha = nearEdge && !isCurrent ? 0.2 : 0.0
+
+      hint.style.color = `rgba(255, 20, 147, ${alpha})`
+    }
   }
 
   /** Initiate a drift to a named state */

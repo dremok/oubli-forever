@@ -1,23 +1,17 @@
 /**
  * DIGITAL DECAY — the internet forgets itself
  *
- * Every 60 seconds, this system checks a random URL from the early web
- * against the Wayback Machine's CDX API. It discovers when pages last
- * existed and whether they've since vanished. The results appear as
- * ephemeral notifications — ghost URLs floating across the screen,
- * fading like the pages themselves.
+ * Ghost URLs of dead websites drift across the void. Now enhanced
+ * with live data from the Wayback Machine CDX API — real capture
+ * counts, first/last archive dates, years of existence.
+ *
+ * When the API responds, fragments show real archaeological data:
+ * "vine.co — 847,291 captures — existed 2013-2017"
+ * When it can't reach the API, it falls back to curated epitaphs.
  *
  * ~40% of links from 2013 are now dead. The internet is a palimpsest
  * of overwritten memories. This feature makes that invisible decay
  * visible — data as elegy.
- *
- * The CDX API returns capture history for URLs. We query it for
- * famous/notable URLs from web history and display the result:
- * "last seen: 2019-03-14" or "never archived — gone forever"
- *
- * When the system can't reach the API, it uses a curated list of
- * known-dead sites and their epitaphs. The feature degrades gracefully
- * into poetry.
  *
  * Inspired by: Link rot research, the Internet Archive, digital
  * archaeology, the Geocities archive, the death of Flash
@@ -26,6 +20,7 @@
 interface DecayFragment {
   url: string
   epitaph: string
+  liveData?: string  // from CDX API
   x: number
   y: number
   vx: number
@@ -34,6 +29,13 @@ interface DecayFragment {
   fadeSpeed: number
   fontSize: number
   born: number
+}
+
+interface CDXResult {
+  captures: number
+  firstYear: number
+  lastYear: number
+  yearsAlive: number
 }
 
 // Curated URLs from web history — many of these are dead or transformed
@@ -101,6 +103,7 @@ export class DigitalDecay {
   private nextSpawnTime = 0
   private frame = 0
   private usedIndices = new Set<number>()
+  private cdxCache = new Map<string, CDXResult | null>()
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -126,8 +129,7 @@ export class DigitalDecay {
   }
 
   start() {
-    // First fragment appears after 20 seconds
-    this.nextSpawnTime = 20 * 60 // ~20 seconds at 60fps
+    this.nextSpawnTime = 20 * 60
     this.startAnimation()
   }
 
@@ -145,14 +147,11 @@ export class DigitalDecay {
   }
 
   private update() {
-    // Spawn new fragments periodically
     if (this.frame >= this.nextSpawnTime) {
       this.spawnFragment()
-      // Next fragment in 45-90 seconds
       this.nextSpawnTime = this.frame + (45 + Math.random() * 45) * 60
     }
 
-    // Update existing fragments
     for (let i = this.fragments.length - 1; i >= 0; i--) {
       const f = this.fragments[i]
       f.x += f.vx
@@ -165,15 +164,47 @@ export class DigitalDecay {
     }
   }
 
+  /** Query Wayback Machine CDX API for capture statistics */
+  private async queryCDX(url: string): Promise<CDXResult | null> {
+    if (this.cdxCache.has(url)) return this.cdxCache.get(url) ?? null
+
+    try {
+      const cleanUrl = url.replace(/\/$/, '')
+      const resp = await fetch(
+        `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(cleanUrl)}&output=json&fl=timestamp&limit=5000&collapse=timestamp:6`,
+        { signal: AbortSignal.timeout(5000) }
+      )
+      if (!resp.ok) throw new Error('CDX API error')
+
+      const data = await resp.json() as string[][]
+      if (data.length <= 1) {
+        this.cdxCache.set(url, null)
+        return null
+      }
+
+      // First row is headers, rest are captures
+      const captures = data.length - 1
+      const timestamps = data.slice(1).map(row => row[0])
+      const firstYear = parseInt(timestamps[0].substring(0, 4))
+      const lastYear = parseInt(timestamps[timestamps.length - 1].substring(0, 4))
+      const yearsAlive = Math.max(1, lastYear - firstYear)
+
+      const result: CDXResult = { captures, firstYear, lastYear, yearsAlive }
+      this.cdxCache.set(url, result)
+      return result
+    } catch {
+      this.cdxCache.set(url, null)
+      return null
+    }
+  }
+
   private spawnFragment() {
-    // Alternate between dead sites and meditations
     const useUrl = Math.random() < 0.6
 
     let url: string
     let epitaph: string
 
     if (useUrl) {
-      // Pick a random historical URL we haven't used recently
       let idx: number
       do {
         idx = Math.floor(Math.random() * HISTORICAL_URLS.length)
@@ -187,6 +218,17 @@ export class DigitalDecay {
       const entry = HISTORICAL_URLS[idx]
       url = entry.url
       epitaph = entry.epitaph
+
+      // Fire off CDX query — will update the fragment when data arrives
+      this.queryCDX(url).then(result => {
+        if (result) {
+          const frag = this.fragments.find(f => f.url === url && !f.liveData)
+          if (frag) {
+            const captureStr = result.captures.toLocaleString()
+            frag.liveData = `${captureStr} captures — archived ${result.firstYear}–${result.lastYear} — ${result.yearsAlive} years`
+          }
+        }
+      })
     } else {
       const meditation = DECAY_MEDITATIONS[Math.floor(Math.random() * DECAY_MEDITATIONS.length)]
       url = ''
@@ -198,25 +240,25 @@ export class DigitalDecay {
     let x: number, y: number, vx: number, vy: number
 
     switch (side) {
-      case 0: // left
+      case 0:
         x = -50
         y = Math.random() * this.height
         vx = 0.2 + Math.random() * 0.3
         vy = (Math.random() - 0.5) * 0.2
         break
-      case 1: // right
+      case 1:
         x = this.width + 50
         y = Math.random() * this.height
         vx = -(0.2 + Math.random() * 0.3)
         vy = (Math.random() - 0.5) * 0.2
         break
-      case 2: // top
+      case 2:
         x = Math.random() * this.width
         y = -30
         vx = (Math.random() - 0.5) * 0.2
         vy = 0.15 + Math.random() * 0.25
         break
-      default: // bottom
+      default:
         x = Math.random() * this.width
         y = this.height + 30
         vx = (Math.random() - 0.5) * 0.2
@@ -241,8 +283,6 @@ export class DigitalDecay {
 
     for (const f of this.fragments) {
       const age = this.frame - f.born
-
-      // Fade in during first 60 frames
       const fadeIn = Math.min(age / 60, 1)
       const alpha = f.alpha * fadeIn
 
@@ -252,15 +292,14 @@ export class DigitalDecay {
       ctx.textBaseline = 'top'
 
       if (f.url) {
-        // URL in monospace — like a terminal
+        // URL in monospace
         ctx.font = `${f.fontSize}px monospace`
         ctx.fillStyle = `rgba(120, 120, 140, ${alpha * 0.6})`
 
-        // Strikethrough effect — the URL is dead
         const urlText = f.url
         ctx.fillText(urlText, f.x, f.y)
 
-        // Draw strikethrough line
+        // Strikethrough
         const urlWidth = ctx.measureText(urlText).width
         ctx.strokeStyle = `rgba(255, 20, 147, ${alpha * 0.3})`
         ctx.lineWidth = 1
@@ -269,12 +308,22 @@ export class DigitalDecay {
         ctx.lineTo(f.x + urlWidth, f.y + f.fontSize * 0.55)
         ctx.stroke()
 
-        // Epitaph below in serif
-        ctx.font = `300 ${f.fontSize * 0.85}px 'Cormorant Garamond', serif`
-        ctx.fillStyle = `rgba(255, 215, 0, ${alpha * 0.4})`
-        ctx.fillText(f.epitaph, f.x, f.y + f.fontSize * 1.3)
+        // Live data from CDX API (if available) or epitaph
+        if (f.liveData) {
+          // Show live capture data in a distinct color
+          ctx.font = `300 ${f.fontSize * 0.8}px 'Cormorant Garamond', serif`
+          ctx.fillStyle = `rgba(100, 200, 180, ${alpha * 0.45})`
+          ctx.fillText(f.liveData, f.x, f.y + f.fontSize * 1.3)
+          // Epitaph below the data
+          ctx.font = `300 ${f.fontSize * 0.75}px 'Cormorant Garamond', serif`
+          ctx.fillStyle = `rgba(255, 215, 0, ${alpha * 0.25})`
+          ctx.fillText(f.epitaph, f.x, f.y + f.fontSize * 2.3)
+        } else {
+          ctx.font = `300 ${f.fontSize * 0.85}px 'Cormorant Garamond', serif`
+          ctx.fillStyle = `rgba(255, 215, 0, ${alpha * 0.4})`
+          ctx.fillText(f.epitaph, f.x, f.y + f.fontSize * 1.3)
+        }
       } else {
-        // Meditation — just the text, floating
         ctx.font = `300 italic ${f.fontSize}px 'Cormorant Garamond', serif`
         ctx.fillStyle = `rgba(255, 215, 0, ${alpha * 0.35})`
         ctx.fillText(f.epitaph, f.x, f.y)

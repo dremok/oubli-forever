@@ -202,8 +202,10 @@ setInterval(() => {
   voidRenderer.setFogDensity(circadian.getFogDensity())
 }, 30000)
 
-// Drift Engine — consciousness moves between states (press 1-5)
+// Drift Engine — consciousness moves between states
+// Click screen edges to drift, or press 1-5 when not typing
 const driftEngine = new DriftEngine()
+driftEngine.setTypingCheck(() => forgettingMachine.hasActiveInput())
 driftEngine.onChange((state) => {
   // Particle modulation
   voidRenderer.setDriftSpeed(state.speedMultiplier)
