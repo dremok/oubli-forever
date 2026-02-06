@@ -128,15 +128,22 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Camera drift ↔ Consciousness floating between memories
 - Particle respawn ↔ Memory reconsolidation — old memories die, new ones form
 
+9. **ASCII Void** (`src/effects/AsciiVoid.ts`) — ERA 2, Feature 12
+   - Toggle with 'a' key — WebGL scene re-rendered as ASCII art
+   - Brightness maps to character density (dark→' ', bright→'#@█')
+   - Bright areas draw characters from stored memories (via MemoryJournal)
+   - Memory text updates live as new memories are added
+   - Color preserved from source with boosted saturation
+   - Smooth CSS opacity transition between modes
+   - Fallback text: "oubli remembers by forgetting what was lost becomes light"
+
 ### Backlog (Prioritized)
-1. **Generative Tonal System** — particles drive music, cluster harmonics evolve
-2. **The Great Reset** — periodic system-wide visual/sonic reset event
-3. **Navigation / Rooms** — non-linear drift between different experiential spaces
-4. **FAL Image Generation** — AI-generated memory imagery woven into the void
-5. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
-6. **Neural Network Visualization** — visible connections between particle clusters
-7. **Extinct Sounds Library** — sounds of things that no longer exist
-8. **Scroll-driven memory decay** — scrolling forward forgets, scrolling back recovers
+1. **Navigation / Rooms** — non-linear drift between different experiential spaces
+2. **FAL Image Generation** — AI-generated memory imagery woven into the void
+3. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
+4. **Neural Network Visualization** — visible connections between particle clusters
+5. **Extinct Sounds Library** — sounds of things that no longer exist
+6. **Scroll-driven memory decay** — scrolling forward forgets, scrolling back recovers
 
 ### Technologies Used
 - Three.js (WebGL), GLSL shaders, Web Audio API, Canvas 2D (overlays), TypeScript, Vite
@@ -150,5 +157,5 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 2, Feature 8 — The Void (WebGL)*
+*Last updated: Era 2, Feature 12 — ASCII Void*
 *"the most beautiful things are the ones we almost forgot"*

@@ -9,6 +9,7 @@ import { Heartbeat } from './pulse/Heartbeat'
 import { GreatReset } from './events/GreatReset'
 import { MemoryJournal } from './memory/MemoryJournal'
 import { AsciiVoid } from './effects/AsciiVoid'
+import { MemoryConstellations } from './memory/MemoryConstellations'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -26,11 +27,16 @@ const heartbeat = new Heartbeat()
 const reset = new GreatReset()
 const journal = new MemoryJournal()
 const asciiVoid = new AsciiVoid()
+const constellations = new MemoryConstellations()
 
 // Connect ASCII void to the WebGL canvas and memory text
 asciiVoid.setSource(canvas)
 const allMemoryText = journal.getMemories().map(m => m.currentText).join(' ')
 asciiVoid.updateMemoryText(allMemoryText)
+
+// Connect constellations to the Three.js scene — memories become stars
+constellations.connect(voidRenderer.getScene(), voidRenderer.getCamera())
+constellations.loadMemories(journal.getMemories())
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
 const forgettingMachine = new ForgettingMachine(
@@ -38,12 +44,14 @@ const forgettingMachine = new ForgettingMachine(
   undefined, // no particle injection (we're in WebGL now)
   (text) => {
     // Save to journal before dissolving
-    journal.addMemory(text)
+    const memory = journal.addMemory(text)
     // Also send to drift as a fragment
     drift.addUserMemory(text)
     // Update ASCII void with new memory text
     const memText = journal.getMemories().map(m => m.currentText).join(' ')
     asciiVoid.updateMemoryText(memText)
+    // New memory becomes a star in the constellation
+    constellations.addMemory(memory)
   }
 )
 

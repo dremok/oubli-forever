@@ -415,6 +415,16 @@ export class VoidRenderer {
     return densities
   }
 
+  /** Expose scene for external systems to add objects */
+  getScene(): THREE.Scene {
+    return this.scene
+  }
+
+  /** Expose camera for 3D-to-2D projection */
+  getCamera(): THREE.PerspectiveCamera {
+    return this.camera
+  }
+
   destroy() {
     this.renderer.dispose()
   }
