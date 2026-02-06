@@ -307,6 +307,11 @@ export class ForgettingMachine {
     }
   }
 
+  /** Whether the user is actively typing a memory */
+  hasActiveInput(): boolean {
+    return this.inputText.length > 0
+  }
+
   destroy() {
     cancelAnimationFrame(this.frameId)
     if (this.cursorInterval) clearInterval(this.cursorInterval)

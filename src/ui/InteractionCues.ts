@@ -148,15 +148,15 @@ export class InteractionCues {
       }
     }
 
-    // Voice hint — after 60s, pulsing circle near center
-    if (idleTime > 60 * 60 && !this.hasSpoken && this.voiceSupported &&
+    // Voice hint — after 20s, pulsing circle near center
+    if (idleTime > 20 * 60 && !this.hasSpoken && this.voiceSupported &&
         !this.cues.find(c => c.type === 'voice')) {
       this.cues.push({
         type: 'voice',
         x: this.width / 2,
         y: this.height * 0.35,
         alpha: 0,
-        targetAlpha: 0.15,
+        targetAlpha: 0.25,
         born: this.frame,
       })
     }
@@ -233,11 +233,11 @@ export class InteractionCues {
     ctx.lineWidth = 1
     ctx.stroke()
 
-    // Tiny "hold space" hint below
-    ctx.font = `300 9px 'Cormorant Garamond', serif`
+    // "hold spacebar to speak" hint below
+    ctx.font = `300 12px 'Cormorant Garamond', serif`
     ctx.textAlign = 'center'
-    ctx.fillStyle = `rgba(255, 215, 0, ${cue.alpha * 0.5})`
-    ctx.fillText('hold space', cue.x, cue.y + radius + 12)
+    ctx.fillStyle = `rgba(255, 215, 0, ${cue.alpha * 0.7})`
+    ctx.fillText('hold spacebar to speak', cue.x, cue.y + radius + 16)
   }
 
   destroy() {

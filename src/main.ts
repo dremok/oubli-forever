@@ -132,9 +132,10 @@ reset.start()
 const decay = new DigitalDecay()
 decay.start()
 
-// Memory Archive — press 'm' to view stored memories
+// Memory Archive — press 'm' to view stored memories (slides in from right)
 const archive = new MemoryArchive()
 archive.setMemorySource(() => journal.getMemories())
+archive.setTypingCheck(() => forgettingMachine.hasActiveInput())
 
 // Extinction Whispers — words from dying languages drift through the void
 const extinction = new ExtinctionWhispers()
