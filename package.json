@@ -1,0 +1,35 @@
+{
+  "name": "oubli-forever",
+  "version": "1.0.0",
+  "description": "OUBLI - A Never-Ending System",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dremok/oubli-forever.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dremok/oubli-forever/issues"
+  },
+  "homepage": "https://github.com/dremok/oubli-forever#readme",
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.1.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "@types/three": "^0.182.0",
+    "gsap": "^3.14.2",
+    "three": "^0.182.0"
+  }
+}

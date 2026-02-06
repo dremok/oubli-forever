@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>OUBLI</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Cormorant Garamond', serif;
+      cursor: none;
+    }
+
+    #oubli {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #cursor-glow {
+      position: fixed;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(circle, rgba(255, 20, 147, 0.15) 0%, rgba(255, 215, 0, 0.05) 40%, transparent 70%);
+      mix-blend-mode: screen;
+      transition: opacity 0.3s;
+    }
+
+    #whisper {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      padding: 40px 20px;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    #whisper-text {
+      font-size: clamp(14px, 2.5vw, 22px);
+      font-weight: 300;
+      font-style: italic;
+      letter-spacing: 0.3em;
+      color: rgba(255, 215, 0, 0);
+      transition: color 3s ease;
+    }
+
+    #whisper-text.visible {
+      color: rgba(255, 215, 0, 0.6);
+    }
+
+    #whisper-text.fading {
+      color: rgba(255, 215, 0, 0);
+    }
+
+    #title-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 2s ease;
+    }
+
+    #title-overlay.visible {
+      opacity: 1;
+    }
+
+    #title-main {
+      font-size: clamp(48px, 12vw, 160px);
+      font-weight: 300;
+      letter-spacing: 0.5em;
+      text-indent: 0.5em;
+      color: transparent;
+      background: linear-gradient(135deg, #ff1493, #ffd700, #ff1493);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      animation: shimmer 8s ease-in-out infinite;
+      text-shadow: 0 0 80px rgba(255, 20, 147, 0.3);
+    }
+
+    #title-sub {
+      font-size: clamp(11px, 1.8vw, 16px);
+      font-weight: 300;
+      letter-spacing: 1em;
+      text-indent: 1em;
+      text-transform: uppercase;
+      color: rgba(255, 215, 0, 0.4);
+      margin-top: 20px;
+    }
+
+    @keyframes shimmer {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
+    /* Mobile touch support */
+    @media (hover: none) {
+      html, body { cursor: auto; }
+      #cursor-glow { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="oubli"></canvas>
+  <div id="cursor-glow"></div>
+  <div id="title-overlay">
+    <div id="title-main">OUBLI</div>
+    <div id="title-sub">a system that remembers by forgetting</div>
+  </div>
+  <div id="whisper">
+    <div id="whisper-text"></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
