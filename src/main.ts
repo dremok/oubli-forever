@@ -22,6 +22,7 @@ import { InteractionCues } from './ui/InteractionCues'
 import { ParticleTrails } from './effects/ParticleTrails'
 import { ResonanceMap } from './sound/ResonanceMap'
 import { Palimpsest } from './narrative/Palimpsest'
+import { ColorMemory } from './effects/ColorMemory'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -61,6 +62,7 @@ voice.onSpoken((text) => {
   constellations.addMemory(memory)
   dreams.addMemory(text)
   palimpsest.addText(text)
+  colorMemory.processText(text)
 })
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
@@ -81,6 +83,8 @@ const forgettingMachine = new ForgettingMachine(
     dreams.addMemory(text)
     // Add to palimpsest — will appear as ghost text in future sessions
     palimpsest.addText(text)
+    // Shift the void's color toward the emotional tone of the words
+    colorMemory.processText(text)
   }
 )
 
@@ -173,6 +177,9 @@ window.addEventListener('keydown', () => {
 // Palimpsest — ghosts of previous sessions' text bleed through
 const palimpsest = new Palimpsest()
 palimpsest.start()
+
+// Color Memory — the void shifts color based on emotional tone of your words
+const colorMemory = new ColorMemory()
 
 // Resonance Map — click anywhere to play the void like an instrument
 const _resonance = new ResonanceMap()
