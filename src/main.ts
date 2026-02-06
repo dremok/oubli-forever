@@ -4,6 +4,7 @@ import { CursorGlow } from './ui/CursorGlow'
 import { AmbientDrone } from './sound/AmbientDrone'
 import { ForgettingMachine } from './forgetting/ForgettingMachine'
 import { MemoryDrift } from './drift/MemoryDrift'
+import { Heartbeat } from './pulse/Heartbeat'
 
 // OUBLI — the first breath
 
@@ -16,10 +17,16 @@ const whispers = new Whispers()
 const cursorGlow = new CursorGlow()
 const drone = new AmbientDrone()
 const drift = new MemoryDrift()
+const heartbeat = new Heartbeat()
 
 // The forgetting machine — dissolved letters become particles AND drifting text
 const forgettingMachine = new ForgettingMachine(canvas, (x, y, hue) => {
   engine.injectParticle(x, y, hue)
+})
+
+// Connect the heartbeat to the drone — each beat pulses the sound
+heartbeat.onPulse((intensity) => {
+  drone.pulse(intensity * 0.5)
 })
 
 // Phase 1: Void — particles emerge slowly from nothing
@@ -40,6 +47,11 @@ drone.init()
 
 // Phase 5: Memory drift — text fragments float and degrade
 drift.start()
+
+// Phase 6: The heartbeat begins — slowing the longer you stay
+setTimeout(() => {
+  heartbeat.start()
+}, 5000)
 
 // The cursor leaves traces of light
 cursorGlow.init()
