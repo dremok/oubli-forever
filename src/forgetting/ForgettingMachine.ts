@@ -49,7 +49,8 @@ export class ForgettingMachine {
 
   constructor(
     private parentCanvas: HTMLCanvasElement,
-    private onParticleRelease?: (x: number, y: number, hue: number) => void
+    private onParticleRelease?: (x: number, y: number, hue: number) => void,
+    private onTextDissolve?: (text: string) => void,
   ) {
     // Create overlay canvas for text rendering
     this.canvas = document.createElement('canvas')
@@ -185,6 +186,9 @@ export class ForgettingMachine {
     const ctx = this.ctx
     const text = this.inputText
     if (!text) return
+
+    // Save the memory before dissolving it
+    this.onTextDissolve?.(text)
 
     const fontSize = Math.min(this.width * 0.05, 42)
     ctx.font = `300 ${fontSize}px 'Cormorant Garamond', serif`

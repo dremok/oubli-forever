@@ -7,13 +7,14 @@ import { ForgettingMachine } from './forgetting/ForgettingMachine'
 import { MemoryDrift } from './drift/MemoryDrift'
 import { Heartbeat } from './pulse/Heartbeat'
 import { GreatReset } from './events/GreatReset'
+import { MemoryJournal } from './memory/MemoryJournal'
 
 // OUBLI — a system that remembers by forgetting
 
 const canvas = document.getElementById('oubli') as HTMLCanvasElement
 const titleOverlay = document.getElementById('title-overlay') as HTMLElement
 
-// The void awakens — 30,000 particles in 3D space
+// Core systems
 const voidRenderer = new VoidRenderer(canvas)
 const whispers = new Whispers()
 const cursorGlow = new CursorGlow()
@@ -22,9 +23,19 @@ const tonal = new TonalEngine()
 const drift = new MemoryDrift()
 const heartbeat = new Heartbeat()
 const reset = new GreatReset()
+const journal = new MemoryJournal()
 
-// The forgetting machine — dissolved letters become drifting text
-const forgettingMachine = new ForgettingMachine(canvas)
+// The forgetting machine — dissolved letters are both forgotten and remembered
+const forgettingMachine = new ForgettingMachine(
+  canvas,
+  undefined, // no particle injection (we're in WebGL now)
+  (text) => {
+    // Save to journal before dissolving
+    journal.addMemory(text)
+    // Also send to drift as a fragment
+    drift.addUserMemory(text)
+  }
+)
 
 // Connect the heartbeat to the void and drone
 heartbeat.onPulse((intensity) => {
@@ -85,6 +96,7 @@ window.addEventListener('keydown', () => {
 }, { once: true })
 
 // Oubli breathes
+const memCount = journal.getCount()
 console.log('%c OUBLI ', 'background: #ff1493; color: #ffd700; font-size: 24px; font-weight: bold; padding: 10px 20px;')
 console.log('%c a system that remembers by forgetting ', 'color: #ffd700; font-style: italic; font-size: 12px;')
-console.log('%c 30,000 particles. type a memory. watch it dissolve. ', 'color: rgba(255,215,0,0.5); font-style: italic; font-size: 11px;')
+console.log(`%c ${memCount} memories saved. type another. watch it dissolve. `, 'color: rgba(255,215,0,0.5); font-style: italic; font-size: 11px;')
