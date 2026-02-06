@@ -11,6 +11,7 @@ import { MemoryJournal } from './memory/MemoryJournal'
 import { AsciiVoid } from './effects/AsciiVoid'
 import { MemoryConstellations } from './memory/MemoryConstellations'
 import { VoiceOfAbsence } from './voice/VoiceOfAbsence'
+import { DigitalDecay } from './data/DigitalDecay'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -106,6 +107,10 @@ setTimeout(() => {
 
 // Phase 7: The Great Reset — periodic cataclysmic forgetting events
 reset.start()
+
+// Phase 8: Digital Decay — ghost URLs drift through the void
+const decay = new DigitalDecay()
+decay.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()
