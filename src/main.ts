@@ -8,6 +8,7 @@ import { MemoryDrift } from './drift/MemoryDrift'
 import { Heartbeat } from './pulse/Heartbeat'
 import { GreatReset } from './events/GreatReset'
 import { MemoryJournal } from './memory/MemoryJournal'
+import { AsciiVoid } from './effects/AsciiVoid'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -24,6 +25,12 @@ const drift = new MemoryDrift()
 const heartbeat = new Heartbeat()
 const reset = new GreatReset()
 const journal = new MemoryJournal()
+const asciiVoid = new AsciiVoid()
+
+// Connect ASCII void to the WebGL canvas and memory text
+asciiVoid.setSource(canvas)
+const allMemoryText = journal.getMemories().map(m => m.currentText).join(' ')
+asciiVoid.updateMemoryText(allMemoryText)
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
 const forgettingMachine = new ForgettingMachine(
@@ -34,6 +41,9 @@ const forgettingMachine = new ForgettingMachine(
     journal.addMemory(text)
     // Also send to drift as a fragment
     drift.addUserMemory(text)
+    // Update ASCII void with new memory text
+    const memText = journal.getMemories().map(m => m.currentText).join(' ')
+    asciiVoid.updateMemoryText(memText)
   }
 )
 
