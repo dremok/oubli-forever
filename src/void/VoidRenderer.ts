@@ -388,6 +388,33 @@ export class VoidRenderer {
     animate()
   }
 
+  /** Compute particle density in 8 spatial octants for sonification */
+  getRegionDensities(): number[] {
+    const densities = new Array(8).fill(0)
+    const counts = new Array(8).fill(0)
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const i3 = i * 3
+      if (this.lives[i] <= 0) continue
+
+      // Classify into octant based on sign of x, y, z
+      const octant =
+        (this.positions[i3] > 0 ? 1 : 0) +
+        (this.positions[i3 + 1] > 0 ? 2 : 0) +
+        (this.positions[i3 + 2] > 0 ? 4 : 0)
+
+      counts[octant]++
+    }
+
+    // Normalize to 0-1 range
+    const maxCount = Math.max(...counts, 1)
+    for (let i = 0; i < 8; i++) {
+      densities[i] = counts[i] / maxCount
+    }
+
+    return densities
+  }
+
   destroy() {
     this.renderer.dispose()
   }

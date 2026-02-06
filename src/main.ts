@@ -2,11 +2,12 @@ import { VoidRenderer } from './void/VoidRenderer'
 import { Whispers } from './whispers/Whispers'
 import { CursorGlow } from './ui/CursorGlow'
 import { AmbientDrone } from './sound/AmbientDrone'
+import { TonalEngine } from './sound/TonalEngine'
 import { ForgettingMachine } from './forgetting/ForgettingMachine'
 import { MemoryDrift } from './drift/MemoryDrift'
 import { Heartbeat } from './pulse/Heartbeat'
 
-// OUBLI — the first breath, now in three dimensions
+// OUBLI — a system that remembers by forgetting
 
 const canvas = document.getElementById('oubli') as HTMLCanvasElement
 const titleOverlay = document.getElementById('title-overlay') as HTMLElement
@@ -16,6 +17,7 @@ const voidRenderer = new VoidRenderer(canvas)
 const whispers = new Whispers()
 const cursorGlow = new CursorGlow()
 const drone = new AmbientDrone()
+const tonal = new TonalEngine()
 const drift = new MemoryDrift()
 const heartbeat = new Heartbeat()
 
@@ -27,6 +29,12 @@ heartbeat.onPulse((intensity) => {
   drone.pulse(intensity * 0.5)
   voidRenderer.setBeatIntensity(intensity)
 })
+
+// Feed particle densities to the tonal engine every 2 seconds
+setInterval(() => {
+  const densities = voidRenderer.getRegionDensities()
+  tonal.updateParticleDensities(densities)
+}, 2000)
 
 // Phase 1: Void — 30K particles emerge in 3D space
 voidRenderer.start()
@@ -43,6 +51,7 @@ setTimeout(() => {
 
 // Phase 4: Sound awakens on first interaction
 drone.init()
+tonal.init()
 
 // Phase 5: Memory drift — text fragments float and degrade
 drift.start()
