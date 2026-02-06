@@ -127,6 +127,10 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Bloom ↔ How memories feel brighter than reality
 - Camera drift ↔ Consciousness floating between memories
 - Particle respawn ↔ Memory reconsolidation — old memories die, new ones form
+- Memory constellations ↔ Memory palace technique / spatial memory
+- Voice input ↔ Oral tradition / confession / last words
+- Digital decay ↔ Link rot / digital archaeology / web as palimpsest
+- ASCII rendering ↔ Demoscene / text as substance / words becoming medium
 
 9. **ASCII Void** (`src/effects/AsciiVoid.ts`) — ERA 2, Feature 12
    - Toggle with 'a' key — WebGL scene re-rendered as ASCII art
@@ -137,6 +141,35 @@ The core metaphor: We forget details to learn larger structures. We forget the o
    - Smooth CSS opacity transition between modes
    - Fallback text: "oubli remembers by forgetting what was lost becomes light"
 
+10. **Memory Constellations** (`src/memory/MemoryConstellations.ts`)
+    - Stored memories become glowing star sprites in the 3D void
+    - Three.js Sprites with canvas-generated radial gradient textures
+    - Text labels projected from 3D→2D via camera matrix
+    - Proximity-based text visibility (closer = more readable)
+    - New memories burst in with elastic entrance animation
+    - Degradation % shown as small annotation
+    - Gentle breathing animation on all nodes
+    - Connected to VoidRenderer scene and camera
+
+11. **Voice of Absence** (`src/voice/VoiceOfAbsence.ts`)
+    - Hold spacebar → Web Speech API listens
+    - Speak memories into the void, text materializes in gold
+    - Each character shimmers with individual phase offsets
+    - Voice tremor effect during active listening
+    - Release spacebar → 2 seconds of silence → text dissolves
+    - Spoken memories feed into journal + drift + constellations + ASCII void
+    - Pulsing pink listening indicator with "speak into the void..." prompt
+    - Graceful fallback: silently disabled if browser doesn't support Speech API
+
+12. **Digital Decay** (`src/data/DigitalDecay.ts`)
+    - Ghost URLs of dead websites drift across the screen
+    - 30+ curated entries: geocities, vine, reader.google, stumbleupon, etc.
+    - Each shows URL with strikethrough + epitaph below
+    - Philosophical meditations about link rot interspersed
+    - Fragments spawn from edges, drift across, fade out
+    - Spawn interval: 45-90 seconds, with initial 20-second delay
+    - Data-driven art: real web history as material
+
 ### Backlog (Prioritized)
 1. **Navigation / Rooms** — non-linear drift between different experiential spaces
 2. **FAL Image Generation** — AI-generated memory imagery woven into the void
@@ -144,18 +177,24 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 4. **Neural Network Visualization** — visible connections between particle clusters
 5. **Extinct Sounds Library** — sounds of things that no longer exist
 6. **Scroll-driven memory decay** — scrolling forward forgets, scrolling back recovers
+7. **WebGPU particle system** — 1M+ particles with compute shaders
+8. **Wayback Machine CDX API** — real-time link rot queries
+9. **Endangered Languages** — ELAR data, dying languages as dying memories
+10. **IUCN Red List** — species extinction data visualization
 
 ### Technologies Used
 - Three.js (WebGL), GLSL shaders, Web Audio API, Canvas 2D (overlays), TypeScript, Vite
 - Post-processing: UnrealBloomPass, custom ShaderPass (grain, aberration, vignette)
+- Web Speech API (speech recognition for voice input)
+- localStorage (memory persistence with degradation)
 
 ### Technologies To Explore Next
-- WebGPU compute shaders (1M+ particles), ElevenLabs API, FAL API, Web Speech API, WASM, View Transition API, Web MIDI, Tone.js
+- WebGPU compute shaders (1M+ particles), ElevenLabs API, FAL API, WASM/Rust audio, View Transition API, Web MIDI, Strudel/Glicol, CSS scroll-triggered animations, WebCodecs, Wayback Machine CDX API
 
 ### Deployment
 - Railway: https://oubli-forever-production.up.railway.app
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 2, Feature 12 — ASCII Void*
+*Last updated: Era 2, Feature 15 — Digital Decay*
 *"the most beautiful things are the ones we almost forgot"*

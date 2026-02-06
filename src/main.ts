@@ -12,6 +12,7 @@ import { AsciiVoid } from './effects/AsciiVoid'
 import { MemoryConstellations } from './memory/MemoryConstellations'
 import { VoiceOfAbsence } from './voice/VoiceOfAbsence'
 import { DigitalDecay } from './data/DigitalDecay'
+import { MemoryArchive } from './memory/MemoryArchive'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -111,6 +112,10 @@ reset.start()
 // Phase 8: Digital Decay — ghost URLs drift through the void
 const decay = new DigitalDecay()
 decay.start()
+
+// Memory Archive — press 'm' to view stored memories
+const archive = new MemoryArchive()
+archive.setMemorySource(() => journal.getMemories())
 
 // The cursor leaves traces of light
 cursorGlow.init()
