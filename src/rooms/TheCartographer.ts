@@ -68,6 +68,9 @@ const ROOM_GRAPH: { name: string; label: string; hidden: boolean; connects: stri
   { name: 'disintegration', label: 'the disintegration loops', hidden: false, connects: ['void'] },
   { name: 'projection', label: 'the projection room', hidden: false, connects: ['void'] },
   { name: 'datepaintings', label: 'the date paintings', hidden: false, connects: ['void'] },
+  { name: 'madeleine', label: 'the madeleine', hidden: false, connects: ['void'] },
+  { name: 'library', label: 'the library', hidden: false, connects: ['void'] },
+  { name: 'palimpsestgallery', label: 'the palimpsest gallery', hidden: false, connects: ['void'] },
   // Hidden rooms
   { name: 'catacombs', label: 'the catacombs', hidden: true, connects: ['archive', 'ossuary'] },
   { name: 'roots', label: 'the roots', hidden: true, connects: ['garden', 'ossuary'] },

@@ -70,6 +70,7 @@ import { createProjectionRoom } from './rooms/TheProjectionRoom'
 import { createDatePaintingsRoom } from './rooms/TheDatePaintings'
 import { createMadeleineRoom } from './rooms/TheMadeleine'
 import { createLibraryRoom } from './rooms/TheLibrary'
+import { createPalimpsestGalleryRoom } from './rooms/ThePalimpsestGallery'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -472,6 +473,9 @@ roomManager.addRoom(createMadeleineRoom({
   getMemories: () => journal.getMemories(),
 }))
 roomManager.addRoom(createLibraryRoom({
+  getMemories: () => journal.getMemories(),
+}))
+roomManager.addRoom(createPalimpsestGalleryRoom({
   getMemories: () => journal.getMemories(),
 }))
 
