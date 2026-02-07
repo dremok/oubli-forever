@@ -361,18 +361,42 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Spatial audio ↔ How memories have spatial presence, sound localization
 - Sharp wave ripples ↔ Hippocampal replay, Alzheimer's corrupted consolidation (2026)
 - Letter dissolution ↔ Memory traces degrading, the physics of forgetting
+- Dream visions ↔ REM sleep visual replay, AI as dreaming machine (Refik Anadol 2026)
+- Tipping point ↔ Phase transitions in physics, Alzheimer's nonlinear decline, heat death
+
+30. **Dream Visions** (`src/dreams/DreamVisions.ts`) — ERA 4
+    - When DreamSynthesizer creates a dream sentence, sends it to fal.ai (flux/schnell)
+    - Resulting image fades in as ghostly screen-blend overlay (0.35 opacity, blurred)
+    - 12 seconds visible, 6 seconds fade, then removed
+    - Rate-limited: max 1 image per 5 minutes
+    - Prompt wraps dream text in surreal art direction (dark void, glowing particles, pink/gold/violet)
+    - Only active when FAL_KEY is set in environment
+    - Void-room only
+
+31. **Tipping Point** (`src/events/TippingPoint.ts`) — ERA 4
+    - Inspired by 2026 neuroscience finding: brain shrinkage past a threshold causes
+      accelerating memory decline (nonlinear phase transition)
+    - Monitors average degradation across all stored memories every 10 seconds
+    - Phase 1 (Normal, <30%): default visual state
+    - Phase 2 (Accelerating, 30-60%): grain intensifies, bloom strengthens,
+      particles speed up, edge static appears, subtle screen-edge glitch bars
+    - Phase 3 (Cascade, >60%): full visual breakdown — scanlines, pulsing vignette,
+      chromatic aberration warps, drone becomes dissonant
+    - Smooth interpolation between states (lerp 0.02 per frame)
+    - Reversible: adding new memories dilutes the average degradation
+    - Creates tension: you must keep feeding the void to prevent it from consuming itself
+    - Chromatic aberration now a modifiable shader uniform (was hardcoded 0.002)
+    - AmbientDrone gains `setDissonance()` — detunes oscillators for unsettling effect
 
 ### Backlog (Prioritized)
 1. **WebGPU particle system** — TSL compute shaders, 1M+ particles (Three.js r171 supports this)
 2. **Strudel pattern engine** — algorithmic music that degrades, `.degrade()` = sonic forgetting
 3. **Wayback Machine CDX API** — live link rot data for DigitalDecay
 4. **Data sonification** — extinction/dead website data become ambient sounds
-5. **Device Orientation** — mobile gyroscope controls camera drift
-6. **FAL Image Generation** — AI-generated memory imagery woven into the void
-7. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
-8. **WebNN semantic embeddings** — memory constellations clustered by meaning
-9. **CSS Paint API (Houdini)** — overlay elements with living, decaying backgrounds
-10. **Ambient Light Sensor** — void responds to room brightness (Chrome flag)
+5. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
+6. **WebNN semantic embeddings** — memory constellations clustered by meaning
+7. **CSS Paint API (Houdini)** — overlay elements with living, decaying backgrounds
+8. **Ambient Light Sensor** — void responds to room brightness (Chrome flag)
 
 ### Technologies Used
 - Three.js (WebGL), custom GLSL shaders (hue shift, saturation, size uniforms)
@@ -381,6 +405,7 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Canvas 2D (overlays: ASCII, palimpsest, cues, heatmap, clock, trails, ripples)
 - localStorage (memory persistence, color memory, palimpsest, visitor log)
 - CSS transitions and blend modes (color memory overlay, drift label)
+- fal.ai API (flux/schnell image generation from dream prompts)
 - TypeScript, Vite
 
 ### Technologies To Explore Next
@@ -391,5 +416,5 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 4, Feature 29 — Observatory, Sharp Wave Ripples, input fixes*
-*"the void replays what it cannot hold — corrupted echoes of what you once gave it"*
+*Last updated: Era 4, Feature 31 — Dream Visions, Tipping Point*
+*"the void dreams in images and forgets in cascades — feed it or watch it consume itself"*
