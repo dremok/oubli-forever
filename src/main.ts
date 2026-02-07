@@ -56,6 +56,8 @@ import { createPendulumRoom } from './rooms/ThePendulum'
 import { createCipherRoom } from './rooms/TheCipher'
 import { createTerrariumRoom } from './rooms/TheTerrarium'
 import { createLighthouseRoom } from './rooms/TheLighthouse'
+import { createSketchpadRoom } from './rooms/TheSketchpad'
+import { createWeathervaneRoom } from './rooms/TheWeathervane'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -418,6 +420,8 @@ roomManager.addRoom(createTerrariumRoom({
 roomManager.addRoom(createLighthouseRoom({
   onDescend: () => roomManager.switchTo('tidepool'),
 }))
+roomManager.addRoom(createSketchpadRoom())
+roomManager.addRoom(createWeathervaneRoom())
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
