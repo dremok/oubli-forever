@@ -23,6 +23,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface LoomDeps {
   getMemories: () => StoredMemory[]
@@ -39,12 +40,25 @@ function textToPattern(text: string): number[] {
   return pattern
 }
 
-function memoryToColor(mem: StoredMemory): string {
+function memoryToColor(mem: StoredMemory): { h: number; s: number; l: number; a: number } {
   const h = mem.hue * 360
   const s = 30 + (1 - mem.degradation) * 40
   const l = 20 + (1 - mem.degradation) * 30
   const a = 0.3 + (1 - mem.degradation) * 0.5
-  return `hsla(${h}, ${s}%, ${l}%, ${a})`
+  return { h, s, l, a }
+}
+
+function colorToString(c: { h: number; s: number; l: number; a: number }): string {
+  return `hsla(${c.h}, ${c.s}%, ${c.l}%, ${c.a})`
+}
+
+// Seeded random for deterministic frayed ends per thread
+function seededRandom(seed: number): () => number {
+  let s = seed
+  return () => {
+    s = (s * 16807 + 0) % 2147483647
+    return (s - 1) / 2147483646
+  }
 }
 
 export function createLoomRoom(deps: LoomDeps): Room {
@@ -56,8 +70,36 @@ export function createLoomRoom(deps: LoomDeps): Room {
   let time = 0
   let shuttleX = 0
   let shuttleDir = 1
+  let prevShuttleDir = 1
   let weavingProgress = 0
   let hoveredSpool = -1
+
+  // Click-to-examine state
+  let selectedThread = -1
+  let selectedMemory: StoredMemory | null = null
+  let examineTimeout = 0
+  let examineOverlay: HTMLElement | null = null
+
+  // Thread positions for hit testing (updated each frame)
+  let threadYPositions: number[] = []
+  let threadMargin = 60
+  let threadWeaveW = 0
+
+  // Tension state
+  let tension = 0 // 0-1
+  let snappedThread = -1
+  let snapTimer = 0
+
+  // Heddle state (per-column rise/fall)
+  let heddlePhases: number[] = []
+
+  // Audio state
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneFilter: BiquadFilterNode | null = null
+  let creakInterval = 0
 
   const spools = [
     { label: 'study', room: 'study' },
@@ -65,6 +107,391 @@ export function createLoomRoom(deps: LoomDeps): Room {
     { label: 'gallery', room: 'palimpsestgallery' },
     { label: 'sketchpad', room: 'sketchpad' },
   ]
+
+  // --- Audio ---
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // Background drone — warm low sawtooth through heavy filter
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'sawtooth'
+      droneOsc.frequency.value = 80
+      droneFilter = ac.createBiquadFilter()
+      droneFilter.type = 'lowpass'
+      droneFilter.frequency.value = 120
+      droneFilter.Q.value = 2
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0.04 // very faint
+      droneOsc.connect(droneFilter)
+      droneFilter.connect(droneGain)
+      droneGain.connect(audioMaster)
+      droneOsc.start()
+
+      audioInitialized = true
+
+      // Fade in
+      audioMaster.gain.setValueAtTime(0, ac.currentTime)
+      audioMaster.gain.linearRampToValueAtTime(1.0, ac.currentTime + 1.5)
+
+      // Tension creaks every 10-20s
+      scheduleCreak()
+    } catch {
+      // Audio not available — silent operation
+    }
+  }
+
+  function playShuttleClick() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+
+      // Short noise burst through tight bandpass at ~800Hz
+      const bufferSize = Math.floor(ac.sampleRate * 0.03) // 30ms
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.15))
+      }
+
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 800
+      bp.Q.value = 8
+
+      const clickGain = ac.createGain()
+      clickGain.gain.setValueAtTime(0.12, now)
+      clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06)
+
+      source.connect(bp)
+      bp.connect(clickGain)
+      clickGain.connect(audioMaster)
+      source.start(now)
+      source.stop(now + 0.06)
+    } catch {
+      // Ignore audio errors
+    }
+  }
+
+  function playCreak() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+
+      // Filtered noise at ~2000Hz, very quiet, short
+      const duration = 0.15 + Math.random() * 0.15
+      const bufferSize = Math.floor(ac.sampleRate * duration)
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.4))
+      }
+
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 1800 + Math.random() * 600
+      bp.Q.value = 12
+
+      const creakGain = ac.createGain()
+      creakGain.gain.setValueAtTime(0.03, now)
+      creakGain.gain.exponentialRampToValueAtTime(0.001, now + duration)
+
+      source.connect(bp)
+      bp.connect(creakGain)
+      creakGain.connect(audioMaster)
+      source.start(now)
+      source.stop(now + duration)
+    } catch {
+      // Ignore
+    }
+  }
+
+  function scheduleCreak() {
+    if (!active) return
+    const delay = 10000 + Math.random() * 10000 // 10-20s
+    creakInterval = window.setTimeout(() => {
+      playCreak()
+      scheduleCreak()
+    }, delay)
+  }
+
+  function destroyAudio() {
+    if (creakInterval) {
+      clearTimeout(creakInterval)
+      creakInterval = 0
+    }
+    if (audioMaster) {
+      try {
+        const ac = audioMaster.context as AudioContext
+        const now = ac.currentTime
+        audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+        audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+      } catch { /* ignore */ }
+
+      setTimeout(() => {
+        try { droneOsc?.stop() } catch { /* already stopped */ }
+        droneOsc?.disconnect()
+        droneFilter?.disconnect()
+        droneGain?.disconnect()
+        audioMaster?.disconnect()
+        droneOsc = null
+        droneFilter = null
+        droneGain = null
+        audioMaster = null
+        audioInitialized = false
+      }, 600)
+    }
+  }
+
+  // --- Examine overlay ---
+
+  function showExamineOverlay(mem: StoredMemory) {
+    dismissExamineOverlay()
+    selectedMemory = mem
+
+    examineOverlay = document.createElement('div')
+    examineOverlay.style.cssText = `
+      position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+      max-width: 420px; width: 80%;
+      background: rgba(18, 12, 8, 0.92);
+      border: 1px solid rgba(180, 140, 100, 0.15);
+      border-radius: 4px;
+      padding: 14px 18px;
+      font-family: "Cormorant Garamond", serif;
+      color: rgba(200, 170, 120, 0.7);
+      pointer-events: auto;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    `
+
+    const ageDays = Math.floor((Date.now() - mem.timestamp) / (1000 * 60 * 60 * 24))
+    const degradPct = Math.round(mem.degradation * 100)
+
+    examineOverlay.innerHTML = `
+      <div style="font-size: 13px; line-height: 1.5; margin-bottom: 8px; color: rgba(200, 170, 120, 0.6);">
+        ${mem.currentText || '<em style="opacity:0.3">dissolved</em>'}
+      </div>
+      <div style="font-size: 9px; letter-spacing: 1px; color: rgba(180, 140, 100, 0.25); display: flex; gap: 16px;">
+        <span>${degradPct}% degraded</span>
+        <span>${ageDays} day${ageDays !== 1 ? 's' : ''} old</span>
+      </div>
+    `
+
+    overlay?.appendChild(examineOverlay)
+    requestAnimationFrame(() => {
+      if (examineOverlay) examineOverlay.style.opacity = '1'
+    })
+
+    // Auto-dismiss after 5s
+    examineTimeout = window.setTimeout(() => {
+      dismissExamineOverlay()
+    }, 5000)
+  }
+
+  function dismissExamineOverlay() {
+    if (examineTimeout) { clearTimeout(examineTimeout); examineTimeout = 0 }
+    if (examineOverlay) {
+      examineOverlay.style.opacity = '0'
+      const el = examineOverlay
+      setTimeout(() => el.remove(), 300)
+      examineOverlay = null
+    }
+    selectedThread = -1
+    selectedMemory = null
+  }
+
+  // --- Drawing helpers ---
+
+  function drawWoodGrain(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, w: number, h: number,
+    horizontal: boolean
+  ) {
+    ctx.save()
+    ctx.globalAlpha = 0.04
+    ctx.strokeStyle = 'rgba(160, 120, 60, 1)'
+    ctx.lineWidth = 0.5
+    const count = horizontal ? Math.floor(h / 3) : Math.floor(w / 3)
+    for (let i = 0; i < count; i++) {
+      ctx.beginPath()
+      if (horizontal) {
+        const gy = y + (i / count) * h
+        const wobble = Math.sin(i * 0.7) * 2
+        ctx.moveTo(x, gy + wobble)
+        for (let px = 0; px < w; px += 8) {
+          const py = gy + Math.sin((px + i * 13) * 0.03) * 1.5 + wobble
+          ctx.lineTo(x + px, py)
+        }
+      } else {
+        const gx = x + (i / count) * w
+        const wobble = Math.sin(i * 0.7) * 2
+        ctx.moveTo(gx + wobble, y)
+        for (let py = 0; py < h; py += 8) {
+          const px = gx + Math.sin((py + i * 13) * 0.03) * 1.5 + wobble
+          ctx.lineTo(px, y + py)
+        }
+      }
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
+  function drawLoomFrame(
+    ctx: CanvasRenderingContext2D,
+    margin: number, weaveW: number, weaveH: number
+  ) {
+    const beamThickness = 12
+    const postWidth = 10
+
+    // Top beam
+    ctx.fillStyle = 'rgba(80, 55, 30, 0.25)'
+    ctx.fillRect(margin - postWidth - 4, margin - beamThickness - 14, weaveW + postWidth * 2 + 8, beamThickness)
+    drawWoodGrain(ctx, margin - postWidth - 4, margin - beamThickness - 14, weaveW + postWidth * 2 + 8, beamThickness, true)
+
+    // Bottom beam
+    ctx.fillRect(margin - postWidth - 4, margin + weaveH + 4, weaveW + postWidth * 2 + 8, beamThickness)
+    drawWoodGrain(ctx, margin - postWidth - 4, margin + weaveH + 4, weaveW + postWidth * 2 + 8, beamThickness, true)
+
+    // Left post
+    ctx.fillRect(margin - postWidth - 4, margin - beamThickness - 14, postWidth, weaveH + beamThickness * 2 + 18)
+    drawWoodGrain(ctx, margin - postWidth - 4, margin - beamThickness - 14, postWidth, weaveH + beamThickness * 2 + 18, false)
+
+    // Right post
+    ctx.fillRect(margin + weaveW + 4, margin - beamThickness - 14, postWidth, weaveH + beamThickness * 2 + 18)
+    drawWoodGrain(ctx, margin + weaveW + 4, margin - beamThickness - 14, postWidth, weaveH + beamThickness * 2 + 18, false)
+  }
+
+  function drawHeddles(
+    ctx: CanvasRenderingContext2D,
+    margin: number, weaveW: number, visibleCols: number,
+    cellSize: number
+  ) {
+    // Small bars above the weaving that rise/fall
+    const heddleY = margin - 6
+    const heddleH = 4
+    const barWidth = Math.max(2, cellSize * 0.6)
+
+    // Ensure we have enough phases
+    while (heddlePhases.length < visibleCols) {
+      heddlePhases.push(Math.random() * Math.PI * 2)
+    }
+
+    ctx.fillStyle = 'rgba(140, 100, 50, 0.12)'
+    for (let col = 0; col < visibleCols; col++) {
+      const x = margin + col * cellSize + (cellSize - barWidth) / 2
+      const phase = heddlePhases[col]
+      const rise = Math.sin(time * 0.5 + phase) * 3
+      ctx.fillRect(x, heddleY + rise, barWidth, heddleH)
+    }
+  }
+
+  function drawTensionMeter(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, height: number, t: number
+  ) {
+    const meterW = 4
+    const fillH = height * t
+
+    // Track
+    ctx.fillStyle = 'rgba(80, 55, 30, 0.08)'
+    ctx.fillRect(x, y, meterW, height)
+
+    // Fill (warm color, brighter as tension rises)
+    const r = 120 + t * 80
+    const g = 80 + (1 - t) * 40
+    const b = 30
+    const alpha = 0.1 + t * 0.2
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`
+    ctx.fillRect(x, y + height - fillH, meterW, fillH)
+
+    // Label
+    ctx.save()
+    ctx.font = '7px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(180, 140, 100, 0.12)`
+    ctx.textAlign = 'center'
+    ctx.translate(x + meterW / 2, y - 6)
+    ctx.fillText('tension', 0, 0)
+    ctx.restore()
+  }
+
+  function drawIntersectionNodes(
+    ctx: CanvasRenderingContext2D,
+    memories: StoredMemory[],
+    margin: number, threadCount: number, threadSpacing: number,
+    visibleCols: number, cellSize: number
+  ) {
+    // Where two bright threads cross (both "over"), draw a small pearl
+    for (let col = 0; col < visibleCols; col += 3) { // Check every 3rd column for performance
+      const x = margin + col * cellSize + cellSize / 2
+      let prevOver = false
+      let prevBright = false
+      for (let t = 0; t < threadCount; t++) {
+        const mem = memories[t % memories.length]
+        const pattern = textToPattern(mem.originalText)
+        const patIdx = col % pattern.length
+        const isOver = pattern[patIdx] === 1
+        const isBright = mem.degradation < 0.3
+
+        if (isOver && isBright && prevOver && prevBright && t > 0) {
+          const y = margin + (t + 1) * threadSpacing
+          const prevY = margin + t * threadSpacing
+          const midY = (y + prevY) / 2
+
+          // Pearl node
+          ctx.beginPath()
+          ctx.arc(x, midY, 1.5, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(240, 220, 180, ${0.15 + Math.sin(time * 2 + col * 0.5) * 0.05})`
+          ctx.fill()
+        }
+        prevOver = isOver
+        prevBright = isBright
+      }
+    }
+  }
+
+  function drawFrayedEnds(
+    ctx: CanvasRenderingContext2D,
+    mem: StoredMemory,
+    x: number, y: number, cellSize: number,
+    threadIdx: number, colIdx: number
+  ) {
+    // Degraded threads get tiny fiber branches at gaps
+    if (mem.degradation < 0.4) return
+    const rng = seededRandom(threadIdx * 1000 + colIdx)
+    const fiberCount = 2 + Math.floor(rng() * 2)
+    const color = memoryToColor(mem)
+
+    ctx.save()
+    ctx.strokeStyle = colorToString({ ...color, a: color.a * 0.4 })
+    ctx.lineWidth = 0.5
+    for (let f = 0; f < fiberCount; f++) {
+      const angle = (rng() - 0.5) * Math.PI * 0.8
+      const len = 2 + rng() * 3
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
+  // --- Main render ---
 
   function render() {
     if (!canvas || !ctx || !active) return
@@ -96,21 +523,48 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
     // Weaving area
     const margin = 60
-    const weaveW = w - margin * 2
+    const weaveW = w - margin * 2 - 20 // Extra space for tension meter
     const weaveH = h - margin * 2
     const threadCount = Math.min(memories.length, 40)
     const threadSpacing = weaveH / (threadCount + 1)
     const cellSize = Math.max(4, Math.min(12, weaveW / 80))
 
-    // Frame
-    ctx.strokeStyle = 'rgba(120, 80, 40, 0.1)'
-    ctx.lineWidth = 2
-    ctx.strokeRect(margin - 10, margin - 10, weaveW + 20, weaveH + 20)
+    // Store for hit testing
+    threadMargin = margin
+    threadWeaveW = weaveW
+    threadYPositions = []
+    for (let t = 0; t < threadCount; t++) {
+      threadYPositions.push(margin + (t + 1) * threadSpacing)
+    }
+
+    // Tension calculation: more threads = more tension
+    const targetTension = Math.min(1, threadCount / 35)
+    tension += (targetTension - tension) * 0.02
+
+    // Shuttle speed affected by tension
+    const shuttleSpeed = 2 * (1 - tension * 0.5) // Tighter = slower
+
+    // Snap timer: occasional thread snap at high tension
+    if (tension > 0.7) {
+      snapTimer -= 0.016
+      if (snapTimer <= 0) {
+        snappedThread = Math.floor(Math.random() * threadCount)
+        snapTimer = 8 + Math.random() * 12 // 8-20s between snaps
+        // Re-appear after a short time
+        setTimeout(() => { snappedThread = -1 }, 400 + Math.random() * 400)
+      }
+    }
+
+    // Loom frame
+    drawLoomFrame(ctx, margin, weaveW, weaveH)
 
     // Progress the weaving
     weavingProgress += 0.3
     const maxCols = Math.floor(weaveW / cellSize)
     const visibleCols = Math.min(Math.floor(weavingProgress), maxCols)
+
+    // Heddles above weaving
+    drawHeddles(ctx, margin, weaveW, visibleCols, cellSize)
 
     // Draw warp threads (vertical, faint background)
     ctx.strokeStyle = 'rgba(120, 80, 40, 0.05)'
@@ -129,9 +583,22 @@ export function createLoomRoom(deps: LoomDeps): Room {
       const y = margin + (t + 1) * threadSpacing
       const pattern = textToPattern(mem.originalText)
       const color = memoryToColor(mem)
+      const isSelected = t === selectedThread
+      const isSnapped = t === snappedThread
+
+      if (isSnapped) continue // Thread temporarily invisible
+
+      // Glow for selected thread
+      if (isSelected) {
+        ctx.save()
+        ctx.shadowColor = colorToString({ ...color, a: 1 })
+        ctx.shadowBlur = 8
+      }
+
+      const drawAlpha = isSelected ? Math.min(1, color.a * 2) : color.a
 
       // Thread base line
-      ctx.strokeStyle = color
+      ctx.strokeStyle = colorToString({ ...color, a: drawAlpha })
       ctx.lineWidth = Math.max(1, cellSize * 0.4)
 
       for (let col = 0; col < visibleCols; col++) {
@@ -139,10 +606,22 @@ export function createLoomRoom(deps: LoomDeps): Room {
         const patIdx = col % pattern.length
         const isOver = pattern[patIdx] === 1
 
-        // Degraded memories have gaps
-        if (mem.degradation > 0.3 && Math.random() < mem.degradation * 0.3) {
-          continue // skip this cell — frayed thread
+        // Hue gradient along thread length
+        const hueShift = Math.sin(col * 0.05) * 8
+        const gradColor = { ...color, h: color.h + hueShift, a: drawAlpha }
+
+        // Degraded memories have gaps — draw frayed ends at gap boundaries
+        if (mem.degradation > 0.3) {
+          // Use deterministic check instead of random for stable rendering
+          const gapSeed = seededRandom(t * 10000 + col)
+          if (gapSeed() < mem.degradation * 0.3) {
+            // Draw frayed end at gap
+            drawFrayedEnds(ctx, mem, x, y, cellSize, t, col)
+            continue // skip this cell — frayed thread
+          }
         }
+
+        ctx.strokeStyle = colorToString(gradColor)
 
         if (isOver) {
           // Weft on top — draw a slightly raised segment
@@ -161,23 +640,47 @@ export function createLoomRoom(deps: LoomDeps): Room {
         }
       }
 
+      if (isSelected) {
+        ctx.restore()
+      }
+
       // Memory label at left
       if (t < 20) {
         ctx.font = '8px "Cormorant Garamond", serif'
-        ctx.fillStyle = color
+        ctx.fillStyle = colorToString(color)
         ctx.textAlign = 'right'
-        ctx.globalAlpha = 0.5
+        ctx.globalAlpha = isSelected ? 0.8 : 0.5
         const label = mem.currentText.slice(0, 15).trim()
         ctx.fillText(label, margin - 14, y + 3)
         ctx.globalAlpha = 1
       }
     }
 
+    // Intersection pearl nodes
+    drawIntersectionNodes(ctx, memories, margin, threadCount, threadSpacing, visibleCols, cellSize)
+
     // Shuttle animation
     if (visibleCols < maxCols) {
-      shuttleX += shuttleDir * 2
-      if (shuttleX > weaveW) { shuttleDir = -1; shuttleX = weaveW }
-      if (shuttleX < 0) { shuttleDir = 1; shuttleX = 0 }
+      shuttleX += shuttleDir * shuttleSpeed
+      if (shuttleX > weaveW) {
+        if (shuttleDir === 1) {
+          playShuttleClick()
+        }
+        shuttleDir = -1
+        shuttleX = weaveW
+      }
+      if (shuttleX < 0) {
+        if (shuttleDir === -1) {
+          playShuttleClick()
+        }
+        shuttleDir = 1
+        shuttleX = 0
+      }
+
+      // Track direction changes for audio
+      if (shuttleDir !== prevShuttleDir) {
+        prevShuttleDir = shuttleDir
+      }
 
       // Draw shuttle
       const sx = margin + Math.min(shuttleX, visibleCols * cellSize)
@@ -188,11 +691,17 @@ export function createLoomRoom(deps: LoomDeps): Room {
       ctx.fillRect(sx - 2, sy - 1, 4, 2)
     }
 
+    // Tension meter (right side)
+    const meterX = margin + weaveW + 14
+    const meterY = margin + 20
+    const meterH = weaveH - 40
+    drawTensionMeter(ctx, meterX, meterY, meterH, tension)
+
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 140, 100, 0.15)'
     ctx.textAlign = 'center'
-    ctx.fillText('the loom', w / 2, margin - 24)
+    ctx.fillText('the loom', w / 2, margin - 30)
 
     // Stats
     const intact = memories.filter(m => m.degradation < 0.3).length
@@ -238,6 +747,35 @@ export function createLoomRoom(deps: LoomDeps): Room {
     }
   }
 
+  // --- Hit testing ---
+
+  function hitTestThread(clientX: number, clientY: number): number {
+    const hitThreshold = 8
+    for (let t = 0; t < threadYPositions.length; t++) {
+      const ty = threadYPositions[t]
+      if (Math.abs(clientY - ty) < hitThreshold &&
+          clientX >= threadMargin && clientX <= threadMargin + threadWeaveW) {
+        return t
+      }
+    }
+    return -1
+  }
+
+  function hitTestSpool(clientX: number, clientY: number): number {
+    if (!canvas) return -1
+    const spoolW = 55
+    const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
+    const spoolStartX = (canvas.width - totalSpW) / 2
+    const spoolY = canvas.height - 30
+    for (let i = 0; i < spools.length; i++) {
+      const sx = spoolStartX + i * (spoolW + 12) + spoolW / 2
+      const dx = clientX - sx
+      const dy = clientY - spoolY
+      if (dx * dx + dy * dy < 400) return i
+    }
+    return -1
+  }
+
   return {
     name: 'loom',
     label: 'the loom',
@@ -248,6 +786,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
         width: 100%; height: 100%;
         pointer-events: auto;
         background: #000;
+        position: relative;
       `
 
       canvas = document.createElement('canvas')
@@ -256,40 +795,43 @@ export function createLoomRoom(deps: LoomDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Spool portal click + hover
+      // Click handler: spool portals + thread examine
       canvas.addEventListener('click', (e) => {
-        if (!deps.switchTo || !canvas) return
-        const spoolW = 55
-        const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
-        const spoolStartX = (canvas.width - totalSpW) / 2
-        const spoolY = canvas.height - 30
-        for (let i = 0; i < spools.length; i++) {
-          const sx = spoolStartX + i * (spoolW + 12) + spoolW / 2
-          const dx = e.clientX - sx
-          const dy = e.clientY - spoolY
-          if (dx * dx + dy * dy < 400) {
-            deps.switchTo(spools[i].room)
+        if (!canvas) return
+
+        // Check spools first
+        if (deps.switchTo) {
+          const spoolIdx = hitTestSpool(e.clientX, e.clientY)
+          if (spoolIdx >= 0) {
+            deps.switchTo(spools[spoolIdx].room)
             return
           }
+        }
+
+        // Check thread click
+        const memories = deps.getMemories()
+        const threadIdx = hitTestThread(e.clientX, e.clientY)
+        if (threadIdx >= 0 && threadIdx < memories.length) {
+          selectedThread = threadIdx
+          showExamineOverlay(memories[threadIdx])
+        } else {
+          // Click elsewhere dismisses
+          dismissExamineOverlay()
         }
       })
 
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
         hoveredSpool = -1
-        const spoolW = 55
-        const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
-        const spoolStartX = (canvas.width - totalSpW) / 2
-        const spoolY = canvas.height - 30
-        for (let i = 0; i < spools.length; i++) {
-          const sx = spoolStartX + i * (spoolW + 12) + spoolW / 2
-          const dx = e.clientX - sx
-          const dy = e.clientY - spoolY
-          if (dx * dx + dy * dy < 400) {
-            hoveredSpool = i
-            break
-          }
+        const spoolIdx = hitTestSpool(e.clientX, e.clientY)
+        if (spoolIdx >= 0) {
+          hoveredSpool = spoolIdx
+          canvas.style.cursor = 'pointer'
+          return
         }
+        // Check thread hover
+        const threadIdx = hitTestThread(e.clientX, e.clientY)
+        canvas.style.cursor = threadIdx >= 0 ? 'pointer' : 'default'
       })
 
       overlay.appendChild(canvas)
@@ -310,17 +852,26 @@ export function createLoomRoom(deps: LoomDeps): Room {
       weavingProgress = 0
       shuttleX = 0
       shuttleDir = 1
+      prevShuttleDir = 1
+      heddlePhases = []
+      snapTimer = 10 + Math.random() * 10
+      snappedThread = -1
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      dismissExamineOverlay()
+      destroyAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      dismissExamineOverlay()
+      destroyAudio()
       overlay?.remove()
     },
   }
