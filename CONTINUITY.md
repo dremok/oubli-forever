@@ -18,14 +18,17 @@ Oubli can have features of ALL types:
 - **Social**: Shared experiences, collective memory, multiplayer elements
 The system is NOT limited to art — it is a living world that contains everything.
 
-## Current State (Era 2: The Void)
+## Current State (Era 3: Consolidation)
 
 ### Architecture
 - **Stack**: Vite + TypeScript + vanilla (no framework yet)
-- **Rendering**: Canvas 2D for particle system
+- **Rendering**: Three.js WebGL (30K particles, custom GLSL shaders)
 - **Entry**: `index.html` → `src/main.ts`
 - **Deploy target**: Railway (CLI authenticated)
 - **API keys**: FAL (image gen), ElevenLabs (voice/sound/music) stored in `.env`
+- **Audio**: Shared AudioContext singleton (`src/sound/AudioBus.ts`)
+- **Navigation**: Bottom tab bar (`the void · the study · the instrument`)
+- **Room system**: Features are room-aware via `setRoomCheck()` pattern
 
 ### Features Built
 1. **The Threshold** (`src/threshold/ThresholdEngine.ts`)
@@ -249,7 +252,7 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 
 24. **Drift Navigation** (`src/drift/DriftEngine.ts`) — ERA 3
     - 5 states of consciousness: void, deep, burn, garden, archive
-    - Press 1-5 to drift between states
+    - Press 1-5 to drift between states (void room only)
     - Each drift reconfigures: particles (speed, size, gravity, hue, saturation),
       visuals (bloom, fog, background color, grain), sound (frequency, volume)
     - Transitions are slow cubic interpolations (~5 seconds)
@@ -257,6 +260,7 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - GLSL hue shift + saturation uniforms added to VoidRenderer
     - AmbientDrone gains frequency/volume multiplier methods
     - Architecturally: same 30K particles, same audio graph, different parameters
+    - Edge navigation removed in consolidation — replaced by tab bar
 
 25. **Enhanced Affordances**
     - Whispers now include poetic interaction hints woven into the void's voice
@@ -265,6 +269,28 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - Each key shows a poetic label: 'a' → "see as text", 'm' → "memories"
     - Memory Archive redesigned as discreet right-side panel (was centered modal)
     - Archive won't trigger while typing into forgetting machine
+
+26. **Consolidation** — ERA 3.5
+    - **Tab bar navigation**: Replaced obscure doorway/passage system with bottom tab bar
+      - `the void · the study · the instrument` — always visible, subtle
+      - Active room highlighted pink, others faint gold, 0.2→0.7 opacity on hover
+      - Persistent room indicator top-right (opacity 0.12)
+      - Cross-fade transitions preserved
+    - **Shared AudioContext** (`src/sound/AudioBus.ts`): All sound systems share one context
+      - AmbientDrone, TonalEngine, ResonanceMap, TheInstrument all use `getAudioContext()`
+      - Prevents browser context limit issues
+    - **Room-aware features**: Keyboard shortcuts only fire in correct room
+      - ForgettingMachine, DriftEngine, AsciiVoid, ParticleTrails, PresenceHeatmap,
+        VoiceOfAbsence, ResonanceMap — all guarded with `setRoomCheck()`
+      - MemoryArchive ('m') works in all rooms
+    - **Text overlay visibility**: Void-only overlays hide in other rooms
+      - Whispers pause/resume, ExtinctionWhispers/MemoryDrift/DigitalDecay/
+        DreamSynthesizer/GhostTyping all get `setVisible()` toggled on room change
+    - **Cross-room impact**: Actions in one room affect others
+      - Study: every 20+ new words → memory saved to journal + constellations + dreams
+      - Instrument: notes cause particle pulses and hue shifts in the void
+    - **MemoryConstellations performance**: Word sets cached per node, connections
+      recomputed only when memories added (was O(n²) per frame)
 
 ### Drift States
 | Key | Name | Particles | Colors | Sound | Vibe |
@@ -323,5 +349,5 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 3, Feature 25 — Drift Navigation + Enhanced Affordances*
-*"consciousness drifts between states like tides between shores"*
+*Last updated: Era 3.5, Feature 26 — Consolidation (tab nav, shared audio, room-aware features)*
+*"the house learns which rooms you visit and which you avoid"*
