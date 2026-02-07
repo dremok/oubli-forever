@@ -51,6 +51,14 @@ interface FilmFrame {
   frameSkips: number
 }
 
+interface Canister {
+  room: string
+  label: string
+  x: number
+  illumination: number
+  hovered: boolean
+}
+
 export function createProjectionRoom(deps: ProjectionDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -67,6 +75,21 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
   let leaderCount = 5
   let leaderTime = 0
   let projectorFlicker = 0
+
+  // Film canister shelf navigation
+  const canisters: Canister[] = [
+    { room: 'darkroom', label: 'I — darkroom', x: 0, illumination: 0, hovered: false },
+    { room: 'disintegration', label: 'II — disintegration', x: 0, illumination: 0, hovered: false },
+    { room: 'library', label: 'III — library', x: 0, illumination: 0, hovered: false },
+    { room: 'madeleine', label: 'IV — madeleine', x: 0, illumination: 0, hovered: false },
+  ]
+  const CANISTER_W = 30
+  const CANISTER_H = 40
+  const SWEEP_PERIOD = 8 // seconds between light sweeps
+  let navLeaderActive = false
+  let navLeaderTime = 0
+  let navLeaderTarget = ''
+  let navLeaderLabel = ''
 
   function buildFrames() {
     const memories = deps.getMemories()
@@ -188,6 +211,204 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     }
   }
 
+  function layoutCanisters(w: number) {
+    const totalSlots = canisters.length
+    const spacing = (w - 60) / (totalSlots + 1) // exclude sprocket strips
+    for (let i = 0; i < canisters.length; i++) {
+      canisters[i].x = 30 + spacing * (i + 1)
+    }
+  }
+
+  function getCanisterRect(c: Canister, h: number) {
+    const shelfY = h * 0.88
+    return {
+      x: c.x - CANISTER_W / 2,
+      y: shelfY - CANISTER_H - 4,
+      w: CANISTER_W,
+      h: CANISTER_H,
+    }
+  }
+
+  function hitTestCanisters(mx: number, my: number, h: number): Canister | null {
+    for (const c of canisters) {
+      const r = getCanisterRect(c, h)
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        return c
+      }
+    }
+    return null
+  }
+
+  function drawShelfAndCanisters(c: CanvasRenderingContext2D, w: number, h: number) {
+    const shelfY = h * 0.88
+
+    // Wooden shelf — thin dark brown plank
+    const shelfGrad = c.createLinearGradient(30, shelfY - 3, 30, shelfY + 5)
+    shelfGrad.addColorStop(0, 'rgba(60, 40, 22, 0.7)')
+    shelfGrad.addColorStop(0.5, 'rgba(45, 30, 15, 0.8)')
+    shelfGrad.addColorStop(1, 'rgba(30, 20, 10, 0.6)')
+    c.fillStyle = shelfGrad
+    c.fillRect(30, shelfY - 3, w - 60, 8)
+
+    // Shelf edge highlight
+    c.strokeStyle = 'rgba(90, 65, 35, 0.3)'
+    c.lineWidth = 0.5
+    c.beginPath()
+    c.moveTo(30, shelfY - 3)
+    c.lineTo(w - 30, shelfY - 3)
+    c.stroke()
+
+    // Light sweep across shelf
+    const sweepCycle = (time % SWEEP_PERIOD) / SWEEP_PERIOD
+    // Sweep moves left-to-right during the middle portion of the cycle
+    const sweepActive = sweepCycle > 0.3 && sweepCycle < 0.7
+    const sweepX = sweepActive
+      ? 30 + ((sweepCycle - 0.3) / 0.4) * (w - 60)
+      : -999
+    const sweepRadius = 80
+
+    if (sweepActive) {
+      // Draw the projector light leak on the shelf
+      const leakGrad = c.createRadialGradient(sweepX, shelfY - CANISTER_H / 2, 0, sweepX, shelfY - CANISTER_H / 2, sweepRadius)
+      leakGrad.addColorStop(0, 'rgba(255, 220, 140, 0.06)')
+      leakGrad.addColorStop(1, 'transparent')
+      c.fillStyle = leakGrad
+      c.beginPath()
+      c.arc(sweepX, shelfY - CANISTER_H / 2, sweepRadius, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // Draw each canister
+    for (const canister of canisters) {
+      const rect = getCanisterRect(canister, h)
+
+      // Update illumination from sweep
+      if (sweepActive) {
+        const dist = Math.abs(canister.x - sweepX)
+        if (dist < sweepRadius) {
+          const sweepIllum = (1 - dist / sweepRadius) * 0.45
+          canister.illumination = Math.max(canister.illumination, sweepIllum)
+        }
+      }
+      // Decay illumination
+      canister.illumination = Math.max(0, canister.illumination - 0.004)
+
+      // Determine label alpha
+      const baseAlpha = 0.04
+      const hoverBoost = canister.hovered ? 0.15 : 0
+      const labelAlpha = Math.min(0.55, baseAlpha + canister.illumination + hoverBoost)
+
+      // Canister body — rounded cylinder shape
+      const cGrad = c.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y)
+      const bodyAlpha = 0.15 + canister.illumination * 0.3 + (canister.hovered ? 0.1 : 0)
+      cGrad.addColorStop(0, `rgba(40, 35, 28, ${bodyAlpha * 0.6})`)
+      cGrad.addColorStop(0.3, `rgba(60, 50, 35, ${bodyAlpha})`)
+      cGrad.addColorStop(0.7, `rgba(55, 45, 32, ${bodyAlpha})`)
+      cGrad.addColorStop(1, `rgba(35, 30, 22, ${bodyAlpha * 0.6})`)
+
+      // Draw rounded rect (canister body)
+      const radius = 5
+      c.beginPath()
+      c.moveTo(rect.x + radius, rect.y)
+      c.lineTo(rect.x + rect.w - radius, rect.y)
+      c.arcTo(rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + radius, radius)
+      c.lineTo(rect.x + rect.w, rect.y + rect.h - radius)
+      c.arcTo(rect.x + rect.w, rect.y + rect.h, rect.x + rect.w - radius, rect.y + rect.h, radius)
+      c.lineTo(rect.x + radius, rect.y + rect.h)
+      c.arcTo(rect.x, rect.y + rect.h, rect.x, rect.y + rect.h - radius, radius)
+      c.lineTo(rect.x, rect.y + radius)
+      c.arcTo(rect.x, rect.y, rect.x + radius, rect.y, radius)
+      c.closePath()
+      c.fillStyle = cGrad
+      c.fill()
+
+      // Canister rim — top cap
+      c.fillStyle = `rgba(70, 58, 40, ${bodyAlpha * 0.8})`
+      c.beginPath()
+      c.ellipse(canister.x, rect.y + 2, CANISTER_W / 2, 4, 0, 0, Math.PI * 2)
+      c.fill()
+
+      // Label — small text on canister face
+      c.font = '6px monospace'
+      c.fillStyle = `rgba(200, 180, 140, ${labelAlpha})`
+      c.textAlign = 'center'
+      c.textBaseline = 'middle'
+
+      // Split label into lines if needed
+      const parts = canister.label.split(' — ')
+      if (parts.length === 2) {
+        c.fillText(parts[0], canister.x, rect.y + rect.h * 0.38)
+        c.font = '5px monospace'
+        c.fillText(parts[1], canister.x, rect.y + rect.h * 0.62)
+      } else {
+        c.fillText(canister.label, canister.x, rect.y + rect.h / 2)
+      }
+
+      // Hover glow
+      if (canister.hovered) {
+        const glow = c.createRadialGradient(canister.x, rect.y + rect.h / 2, 0, canister.x, rect.y + rect.h / 2, CANISTER_W)
+        glow.addColorStop(0, 'rgba(255, 220, 140, 0.04)')
+        glow.addColorStop(1, 'transparent')
+        c.fillStyle = glow
+        c.beginPath()
+        c.arc(canister.x, rect.y + rect.h / 2, CANISTER_W, 0, Math.PI * 2)
+        c.fill()
+      }
+    }
+
+    c.textBaseline = 'alphabetic'
+  }
+
+  function drawNavLeader(c: CanvasRenderingContext2D, w: number, h: number) {
+    navLeaderTime += 0.016
+
+    // Fullscreen countdown leader overlay before navigating
+    c.fillStyle = 'rgba(5, 4, 3, 0.92)'
+    c.fillRect(0, 0, w, h)
+
+    const count = Math.max(1, 3 - Math.floor(navLeaderTime))
+
+    // Countdown number
+    c.font = `bold ${Math.min(w * 0.25, 160)}px monospace`
+    c.fillStyle = `rgba(200, 180, 140, ${0.25 + Math.sin(navLeaderTime * 10) * 0.08})`
+    c.textAlign = 'center'
+    c.textBaseline = 'middle'
+    c.fillText(String(count), w / 2, h * 0.42)
+
+    // Room name
+    c.font = '14px "Cormorant Garamond", serif'
+    c.fillStyle = `rgba(200, 180, 140, ${0.12 + navLeaderTime * 0.06})`
+    c.fillText(`loading reel: ${navLeaderLabel}`, w / 2, h * 0.58)
+
+    // Sweep line
+    const sweepAngle = navLeaderTime * Math.PI * 3
+    c.strokeStyle = 'rgba(200, 180, 140, 0.1)'
+    c.lineWidth = 1.5
+    c.beginPath()
+    c.moveTo(w / 2, h / 2)
+    c.lineTo(
+      w / 2 + Math.cos(sweepAngle) * Math.min(w, h) * 0.3,
+      h / 2 + Math.sin(sweepAngle) * Math.min(w, h) * 0.3,
+    )
+    c.stroke()
+
+    // Circle
+    c.strokeStyle = 'rgba(200, 180, 140, 0.06)'
+    c.lineWidth = 1
+    c.beginPath()
+    c.arc(w / 2, h / 2, Math.min(w, h) * 0.28, 0, Math.PI * 2)
+    c.stroke()
+
+    c.textBaseline = 'alphabetic'
+
+    // Navigate after the countdown
+    if (navLeaderTime > 2.5) {
+      navLeaderActive = false
+      navLeaderTime = 0
+      if (deps.switchTo) deps.switchTo(navLeaderTarget)
+    }
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -204,6 +425,9 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     // Projector flicker
     projectorFlicker = 0.85 + Math.random() * 0.15
 
+    // Layout canisters for current canvas size
+    layoutCanisters(w)
+
     if (inLeader) {
       drawLeader(c, w, h)
       drawSprocketHoles(c, w, h)
@@ -213,6 +437,10 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
       c.textAlign = 'center'
       c.fillText('the projection room', w / 2, 25)
+
+      // Draw shelf even during leader
+      if (deps.switchTo) drawShelfAndCanisters(c, w, h)
+      if (navLeaderActive) drawNavLeader(c, w, h)
       return
     }
 
@@ -224,6 +452,10 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       c.font = '10px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.06)'
       c.fillText('the projector hums in the dark', w / 2, h / 2 + 20)
+
+      // Draw shelf even with no frames
+      if (deps.switchTo) drawShelfAndCanisters(c, w, h)
+      if (navLeaderActive) drawNavLeader(c, w, h)
       return
     }
 
@@ -371,6 +603,12 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     c.font = '8px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText(quotes[quoteIdx], w / 2, h - 4)
+
+    // Film canister shelf navigation
+    if (deps.switchTo) drawShelfAndCanisters(c, w, h)
+
+    // Nav leader overlay (countdown before navigating)
+    if (navLeaderActive) drawNavLeader(c, w, h)
   }
 
   return {
@@ -391,8 +629,26 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click to advance to next memory/reel
-      canvas.addEventListener('click', () => {
+      // Click handler — canisters or advance reel
+      canvas.addEventListener('click', (e) => {
+        if (!canvas || navLeaderActive) return
+        const rect = canvas.getBoundingClientRect()
+        const mx = (e.clientX - rect.left) * (canvas.width / rect.width)
+        const my = (e.clientY - rect.top) * (canvas.height / rect.height)
+
+        // Check canister hit first
+        if (deps.switchTo) {
+          const hit = hitTestCanisters(mx, my, canvas.height)
+          if (hit) {
+            navLeaderActive = true
+            navLeaderTime = 0
+            navLeaderTarget = hit.room
+            navLeaderLabel = hit.label
+            return
+          }
+        }
+
+        // Default: advance reel
         if (inLeader) {
           inLeader = false
           frameTime = 0
@@ -401,6 +657,22 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
           currentFrame++
           if (frames.length > 0 && currentFrame >= frames.length) currentFrame = 0
         }
+      })
+
+      // Mousemove handler for canister hover
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        const rect = canvas.getBoundingClientRect()
+        const mx = (e.clientX - rect.left) * (canvas.width / rect.width)
+        const my = (e.clientY - rect.top) * (canvas.height / rect.height)
+
+        let anyCursorChange = false
+        for (const c of canisters) {
+          const r = getCanisterRect(c, canvas.height)
+          c.hovered = mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h
+          if (c.hovered) anyCursorChange = true
+        }
+        canvas.style.cursor = anyCursorChange ? 'pointer' : 'default'
       })
 
       const onResize = () => {
@@ -412,43 +684,6 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
-
-      // Navigation portals — styled as film reel numbers at edges
-      if (deps.switchTo) {
-        const portalData = [
-          { name: 'darkroom', label: 'REEL I — darkroom', color: '200, 180, 140', pos: 'top: 50%; left: 6px; transform: translateY(-50%);' },
-          { name: 'disintegration', label: 'REEL II — disintegration', color: '200, 160, 100', pos: 'top: 50%; right: 6px; transform: translateY(-50%);' },
-          { name: 'library', label: 'REEL III — library', color: '180, 180, 200', pos: 'bottom: 50px; left: 32px;' },
-          { name: 'madeleine', label: 'REEL IV — madeleine', color: '220, 190, 130', pos: 'bottom: 50px; right: 32px;' },
-        ]
-        for (const p of portalData) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            position: absolute; ${p.pos}
-            pointer-events: auto; cursor: pointer;
-            font-family: monospace;
-            font-size: 7px; letter-spacing: 2px;
-            color: rgba(${p.color}, 0.06);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            padding: 6px 8px; z-index: 10;
-            writing-mode: ${p.pos.includes('left: 6px') || p.pos.includes('right: 6px') ? 'vertical-rl' : 'horizontal-tb'};
-          `
-          el.textContent = p.label
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.45)`
-            el.style.textShadow = `0 0 10px rgba(${p.color}, 0.15)`
-          })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.06)`
-            el.style.textShadow = 'none'
-          })
-          el.addEventListener('click', (e) => {
-            e.stopPropagation()
-            deps.switchTo!(p.name)
-          })
-          overlay.appendChild(el)
-        }
-      }
 
       return overlay
     },

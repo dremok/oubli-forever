@@ -52,12 +52,15 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
   let selectedQuake: Quake | null = null
   let fetchError = false
   let loading = true
-  let hoveredNav = -1
+  let hoveredStation = -1
+  let mouseX = 0
+  let mouseY = 0
 
-  const navPoints = [
-    { label: 'STN:AUT', room: 'automaton', xFrac: 0.03, yFrac: 0.97 },
-    { label: 'STN:AST', room: 'asteroids', xFrac: 0.5, yFrac: 0.97 },
-    { label: 'STN:WVN', room: 'weathervane', xFrac: 0.97, yFrac: 0.97 },
+  // Earthquake epicenter navigation stations — placed at real-world coordinates
+  const stations = [
+    { label: 'automaton', room: 'automaton', lat: 35.68, lon: 139.69, illumination: 0 },   // Tokyo — Ring of Fire
+    { label: 'asteroids', room: 'asteroids', lat: 21.3, lon: -89.5, illumination: 0 },      // Chicxulub crater
+    { label: 'weathervane', room: 'weathervane', lat: 64.13, lon: -21.9, illumination: 0 },  // Reykjavik, Iceland
   ]
 
   // Simple equirectangular projection
@@ -353,22 +356,103 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
       ctx.fillText('the earth is silent. (connection failed)', w / 2, h / 2)
     }
 
-    // Navigation portals — station codes on readout
+    // Earthquake epicenter navigation stations
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.4 : 0.08
-        ctx.font = '8px monospace'
-        ctx.fillStyle = `rgba(40, 255, 80, ${a})`
-        ctx.textAlign = np.xFrac < 0.3 ? 'left' : np.xFrac > 0.7 ? 'right' : 'center'
-        ctx.fillText(np.label, nx, ny)
+      // Update station illumination based on nearby quakes
+      for (const stn of stations) {
+        let nearbyEnergy = 0
+        for (const q of quakes) {
+          const dLat = q.lat - stn.lat
+          const dLon = q.lon - stn.lon
+          const dist = Math.sqrt(dLat * dLat + dLon * dLon)
+          if (dist < 15) {
+            // Closer + bigger quakes = more energy
+            const proximity = 1 - dist / 15
+            nearbyEnergy += proximity * (q.mag / 9) * 0.4
+          }
+        }
+        // Smoothly approach target illumination, decay when no quakes nearby
+        const target = Math.min(nearbyEnergy, 0.5)
+        stn.illumination += (target - stn.illumination) * 0.02
+        if (stn.illumination < 0.001) stn.illumination = 0
+      }
+
+      for (let i = 0; i < stations.length; i++) {
+        const stn = stations[i]
+        const [sx, sy] = latLonToScreen(stn.lat, stn.lon, w, h)
+        const hovered = hoveredStation === i
+        const illum = stn.illumination
+        const baseAlpha = 0.03
+        const alpha = hovered ? Math.max(illum, 0.35) : Math.max(illum, baseAlpha)
+
+        // Pulsing ring when illuminated
+        if (illum > 0.05) {
+          const ringPulse = Math.sin(time * 2 + i * 2.1) * 0.5 + 0.5
+          const ringR = 8 + ringPulse * 12
+          ctx.strokeStyle = `rgba(40, 255, 80, ${illum * 0.4 * ringPulse})`
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.arc(sx, sy, ringR, 0, Math.PI * 2)
+          ctx.stroke()
+
+          // Second outer ring, offset phase
+          const ringPulse2 = Math.sin(time * 2 + i * 2.1 + Math.PI) * 0.5 + 0.5
+          const ringR2 = 14 + ringPulse2 * 10
+          ctx.strokeStyle = `rgba(40, 255, 80, ${illum * 0.2 * ringPulse2})`
+          ctx.beginPath()
+          ctx.arc(sx, sy, ringR2, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+
+        // Mini seismograph waveform icon (3-4 tiny oscillating lines)
+        ctx.strokeStyle = `rgba(40, 255, 80, ${alpha})`
+        ctx.lineWidth = 1
+        const waveW = 16
+        const waveH = 6
+        for (let line = 0; line < 4; line++) {
+          ctx.beginPath()
+          const ly = sy - waveH + line * (waveH * 2 / 3)
+          for (let px = 0; px < waveW; px++) {
+            const freq = 3 + line * 1.5
+            const amp = (illum > 0.05 ? illum * 4 : 0.3) * (1 + Math.sin(line * 1.7))
+            const val = Math.sin((time * freq) + px * 0.8 + line * 1.2 + i * 3) * amp
+            const x = sx - waveW / 2 + px
+            const y = ly + val
+            if (px === 0) ctx.moveTo(x, y)
+            else ctx.lineTo(x, y)
+          }
+          ctx.stroke()
+        }
+
+        // Center dot
+        ctx.fillStyle = `rgba(40, 255, 80, ${alpha * 1.5})`
+        ctx.beginPath()
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Glow halo when illuminated or hovered
+        if (illum > 0.05 || hovered) {
+          const glowAlpha = hovered ? 0.12 : illum * 0.15
+          const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, 20)
+          glow.addColorStop(0, `rgba(40, 255, 80, ${glowAlpha})`)
+          glow.addColorStop(1, 'transparent')
+          ctx.fillStyle = glow
+          ctx.beginPath()
+          ctx.arc(sx, sy, 20, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        // Room label on hover
         if (hovered) {
-          ctx.strokeStyle = `rgba(40, 255, 80, 0.2)`
-          ctx.lineWidth = 0.5
-          ctx.strokeRect(nx - (np.xFrac < 0.3 ? 3 : np.xFrac > 0.7 ? 52 : 24), ny - 10, 55, 14)
+          ctx.font = '10px monospace'
+          ctx.fillStyle = `rgba(40, 255, 80, 0.6)`
+          ctx.textAlign = 'center'
+          ctx.fillText(stn.label, sx, sy - 18)
+          if (illum <= 0.05) {
+            ctx.font = '7px monospace'
+            ctx.fillStyle = `rgba(40, 255, 80, 0.25)`
+            ctx.fillText('(dormant)', sx, sy + 22)
+          }
         }
       }
     }
@@ -411,8 +495,23 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     if (!canvas) return
     const x = e.clientX
     const y = e.clientY
+    const w = canvas.width
+    const h = canvas.height
 
-    // Find closest quake
+    // Check epicenter station clicks FIRST
+    if (deps?.switchTo) {
+      for (const stn of stations) {
+        const [sx, sy] = latLonToScreen(stn.lat, stn.lon, w, h)
+        const dx = x - sx
+        const dy = y - sy
+        if (dx * dx + dy * dy < 625 && stn.illumination > 0.05) {  // 25px radius, must be illuminated
+          deps.switchTo(stn.room)
+          return
+        }
+      }
+    }
+
+    // Fall through to quake selection
     let closest: Quake | null = null
     let closestDist = Infinity
     for (const q of quakes) {
@@ -447,30 +546,22 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
 
       canvas.addEventListener('click', handleClick)
 
-      // Navigation portal click + hover
-      canvas.addEventListener('click', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            deps.switchTo(navPoints[i].room)
-            return
-          }
-        }
-      })
+      // Epicenter station hover detection
       canvas.addEventListener('mousemove', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            hoveredNav = i
+        if (!canvas) return
+        mouseX = e.clientX
+        mouseY = e.clientY
+        const w = canvas.width
+        const h = canvas.height
+        hoveredStation = -1
+        canvas.style.cursor = 'crosshair'
+        for (let i = 0; i < stations.length; i++) {
+          const [sx, sy] = latLonToScreen(stations[i].lat, stations[i].lon, w, h)
+          const dx = mouseX - sx
+          const dy = mouseY - sy
+          if (dx * dx + dy * dy < 625) {  // 25px radius
+            hoveredStation = i
+            canvas.style.cursor = 'pointer'
             break
           }
         }

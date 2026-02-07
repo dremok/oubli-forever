@@ -51,6 +51,17 @@ interface TapeLoop {
   particles: { x: number; y: number; char: string; alpha: number; vy: number }[]
 }
 
+interface TapeTear {
+  x: number
+  y: number
+  width: number
+  targetWidth: number
+  room: string
+  label: string
+  alpha: number
+  hovered: boolean
+}
+
 export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -65,6 +76,10 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
   let droneOsc: OscillatorNode | null = null
   let droneGain: GainNode | null = null
   let totalPasses = 0
+
+  let tapeTears: TapeTear[] = []
+  let mouseX = 0
+  let mouseY = 0
 
   function buildLoops() {
     const memories = deps.getMemories()
@@ -157,6 +172,132 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05)
       osc.stop(audioCtx.currentTime + 0.05)
     } catch {}
+  }
+
+  function initTears(w: number, h: number) {
+    const tapeY = h * 0.45 // matches displayY in render
+    tapeTears = [
+      { x: w * 0.18, y: tapeY - 8, width: 0, targetWidth: 60, room: 'furnace', label: 'FURNACE', alpha: 0, hovered: false },
+      { x: w * 0.50, y: tapeY - 8, width: 0, targetWidth: 70, room: 'projection', label: 'PROJECTION', alpha: 0, hovered: false },
+      { x: w * 0.82, y: tapeY - 8, width: 0, targetWidth: 60, room: 'radio', label: 'RADIO', alpha: 0, hovered: false },
+    ]
+  }
+
+  function updateTears() {
+    for (const tear of tapeTears) {
+      // Target width grows with total passes — tears widen as the tape degrades
+      tear.targetWidth = 50 + Math.min(totalPasses * 3, 80)
+      // Smoothly approach target
+      const approachRate = 0.01
+      tear.width += (tear.targetWidth - tear.width) * approachRate
+      // Alpha fades in as tear widens
+      tear.alpha = Math.min(1, tear.width / 30)
+    }
+  }
+
+  function hitTestTears(mx: number, my: number): TapeTear | null {
+    for (const tear of tapeTears) {
+      if (tear.width < 8) continue
+      const halfW = tear.width / 2
+      const halfH = 18
+      if (mx >= tear.x - halfW && mx <= tear.x + halfW &&
+          my >= tear.y - halfH && my <= tear.y + halfH) {
+        return tear
+      }
+    }
+    return null
+  }
+
+  function drawTears(c: CanvasRenderingContext2D, _w: number, _h: number) {
+    for (const tear of tapeTears) {
+      if (tear.width < 2) continue
+
+      const halfW = tear.width / 2
+      const tearH = 30
+      const topY = tear.y - tearH / 2
+      const hoverScale = tear.hovered ? 1.15 : 1
+      const drawHalfW = halfW * hoverScale
+
+      // Save context for clipping
+      c.save()
+
+      // Draw the tear gap — dark void through the tape
+      // Jagged edges using random offsets seeded by position
+      c.beginPath()
+      const jaggedSteps = 12
+      // Left jagged edge (top to bottom)
+      for (let i = 0; i <= jaggedSteps; i++) {
+        const t = i / jaggedSteps
+        const jag = Math.sin(tear.x * 13 + i * 7.3) * 4 + Math.sin(i * 3.1) * 2
+        const ex = tear.x - drawHalfW + jag
+        const ey = topY + t * tearH
+        if (i === 0) c.moveTo(ex, ey)
+        else c.lineTo(ex, ey)
+      }
+      // Right jagged edge (bottom to top)
+      for (let i = jaggedSteps; i >= 0; i--) {
+        const t = i / jaggedSteps
+        const jag = Math.sin(tear.x * 17 + i * 5.7) * 4 + Math.cos(i * 2.9) * 2
+        const ex = tear.x + drawHalfW + jag
+        const ey = topY + t * tearH
+        c.lineTo(ex, ey)
+      }
+      c.closePath()
+
+      // Fill the gap with deep black
+      c.fillStyle = 'rgba(2, 1, 0, 0.95)'
+      c.fill()
+
+      // Glow emanating from the tear
+      const glowAlpha = tear.alpha * (tear.hovered ? 0.35 : 0.12)
+      const glowGrad = c.createRadialGradient(
+        tear.x, tear.y, 0,
+        tear.x, tear.y, drawHalfW * 1.5
+      )
+      glowGrad.addColorStop(0, `rgba(255, 180, 80, ${glowAlpha})`)
+      glowGrad.addColorStop(0.6, `rgba(200, 120, 40, ${glowAlpha * 0.4})`)
+      glowGrad.addColorStop(1, 'rgba(200, 120, 40, 0)')
+      c.fillStyle = glowGrad
+      c.fillRect(tear.x - drawHalfW * 2, topY - 10, drawHalfW * 4, tearH + 20)
+
+      // Destination label glowing through the tear
+      const labelAlpha = tear.alpha * (tear.hovered ? 0.7 : 0.25)
+      c.font = `${tear.hovered ? 9 : 8}px monospace`
+      c.fillStyle = `rgba(255, 200, 100, ${labelAlpha})`
+      c.textAlign = 'center'
+      c.textBaseline = 'middle'
+
+      // Only show label if tear is wide enough
+      if (tear.width > 20) {
+        c.fillText(tear.label, tear.x, tear.y)
+      }
+
+      // Tape edge curling (small highlights along the jagged edges)
+      c.strokeStyle = `rgba(180, 150, 100, ${tear.alpha * (tear.hovered ? 0.2 : 0.08)})`
+      c.lineWidth = 0.5
+      c.beginPath()
+      for (let i = 0; i <= jaggedSteps; i++) {
+        const t = i / jaggedSteps
+        const jag = Math.sin(tear.x * 13 + i * 7.3) * 4 + Math.sin(i * 3.1) * 2
+        const ex = tear.x - drawHalfW + jag
+        const ey = topY + t * tearH
+        if (i === 0) c.moveTo(ex, ey)
+        else c.lineTo(ex, ey)
+      }
+      c.stroke()
+      c.beginPath()
+      for (let i = 0; i <= jaggedSteps; i++) {
+        const t = i / jaggedSteps
+        const jag = Math.sin(tear.x * 17 + i * 5.7) * 4 + Math.cos(i * 2.9) * 2
+        const ex = tear.x + drawHalfW + jag
+        const ey = topY + t * tearH
+        if (i === 0) c.moveTo(ex, ey)
+        else c.lineTo(ex, ey)
+      }
+      c.stroke()
+
+      c.restore()
+    }
   }
 
   function render() {
@@ -388,6 +529,23 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     c.font = '9px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(160, 130, 90, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText('each pass through the machine costs something', w / 2, h - 4)
+
+    // Tape tears — navigation through rips in the tape
+    if (deps.switchTo) {
+      updateTears()
+      // Update hover state from mouse position
+      for (const tear of tapeTears) {
+        tear.hovered = false
+      }
+      const hoveredTear = hitTestTears(mouseX, mouseY)
+      if (hoveredTear) {
+        hoveredTear.hovered = true
+        if (canvas) canvas.style.cursor = 'pointer'
+      } else {
+        if (canvas) canvas.style.cursor = 'default'
+      }
+      drawTears(c, w, h)
+    }
   }
 
   return {
@@ -408,56 +566,42 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click to advance to next loop
-      canvas.addEventListener('click', () => {
+      // Click: advance loop, or navigate if clicking a tape tear
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas!.getBoundingClientRect()
+        const cx = (e.clientX - rect.left) * (canvas!.width / rect.width)
+        const cy = (e.clientY - rect.top) * (canvas!.height / rect.height)
+        const tear = hitTestTears(cx, cy)
+        if (tear && deps.switchTo) {
+          deps.switchTo(tear.room)
+          return
+        }
+        // Default: advance to next loop
         activeLoop++
         if (loops.length > 0 && activeLoop >= loops.length) activeLoop = 0
+      })
+
+      // Track mouse for tear hover effects
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas!.getBoundingClientRect()
+        mouseX = (e.clientX - rect.left) * (canvas!.width / rect.width)
+        mouseY = (e.clientY - rect.top) * (canvas!.height / rect.height)
       })
 
       const onResize = () => {
         if (canvas) {
           canvas.width = window.innerWidth
           canvas.height = window.innerHeight
+          // Reposition tears for new dimensions
+          initTears(canvas.width, canvas.height)
         }
       }
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
 
-      // Navigation portals — styled as tape transport buttons
-      if (deps.switchTo) {
-        const portalData = [
-          { name: 'furnace', label: '⏪ FURNACE', color: '200, 140, 80', pos: 'bottom: 60px; left: 24px;' },
-          { name: 'radio', label: '⏩ RADIO', color: '160, 180, 200', pos: 'bottom: 60px; right: 24px;' },
-          { name: 'projection', label: '⏏ PROJECTION', color: '200, 180, 140', pos: 'bottom: 60px; left: 50%; transform: translateX(-50%);' },
-        ]
-        for (const p of portalData) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            position: absolute; ${p.pos}
-            pointer-events: auto; cursor: pointer;
-            font-family: monospace;
-            font-size: 8px; letter-spacing: 3px;
-            color: rgba(${p.color}, 0.06);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            padding: 6px 10px; z-index: 10;
-          `
-          el.textContent = p.label
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.45)`
-            el.style.textShadow = `0 0 12px rgba(${p.color}, 0.15)`
-          })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.06)`
-            el.style.textShadow = 'none'
-          })
-          el.addEventListener('click', (e) => {
-            e.stopPropagation()
-            deps.switchTo!(p.name)
-          })
-          overlay.appendChild(el)
-        }
-      }
+      // Initialize tape tears for navigation
+      initTears(canvas.width, canvas.height)
 
       return overlay
     },

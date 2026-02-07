@@ -48,6 +48,30 @@ interface Particle {
   hue: number
 }
 
+interface TendrilSegment {
+  x: number
+  y: number
+}
+
+interface NavTendril {
+  room: string
+  label: string
+  segments: TendrilSegment[]
+  targetSegments: TendrilSegment[]
+  maxSegments: number
+  growProgress: number      // 0..maxSegments, fractional for smooth growth
+  growSpeed: number
+  hovered: boolean
+  tipGlow: number           // 0..1, animated glow intensity
+  labelAlpha: number        // 0..1, fades in on hover
+  burstParticles: { x: number; y: number; vx: number; vy: number; alpha: number; size: number }[]
+  burstTriggered: boolean
+  visible: boolean
+  // colors
+  r: number; g: number; b: number
+  glowR: number; glowG: number; glowB: number
+}
+
 function hashCode(s: string): number {
   let h = 0
   for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
@@ -113,13 +137,246 @@ export function createRootsRoom(deps: RootsDeps): Room {
   let mouseX = 0
   let mouseY = 0
   let clickRipples: { x: number; y: number; radius: number; alpha: number }[] = []
-  let hoveredNav = -1
+  let hoveredTendril: string | null = null
 
-  // Navigation portals — root-like tendrils leading to connected rooms
-  const navPoints = [
-    { label: '⌁ the garden', room: 'garden', xFrac: 0.5, yFrac: 0.04 },
-    { label: '⌁ the ossuary', room: 'ossuary', xFrac: 0.92, yFrac: 0.96 },
-  ]
+  // Growing root tendril navigation
+  let tendrils: NavTendril[] = []
+  let tendrilsInitialized = false
+
+  function buildTendrilPath(
+    startX: number, startY: number,
+    endX: number, endY: number,
+    numSegments: number, curvature: number, seed: number
+  ): TendrilSegment[] {
+    const rng = seeded(seed)
+    const segments: TendrilSegment[] = []
+    for (let i = 0; i <= numSegments; i++) {
+      const t = i / numSegments
+      const baseX = startX + (endX - startX) * t
+      const baseY = startY + (endY - startY) * t
+      // Organic wandering via cumulative random offset
+      const wobbleX = Math.sin(t * Math.PI * 3 + seed) * curvature * (1 - Math.abs(t - 0.5) * 2)
+      const jitterX = (rng() - 0.5) * curvature * 0.4
+      segments.push({ x: baseX + wobbleX + jitterX, y: baseY })
+    }
+    return segments
+  }
+
+  function initTendrils(w: number, h: number) {
+    tendrils = []
+
+    // Garden tendril — grows UPWARD from surface line toward top
+    const gardenStartX = w * 0.45 + (hashCode('garden') % 60) - 30
+    const gardenPath = buildTendrilPath(
+      gardenStartX, 40,        // start at surface line
+      w * 0.5, -10,            // end above top edge
+      13, 25, 12345
+    )
+    tendrils.push({
+      room: 'garden',
+      label: 'the garden',
+      segments: [],
+      targetSegments: gardenPath,
+      maxSegments: gardenPath.length - 1,
+      growProgress: 0,
+      growSpeed: 0.02,
+      hovered: false,
+      tipGlow: 0.3,
+      labelAlpha: 0,
+      burstParticles: [],
+      burstTriggered: false,
+      visible: true,
+      r: 80, g: 110, b: 55,       // warm green, new growth
+      glowR: 140, glowG: 200, glowB: 90,
+    })
+
+    // Ossuary tendril — grows DOWNWARD from deep roots to bottom-right
+    const ossuaryStartX = w * 0.6
+    const ossuaryPath = buildTendrilPath(
+      ossuaryStartX, h * 0.7,     // start from deep root area
+      w - 30, h + 10,              // end at bottom-right corner
+      12, 30, 67890
+    )
+    tendrils.push({
+      room: 'ossuary',
+      label: 'the ossuary',
+      segments: [],
+      targetSegments: ossuaryPath,
+      maxSegments: ossuaryPath.length - 1,
+      growProgress: 0,
+      growSpeed: 0.015,
+      hovered: false,
+      tipGlow: 0.2,
+      labelAlpha: 0,
+      burstParticles: [],
+      burstTriggered: false,
+      visible: false,  // only shown when degraded memories exist
+      r: 220, g: 210, b: 190,     // bone-colored
+      glowR: 240, glowG: 230, glowB: 200,
+    })
+
+    tendrilsInitialized = true
+  }
+
+  function getTendrilTip(tendril: NavTendril): TendrilSegment | null {
+    if (tendril.segments.length < 2) return null
+    return tendril.segments[tendril.segments.length - 1]
+  }
+
+  function drawTendril(tendril: NavTendril, _w: number, _h: number) {
+    if (!ctx || tendril.segments.length < 2) return
+
+    const { r, g, b, glowR, glowG, glowB, hovered } = tendril
+    const baseAlpha = hovered ? 0.6 : 0.25
+    const thickness = hovered ? 1.8 : 1.2
+
+    // Draw segments
+    for (let i = 1; i < tendril.segments.length; i++) {
+      const prev = tendril.segments[i - 1]
+      const seg = tendril.segments[i]
+      const segT = i / tendril.maxSegments
+      const sway = Math.sin(time * 0.8 + i * 0.7) * 1.5 * segT
+      const sx = seg.x + sway
+      const sy = seg.y
+      const px = prev.x + Math.sin(time * 0.8 + (i - 1) * 0.7) * 1.5 * ((i - 1) / tendril.maxSegments)
+      const py = prev.y
+
+      // Thinner toward tip
+      const segThick = thickness * (1 - segT * 0.5)
+
+      ctx.beginPath()
+      ctx.moveTo(px, py)
+      const midX = (px + sx) / 2 + Math.sin(time * 0.3 + i) * 1.5
+      const midY = (py + sy) / 2
+      ctx.quadraticCurveTo(midX, midY, sx, sy)
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${baseAlpha * (0.5 + segT * 0.5)})`
+      ctx.lineWidth = segThick
+      ctx.lineCap = 'round'
+      ctx.stroke()
+
+      // Mycorrhizal nodes along ossuary tendril (bone phosphorescence)
+      if (tendril.room === 'ossuary' && i % 3 === 0 && i < tendril.segments.length - 1) {
+        const nodeGlow = 0.04 + Math.sin(time * 0.6 + i * 2) * 0.03
+        ctx.beginPath()
+        ctx.arc(sx, sy, 3 + Math.sin(time + i) * 1, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(${glowR}, ${glowG}, ${glowB}, ${nodeGlow})`
+        ctx.fill()
+      }
+    }
+
+    // Draw growing tip nodule
+    const tip = getTendrilTip(tendril)
+    if (tip) {
+      const tipSway = Math.sin(time * 0.8 + tendril.segments.length * 0.7) * 1.5
+      const tipX = tip.x + tipSway
+      const tipY = tip.y
+      const glowIntensity = tendril.tipGlow
+
+      // Outer glow
+      const outerSize = 6 + Math.sin(time * 1.2) * 2
+      ctx.beginPath()
+      ctx.arc(tipX, tipY, outerSize, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${glowR}, ${glowG}, ${glowB}, ${glowIntensity * 0.15})`
+      ctx.fill()
+
+      // Inner nodule
+      ctx.beginPath()
+      ctx.arc(tipX, tipY, 3, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${glowR}, ${glowG}, ${glowB}, ${glowIntensity * 0.5})`
+      ctx.fill()
+
+      // Label near tip (fades in on hover)
+      if (tendril.labelAlpha > 0.01) {
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${tendril.labelAlpha})`
+        if (tendril.room === 'garden') {
+          ctx.textAlign = 'left'
+          ctx.fillText(tendril.label, tipX + 14, tipY + 4)
+        } else {
+          ctx.textAlign = 'right'
+          ctx.fillText(tendril.label, tipX - 14, tipY + 4)
+        }
+      }
+    }
+
+    // Draw burst particles (garden breakthrough)
+    for (let i = tendril.burstParticles.length - 1; i >= 0; i--) {
+      const bp = tendril.burstParticles[i]
+      bp.x += bp.vx
+      bp.y += bp.vy
+      bp.alpha -= 0.008
+      if (bp.alpha <= 0) {
+        tendril.burstParticles.splice(i, 1)
+        continue
+      }
+      ctx.beginPath()
+      ctx.arc(bp.x, bp.y, bp.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${glowR}, ${glowG}, ${glowB}, ${bp.alpha})`
+      ctx.fill()
+    }
+  }
+
+  function updateTendrils(memories: StoredMemory[]) {
+    for (const tendril of tendrils) {
+      // Ossuary only visible when degraded memories exist
+      if (tendril.room === 'ossuary') {
+        tendril.visible = !!(deps.onDeeper && memories.some(m => m.degradation > 0.4))
+      }
+
+      if (!tendril.visible) {
+        tendril.growProgress = 0
+        tendril.segments = []
+        continue
+      }
+
+      // Grow
+      if (tendril.growProgress < tendril.maxSegments) {
+        tendril.growProgress = Math.min(tendril.growProgress + tendril.growSpeed, tendril.maxSegments)
+      }
+
+      // Build current visible segments from growProgress
+      const fullSegs = Math.floor(tendril.growProgress)
+      const frac = tendril.growProgress - fullSegs
+      tendril.segments = tendril.targetSegments.slice(0, fullSegs + 1)
+
+      // Add partial segment for smooth growth
+      if (fullSegs < tendril.maxSegments && frac > 0) {
+        const from = tendril.targetSegments[fullSegs]
+        const to = tendril.targetSegments[fullSegs + 1]
+        if (from && to) {
+          tendril.segments.push({
+            x: from.x + (to.x - from.x) * frac,
+            y: from.y + (to.y - from.y) * frac,
+          })
+        }
+      }
+
+      // Garden burst when fully grown and reaching top
+      if (tendril.room === 'garden' && tendril.growProgress >= tendril.maxSegments && !tendril.burstTriggered) {
+        tendril.burstTriggered = true
+        const tip = getTendrilTip(tendril)
+        if (tip) {
+          for (let i = 0; i < 15; i++) {
+            const angle = Math.random() * Math.PI * 2
+            const speed = 0.5 + Math.random() * 1.5
+            tendril.burstParticles.push({
+              x: tip.x, y: tip.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed - 0.5,
+              alpha: 0.4 + Math.random() * 0.3,
+              size: 1 + Math.random() * 2,
+            })
+          }
+        }
+      }
+
+      // Animate tipGlow and labelAlpha
+      const targetGlow = tendril.hovered ? 0.9 : 0.3
+      tendril.tipGlow += (targetGlow - tendril.tipGlow) * 0.08
+      const targetLabel = tendril.hovered ? 0.45 : 0
+      tendril.labelAlpha += (targetLabel - tendril.labelAlpha) * 0.1
+    }
+  }
 
   function drawRoot(node: RootNode, parentX: number, parentY: number) {
     if (!ctx) return
@@ -320,24 +577,12 @@ export function createRootsRoom(deps: RootsDeps): Room {
       12, h - 12
     )
 
-    // Navigation portals
+    // Growing root tendril navigation
     if (deps.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.35 : 0.07
-        ctx.font = '9px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(120, 90, 50, ${a})`
-        ctx.textAlign = np.xFrac < 0.5 ? 'left' : np.xFrac > 0.6 ? 'right' : 'center'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = 'rgba(80, 120, 60, 0.15)'
-          ctx.beginPath()
-          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
-          ctx.fill()
-        }
+      if (!tendrilsInitialized) initTendrils(w, h)
+      updateTendrils(memories)
+      for (const tendril of tendrils) {
+        if (tendril.visible) drawTendril(tendril, w, h)
       }
     }
   }
@@ -353,7 +598,7 @@ export function createRootsRoom(deps: RootsDeps): Room {
         width: 100%; height: 100%;
         pointer-events: auto;
         background: #000;
-        cursor: pointer;
+        cursor: default;
       `
 
       canvas = document.createElement('canvas')
@@ -365,33 +610,43 @@ export function createRootsRoom(deps: RootsDeps): Room {
       canvas.addEventListener('mousemove', (e) => {
         mouseX = e.clientX
         mouseY = e.clientY
-        // Portal hover detection
-        if (deps.switchTo && canvas) {
-          hoveredNav = -1
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              hoveredNav = i
-              break
+        // Tendril tip hover detection
+        hoveredTendril = null
+        if (deps.switchTo) {
+          for (const tendril of tendrils) {
+            if (!tendril.visible) { tendril.hovered = false; continue }
+            const tip = getTendrilTip(tendril)
+            if (!tip) { tendril.hovered = false; continue }
+            const tipSway = Math.sin(time * 0.8 + tendril.segments.length * 0.7) * 1.5
+            const dx = e.clientX - (tip.x + tipSway)
+            const dy = e.clientY - tip.y
+            if (dx * dx + dy * dy < 40 * 40) {
+              tendril.hovered = true
+              hoveredTendril = tendril.room
+            } else {
+              tendril.hovered = false
             }
           }
         }
+        // Update cursor
+        if (canvas) {
+          canvas.style.cursor = hoveredTendril ? 'pointer' : 'default'
+        }
       })
 
-      // Click: portal nav, ascend, descend, or create tremor ripple
+      // Click: tendril nav, ascend, descend, or create tremor ripple
       canvas.addEventListener('click', (e) => {
-        // Check portals first
-        if (deps.switchTo && canvas) {
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              deps.switchTo(navPoints[i].room)
+        // Check tendril tips first
+        if (deps.switchTo) {
+          for (const tendril of tendrils) {
+            if (!tendril.visible || !tendril.hovered) continue
+            const tip = getTendrilTip(tendril)
+            if (!tip) continue
+            const tipSway = Math.sin(time * 0.8 + tendril.segments.length * 0.7) * 1.5
+            const dx = e.clientX - (tip.x + tipSway)
+            const dy = e.clientY - tip.y
+            if (dx * dx + dy * dy < 40 * 40) {
+              deps.switchTo(tendril.room)
               return
             }
           }
@@ -422,6 +677,7 @@ export function createRootsRoom(deps: RootsDeps): Room {
         if (canvas) {
           canvas.width = window.innerWidth
           canvas.height = window.innerHeight
+          tendrilsInitialized = false
         }
       }
       window.addEventListener('resize', onResize)
@@ -432,6 +688,8 @@ export function createRootsRoom(deps: RootsDeps): Room {
     activate() {
       active = true
       particles = []
+      tendrilsInitialized = false
+      tendrils = []
       render()
     },
 

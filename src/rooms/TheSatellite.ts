@@ -61,14 +61,17 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
   let receivedMessage: { text: string; alpha: number } | null = null
   let fetchInterval: number | null = null
   let totalReceived = 0
-  let hoveredNav = -1
+  let hoveredLandmark = -1
 
-  const navPoints = [
-    { label: 'observatory', room: 'observatory', xFrac: 0.06, yFrac: 0.08 },
-    { label: 'radio', room: 'radio', xFrac: 0.94, yFrac: 0.08 },
-    { label: 'lighthouse', room: 'lighthouse', xFrac: 0.06, yFrac: 0.92 },
-    { label: 'glacarium', room: 'glacarium', xFrac: 0.94, yFrac: 0.55 },
-    { label: 'asteroids', room: 'asteroids', xFrac: 0.5, yFrac: 0.05 },
+  const landmarks: {
+    room: string; label: string; lat: number; lon: number;
+    illumination: number; lastIlluminated: number
+  }[] = [
+    { room: 'observatory', label: 'Mauna Kea', lat: 19.82, lon: -155.47, illumination: 0, lastIlluminated: 0 },
+    { room: 'radio', label: 'Arecibo', lat: 18.35, lon: -66.75, illumination: 0, lastIlluminated: 0 },
+    { room: 'lighthouse', label: 'Cape Hatteras', lat: 35.25, lon: -75.53, illumination: 0, lastIlluminated: 0 },
+    { room: 'glacarium', label: 'South Pole', lat: -90, lon: 0, illumination: 0, lastIlluminated: 0 },
+    { room: 'asteroids', label: 'Chicxulub', lat: 21.3, lon: -89.5, illumination: 0, lastIlluminated: 0 },
   ]
 
   // Simple equirectangular projection
@@ -135,18 +138,20 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     return Math.abs(hash)
   }
 
+  function degDist(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const dLat = lat1 - lat2
+    const dLon = lon1 - lon2
+    const adjustedDLon = Math.abs(dLon) > 180 ? dLon + (dLon > 0 ? -360 : 360) : dLon
+    return Math.sqrt(dLat * dLat + adjustedDLon * adjustedDLon)
+  }
+
   function checkReception() {
     if (!canvas) return
 
     for (const beacon of beacons) {
       if (beacon.received) continue
 
-      // Distance in degrees (simplified)
-      const dLat = issLat - beacon.lat
-      const dLon = issLon - beacon.lon
-      // Wrap longitude
-      const adjustedDLon = Math.abs(dLon) > 180 ? dLon + (dLon > 0 ? -360 : 360) : dLon
-      const dist = Math.sqrt(dLat * dLat + adjustedDLon * adjustedDLon)
+      const dist = degDist(issLat, issLon, beacon.lat, beacon.lon)
 
       // ISS "reception radius" — ~20 degrees (roughly its visible footprint)
       if (dist < 20) {
@@ -161,7 +166,108 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
         }
       }
     }
+
+    // Illuminate landmarks within ISS range
+    for (const lm of landmarks) {
+      const dist = degDist(issLat, issLon, lm.lat, lm.lon)
+      if (dist < 25) {
+        lm.illumination = 1.0
+        lm.lastIlluminated = time
+      }
+    }
   }
+
+  // --- Landmark icon drawing functions (small canvas shapes, 2-4px scale) ---
+
+  function drawDomeIcon(c: CanvasRenderingContext2D, x: number, y: number, alpha: number) {
+    // Observatory dome — small hemisphere on a base
+    c.strokeStyle = `rgba(255, 215, 0, ${alpha})`
+    c.lineWidth = 1
+    c.beginPath()
+    c.arc(x, y - 1, 3, Math.PI, 0) // dome arc
+    c.lineTo(x + 3, y + 2)
+    c.lineTo(x - 3, y + 2)
+    c.closePath()
+    c.stroke()
+    // Slit line
+    c.beginPath()
+    c.moveTo(x, y - 4)
+    c.lineTo(x, y - 1)
+    c.stroke()
+  }
+
+  function drawDishIcon(c: CanvasRenderingContext2D, x: number, y: number, alpha: number) {
+    // Radio dish — parabolic curve on a stem
+    c.strokeStyle = `rgba(255, 215, 0, ${alpha})`
+    c.lineWidth = 1
+    c.beginPath()
+    c.moveTo(x - 3, y - 3)
+    c.quadraticCurveTo(x, y + 1, x + 3, y - 3) // dish curve
+    c.stroke()
+    // Support stem
+    c.beginPath()
+    c.moveTo(x, y - 1)
+    c.lineTo(x, y + 3)
+    c.stroke()
+    // Feed point
+    c.beginPath()
+    c.arc(x, y - 3, 0.8, 0, Math.PI * 2)
+    c.stroke()
+  }
+
+  function drawTowerIcon(c: CanvasRenderingContext2D, x: number, y: number, alpha: number) {
+    // Lighthouse tower — narrow trapezoid with a light cap
+    c.strokeStyle = `rgba(255, 215, 0, ${alpha})`
+    c.lineWidth = 1
+    c.beginPath()
+    c.moveTo(x - 1, y - 4) // top left
+    c.lineTo(x + 1, y - 4) // top right
+    c.lineTo(x + 2, y + 3) // bottom right
+    c.lineTo(x - 2, y + 3) // bottom left
+    c.closePath()
+    c.stroke()
+    // Light cap
+    c.fillStyle = `rgba(255, 215, 0, ${alpha * 0.8})`
+    c.beginPath()
+    c.arc(x, y - 4, 1.2, 0, Math.PI * 2)
+    c.fill()
+  }
+
+  function drawSnowflakeIcon(c: CanvasRenderingContext2D, x: number, y: number, alpha: number) {
+    // Snowflake — six short lines from center
+    c.strokeStyle = `rgba(255, 215, 0, ${alpha})`
+    c.lineWidth = 0.8
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2
+      c.beginPath()
+      c.moveTo(x, y)
+      c.lineTo(x + Math.cos(angle) * 3.5, y + Math.sin(angle) * 3.5)
+      c.stroke()
+      // Small tick marks at the end of each arm
+      const endX = x + Math.cos(angle) * 3.5
+      const endY = y + Math.sin(angle) * 3.5
+      const perpAngle = angle + Math.PI / 2
+      c.beginPath()
+      c.moveTo(endX + Math.cos(perpAngle) * 1, endY + Math.sin(perpAngle) * 1)
+      c.lineTo(endX - Math.cos(perpAngle) * 1, endY - Math.sin(perpAngle) * 1)
+      c.stroke()
+    }
+  }
+
+  function drawCraterIcon(c: CanvasRenderingContext2D, x: number, y: number, alpha: number) {
+    // Crater — ellipse with inner ring
+    c.strokeStyle = `rgba(255, 215, 0, ${alpha})`
+    c.lineWidth = 0.8
+    c.beginPath()
+    c.ellipse(x, y, 4, 2.5, 0, 0, Math.PI * 2)
+    c.stroke()
+    // Inner rim
+    c.beginPath()
+    c.ellipse(x, y + 0.5, 2, 1.2, 0, 0, Math.PI * 2)
+    c.stroke()
+  }
+
+  const landmarkIconDrawers = [drawDomeIcon, drawDishIcon, drawTowerIcon, drawSnowflakeIcon, drawCraterIcon]
 
   // Simplified continent outlines (major coastline points)
   const CONTINENTS: number[][][] = [
@@ -442,24 +548,69 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       c.fillText('type something into the void to create a beacon', w / 2, h * 0.88 + 20)
     }
 
-    // Navigation constellation points
+    // Geographic landmark navigation
     if (deps.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.35 : 0.06
-        // Star marker
-        c.beginPath()
-        c.arc(nx, ny, hovered ? 5 : 3, 0, Math.PI * 2)
-        c.fillStyle = `rgba(255, 215, 0, ${a})`
-        c.fill()
-        // Label
-        c.font = '7px monospace'
-        c.fillStyle = `rgba(255, 215, 0, ${hovered ? 0.3 : 0.04})`
-        c.textAlign = 'center'
-        c.fillText(np.label, nx, ny + 14)
+      for (let i = 0; i < landmarks.length; i++) {
+        const lm = landmarks[i]
+
+        // Decay illumination over ~30 seconds
+        if (lm.lastIlluminated > 0 && time - lm.lastIlluminated > 0) {
+          lm.illumination = Math.max(0, 1 - (time - lm.lastIlluminated) / 30)
+        }
+
+        const p = project(lm.lat, lm.lon, w, h)
+        const illum = lm.illumination
+        const hovered = hoveredLandmark === i && illum > 0.1
+
+        // Base alpha: barely visible when not illuminated, bright when illuminated
+        const baseAlpha = 0.03 + illum * 0.4
+        const iconAlpha = hovered ? Math.min(baseAlpha * 1.6, 0.7) : baseAlpha
+
+        // Golden pulse ring when illuminated
+        if (illum > 0.1) {
+          const pulsePhase = (time - lm.lastIlluminated) * 3
+          const pulseRadius = 8 + Math.sin(pulsePhase) * 3
+          const pulseAlpha = illum * 0.2
+          c.strokeStyle = `rgba(255, 215, 0, ${pulseAlpha})`
+          c.lineWidth = 0.8
+          c.beginPath()
+          c.arc(p.x, p.y, pulseRadius, 0, Math.PI * 2)
+          c.stroke()
+
+          // Expanding ring burst when freshly illuminated
+          if (illum > 0.8) {
+            const burstT = 1 - illum // 0 at fresh, grows to ~0.2
+            const burstRadius = 12 + burstT * 40
+            c.strokeStyle = `rgba(255, 215, 0, ${(1 - burstT * 5) * 0.15})`
+            c.lineWidth = 0.5
+            c.beginPath()
+            c.arc(p.x, p.y, burstRadius, 0, Math.PI * 2)
+            c.stroke()
+          }
+        }
+
+        // Hovered glow
+        if (hovered) {
+          const glowGrad = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, 18)
+          glowGrad.addColorStop(0, `rgba(255, 215, 0, ${illum * 0.12})`)
+          glowGrad.addColorStop(1, 'transparent')
+          c.fillStyle = glowGrad
+          c.beginPath()
+          c.arc(p.x, p.y, 18, 0, Math.PI * 2)
+          c.fill()
+        }
+
+        // Draw the icon shape
+        landmarkIconDrawers[i](c, p.x, p.y, iconAlpha)
+
+        // Label (fades with illumination)
+        const labelAlpha = hovered ? Math.min(illum * 0.5, 0.5) : illum * 0.2
+        if (labelAlpha > 0.01) {
+          c.font = '7px monospace'
+          c.fillStyle = `rgba(255, 215, 0, ${labelAlpha})`
+          c.textAlign = 'center'
+          c.fillText(lm.label, p.x, p.y + 12)
+        }
       }
     }
 
@@ -488,34 +639,42 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Navigation clicks + hover
+      // Landmark click navigation (only illuminated landmarks are clickable)
       canvas.addEventListener('click', (e) => {
         if (!deps.switchTo || !canvas) return
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 400) {
-            deps.switchTo(navPoints[i].room)
+        const w = canvas.width
+        const h = canvas.height
+        for (let i = 0; i < landmarks.length; i++) {
+          const lm = landmarks[i]
+          if (lm.illumination < 0.1) continue
+          const p = project(lm.lat, lm.lon, w, h)
+          const dx = e.clientX - p.x
+          const dy = e.clientY - p.y
+          if (dx * dx + dy * dy < 625) { // 25px radius
+            deps.switchTo(lm.room)
             return
           }
         }
       })
 
+      // Landmark hover detection
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 400) {
-            hoveredNav = i
+        const w = canvas.width
+        const h = canvas.height
+        hoveredLandmark = -1
+        for (let i = 0; i < landmarks.length; i++) {
+          const lm = landmarks[i]
+          if (lm.illumination < 0.1) continue
+          const p = project(lm.lat, lm.lon, w, h)
+          const dx = e.clientX - p.x
+          const dy = e.clientY - p.y
+          if (dx * dx + dy * dy < 625) { // 25px radius
+            hoveredLandmark = i
             break
           }
         }
+        canvas.style.cursor = hoveredLandmark >= 0 ? 'pointer' : 'default'
       })
 
       const onResize = () => {

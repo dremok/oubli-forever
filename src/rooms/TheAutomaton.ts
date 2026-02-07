@@ -57,12 +57,31 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   let speed = 8 // frames between updates (lower = faster)
   let frameCount = 0
   let paused = false
-  let hoveredNav = -1
+  let hoveredPortal = -1
 
-  const navPoints = [
-    { label: '\u2699 terrarium', room: 'terrarium', xFrac: 0.07, yFrac: 0.06 },
-    { label: '\u2699 seismograph', room: 'seismograph', xFrac: 0.93, yFrac: 0.06 },
-    { label: '\u2699 pendulum', room: 'pendulum', xFrac: 0.07, yFrac: 0.94 },
+  interface PortalZone {
+    room: string
+    label: string
+    edgeRow: number  // grid row near edge (set in initGrid)
+    edgeCol: number  // grid col near edge (set in initGrid)
+    cells: [number, number][]  // the oscillator cells (row, col)
+    active: boolean
+    stableTime: number  // frames since pattern became stable
+    glowColor: string
+    lastSnapshot: string  // serialized cell states to detect stability
+    snapshotAge: number   // how many generations the snapshot has been stable
+  }
+
+  const portalZones: PortalZone[] = [
+    { room: 'terrarium', label: 'terrarium', edgeRow: 0, edgeCol: 0,
+      cells: [], active: false, stableTime: 0,
+      glowColor: 'rgba(80, 220, 120, ', lastSnapshot: '', snapshotAge: 0 },
+    { room: 'seismograph', label: 'seismograph', edgeRow: 0, edgeCol: 0,
+      cells: [], active: false, stableTime: 0,
+      glowColor: 'rgba(60, 200, 180, ', lastSnapshot: '', snapshotAge: 0 },
+    { room: 'pendulum', label: 'pendulum', edgeRow: 0, edgeCol: 0,
+      cells: [], active: false, stableTime: 0,
+      glowColor: 'rgba(160, 100, 240, ', lastSnapshot: '', snapshotAge: 0 },
   ]
 
   let cols = 0
@@ -78,8 +97,166 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     deathCount = Array.from({ length: rows }, () => Array(cols).fill(0))
     generation = 0
 
+    // Position portal zones near edges
+    // terrarium — top-left
+    portalZones[0].edgeRow = 4
+    portalZones[0].edgeCol = 6
+    // seismograph — top-right
+    portalZones[1].edgeRow = 4
+    portalZones[1].edgeCol = cols - 10
+    // pendulum — bottom-left
+    portalZones[2].edgeRow = rows - 8
+    portalZones[2].edgeCol = 6
+
+    // Reset portal state
+    for (const pz of portalZones) {
+      pz.active = false
+      pz.stableTime = 0
+      pz.cells = []
+      pz.lastSnapshot = ''
+      pz.snapshotAge = 0
+    }
+
     // Seed with a few random patterns
     seedRandom(0.08)
+
+    // Seed initial portal organisms
+    seedAllPortals()
+  }
+
+  /** Place a small oscillator pattern in the portal zone */
+  function seedPortal(pz: PortalZone) {
+    const r = pz.edgeRow
+    const c = pz.edgeCol
+    // Clear a small area around the portal first
+    for (let dr = -2; dr <= 4; dr++) {
+      for (let dc = -2; dc <= 5; dc++) {
+        const nr = (r + dr + rows) % rows
+        const nc = (c + dc + cols) % cols
+        grid[nr][nc] = 0
+      }
+    }
+    // Alternate between beacon and blinker
+    if (Math.random() < 0.5) {
+      // Beacon (period 2): two 2x2 blocks offset diagonally
+      const beaconCells: [number, number][] = [
+        [r, c], [r, c + 1], [r + 1, c], [r + 1, c + 1],
+        [r + 2, c + 2], [r + 2, c + 3], [r + 3, c + 2], [r + 3, c + 3],
+      ]
+      pz.cells = beaconCells.map(([br, bc]) => [(br + rows) % rows, (bc + cols) % cols] as [number, number])
+    } else {
+      // Blinker (period 2): three cells in a line
+      const blinkerCells: [number, number][] = [
+        [r, c + 1], [r + 1, c + 1], [r + 2, c + 1],
+      ]
+      pz.cells = blinkerCells.map(([br, bc]) => [(br + rows) % rows, (bc + cols) % cols] as [number, number])
+    }
+    // Place the cells on the grid
+    for (const [pr, pc] of pz.cells) {
+      grid[pr][pc] = generation + 1
+    }
+    pz.active = false
+    pz.stableTime = 0
+    pz.lastSnapshot = ''
+    pz.snapshotAge = 0
+  }
+
+  function seedAllPortals() {
+    for (const pz of portalZones) {
+      seedPortal(pz)
+    }
+  }
+
+  /** Snapshot the cell states in a portal zone's neighborhood to detect oscillator stability */
+  function getPortalSnapshot(pz: PortalZone): string {
+    const r = pz.edgeRow
+    const c = pz.edgeCol
+    let s = ''
+    for (let dr = -2; dr <= 5; dr++) {
+      for (let dc = -2; dc <= 6; dc++) {
+        const nr = (r + dr + rows) % rows
+        const nc = (c + dc + cols) % cols
+        s += grid[nr][nc] > 0 ? '1' : '0'
+      }
+    }
+    return s
+  }
+
+  /** Check portal zone stability and re-seed if destroyed */
+  function updatePortals() {
+    for (const pz of portalZones) {
+      const snap = getPortalSnapshot(pz)
+
+      // Check if any cells are alive in the zone area
+      let aliveCount = 0
+      const r = pz.edgeRow
+      const c = pz.edgeCol
+      for (let dr = -1; dr <= 4; dr++) {
+        for (let dc = -1; dc <= 5; dc++) {
+          const nr = (r + dr + rows) % rows
+          const nc = (c + dc + cols) % cols
+          if (grid[nr][nc] > 0) aliveCount++
+        }
+      }
+
+      // If pattern was destroyed, re-seed
+      if (aliveCount === 0) {
+        seedPortal(pz)
+        continue
+      }
+
+      // Detect oscillator: snapshot matches one from 2 or 3 generations ago
+      // We store snapshots and check period-2 by comparing current to 2-ago
+      if (snap === pz.lastSnapshot) {
+        // Same as last check (period-2 match: we check every 2 steps)
+        pz.snapshotAge++
+        if (pz.snapshotAge > 5 && !pz.active) {
+          pz.active = true
+          pz.stableTime = 0
+          // Update cells to current alive cells in the zone
+          pz.cells = []
+          for (let dr = -1; dr <= 4; dr++) {
+            for (let dc = -1; dc <= 5; dc++) {
+              const nr = (r + dr + rows) % rows
+              const nc = (c + dc + cols) % cols
+              if (grid[nr][nc] > 0) {
+                pz.cells.push([nr, nc])
+              }
+            }
+          }
+        }
+      } else {
+        pz.snapshotAge = 0
+        pz.active = false
+        pz.stableTime = 0
+      }
+
+      pz.lastSnapshot = snap
+
+      if (pz.active) {
+        pz.stableTime++
+      }
+    }
+  }
+
+  /** Protect portal organisms: re-seed if they have been overrun or destroyed */
+  function protectPortals() {
+    for (const pz of portalZones) {
+      const r = pz.edgeRow
+      const c = pz.edgeCol
+      let aliveCount = 0
+      for (let dr = -1; dr <= 4; dr++) {
+        for (let dc = -1; dc <= 5; dc++) {
+          const nr = (r + dr + rows) % rows
+          const nc = (c + dc + cols) % cols
+          if (grid[nr][nc] > 0) aliveCount++
+        }
+      }
+      // If too many cells (overrun) or too few (destroyed), re-seed
+      if (aliveCount > 20 || aliveCount === 0) {
+        seedPortal(pz)
+      }
+    }
   }
 
   function seedRandom(density: number) {
@@ -141,6 +318,16 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
 
     grid = next
     generation++
+
+    // Every 2 generations, check portal stability (period-2 detection)
+    if (generation % 2 === 0) {
+      updatePortals()
+    }
+
+    // Every ~200 generations, protect/re-seed portals if needed
+    if (generation % 200 === 0) {
+      protectPortals()
+    }
   }
 
   function render() {
@@ -227,24 +414,64 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     ctx.textAlign = 'center'
     ctx.fillText('click to seed life · scroll to change speed · space to pause · r to reset', w / 2, h - 8)
 
-    // Navigation portals — gear/cog labels
+    // Portal zones — stable life patterns that glow and act as navigation
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.35 : 0.06
-        ctx.font = '9px monospace'
-        ctx.fillStyle = `rgba(180, 160, 200, ${a})`
-        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = 'rgba(180, 160, 200, 0.15)'
-          ctx.beginPath()
-          ctx.arc(nx + (np.xFrac < 0.5 ? -8 : 8), ny - 3, 4, 0, Math.PI * 2)
-          ctx.fill()
+      for (let i = 0; i < portalZones.length; i++) {
+        const pz = portalZones[i]
+        const isHovered = hoveredPortal === i
+        const centerX = pz.edgeCol * cellSize + cellSize * 2
+        const centerY = pz.edgeRow * cellSize + cellSize * 2
+
+        // Always draw a faint glow around the portal zone so players can discover it
+        const baseGlow = pz.active ? 0.12 : 0.03
+        const hoverBoost = isHovered ? 0.2 : 0
+        const pulse = Math.sin(time * 3 + i * 2) * 0.04
+        const glowAlpha = Math.min(1, baseGlow + hoverBoost + pulse)
+
+        // Soft radial glow
+        const grad = ctx.createRadialGradient(centerX, centerY, 2, centerX, centerY, 40)
+        grad.addColorStop(0, pz.glowColor + (glowAlpha * 0.8).toFixed(3) + ')')
+        grad.addColorStop(0.5, pz.glowColor + (glowAlpha * 0.4).toFixed(3) + ')')
+        grad.addColorStop(1, pz.glowColor + '0)')
+        ctx.fillStyle = grad
+        ctx.fillRect(centerX - 40, centerY - 40, 80, 80)
+
+        // If active, draw brighter glow on each live portal cell
+        if (pz.active) {
+          for (const [cr, cc] of pz.cells) {
+            if (grid[cr]?.[cc] > 0) {
+              const cx = cc * cellSize + cellSize / 2
+              const cy = cr * cellSize + cellSize / 2
+              const cellGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, cellSize * 1.5)
+              const cellAlpha = 0.3 + (isHovered ? 0.25 : 0) + Math.sin(time * 4 + cr + cc) * 0.1
+              cellGlow.addColorStop(0, pz.glowColor + cellAlpha.toFixed(3) + ')')
+              cellGlow.addColorStop(1, pz.glowColor + '0)')
+              ctx.fillStyle = cellGlow
+              ctx.fillRect(cx - cellSize * 1.5, cy - cellSize * 1.5, cellSize * 3, cellSize * 3)
+            }
+          }
         }
+
+        // Label — fades in as portal stabilizes
+        const labelAlpha = pz.active
+          ? Math.min(0.45, pz.stableTime * 0.005) + (isHovered ? 0.35 : 0)
+          : (isHovered ? 0.1 : 0)
+        if (labelAlpha > 0.01) {
+          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.fillStyle = pz.glowColor + labelAlpha.toFixed(3) + ')'
+          ctx.textAlign = 'center'
+          // Place label below the pattern
+          ctx.fillText(pz.label, centerX, centerY + 35)
+        }
+
+        // Cursor hint when hovered
+        if (isHovered && canvas) {
+          canvas.style.cursor = 'pointer'
+        }
+      }
+      // Reset cursor if nothing hovered
+      if (hoveredPortal === -1 && canvas) {
+        canvas.style.cursor = 'crosshair'
       }
     }
 
@@ -327,30 +554,33 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
       }
       window.addEventListener('keydown', onKey)
 
-      // Navigation portal click + hover
+      // Portal zone click detection
       canvas.addEventListener('click', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            deps.switchTo(navPoints[i].room)
+        if (!deps?.switchTo) return
+        for (let i = 0; i < portalZones.length; i++) {
+          const pz = portalZones[i]
+          const centerX = pz.edgeCol * cellSize + cellSize * 2
+          const centerY = pz.edgeRow * cellSize + cellSize * 2
+          const dx = e.clientX - centerX
+          const dy = e.clientY - centerY
+          if (dx * dx + dy * dy < 50 * 50) {
+            deps.switchTo(pz.room)
             return
           }
         }
       })
+      // Portal zone hover detection
       canvas.addEventListener('mousemove', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            hoveredNav = i
+        if (!deps?.switchTo) return
+        hoveredPortal = -1
+        for (let i = 0; i < portalZones.length; i++) {
+          const pz = portalZones[i]
+          const centerX = pz.edgeCol * cellSize + cellSize * 2
+          const centerY = pz.edgeRow * cellSize + cellSize * 2
+          const dx = e.clientX - centerX
+          const dy = e.clientY - centerY
+          if (dx * dx + dy * dy < 50 * 50) {
+            hoveredPortal = i
             break
           }
         }

@@ -130,7 +130,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
   let active = false
   let frameId = 0
   let time = 0
-  let hoveredNav = -1
+  let towerHovered = false
 
   // --- Audio state ---
   let audioInitialized = false
@@ -163,10 +163,22 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
   let midnightFlash = 0      // brightness flash at midnight strike
   let lastCheckedMinute = -1
 
-  // Navigation portal
-  const navPoints = [
-    { label: '\u263E the clock tower', room: 'clocktower', xFrac: 0.5, yFrac: 0.95 },
-  ]
+  // --- Clock tower silhouette hit-test helpers ---
+  function getTowerBounds(w: number, h: number, vividness: number) {
+    const cx = w * 0.5
+    const baseY = h - 20
+    const towerHeight = 80 + vividness * 40 // 80-120px tall
+    const topY = baseY - towerHeight
+    const halfW = 18
+    return { cx, baseY, topY, halfW, towerHeight }
+  }
+
+  function isInsideTower(px: number, py: number, w: number, h: number, vividness: number): boolean {
+    const { cx, baseY, topY, halfW } = getTowerBounds(w, h, vividness)
+    // Generous hit area: rectangle around tower + dome
+    return px >= cx - halfW - 10 && px <= cx + halfW + 10 &&
+           py >= topY - 20 && py <= baseY
+  }
 
   function getHourVividness(hour: number): number {
     // Midnight (0) = 1.0, Noon (12) = 0.1, scales sinusoidally
@@ -443,17 +455,14 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
   function handleClick(e: MouseEvent) {
     if (!canvas || !active) return
 
-    // Check portal navigation first
+    // Check clock tower silhouette click
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const nx = canvas.width * navPoints[i].xFrac
-        const ny = canvas.height * navPoints[i].yFrac
-        const dx = e.clientX - nx
-        const dy = e.clientY - ny
-        if (dx * dx + dy * dy < 600) {
-          deps.switchTo(navPoints[i].room)
-          return
-        }
+      const now = new Date()
+      const hour = now.getHours()
+      const viv = getHourVividness(hour)
+      if (isInsideTower(e.clientX, e.clientY, canvas.width, canvas.height, viv)) {
+        deps.switchTo('clocktower')
+        return
       }
     }
 
@@ -680,24 +689,124 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
       w / 2, h - 15
     )
 
-    // Navigation portals — moonlit passage
+    // --- Dawn horizon with clock tower silhouette ---
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.3 * vividness + 0.1 : 0.05 * vividness + 0.02
-        ctx.font = '9px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(200, 190, 220, ${a})`
+      const { cx, baseY, topY, halfW, towerHeight } = getTowerBounds(w, h, vividness)
+      const silAlpha = vividness * 0.8
+      const edgeAlpha = vividness * 0.1
+      const hoverGlow = towerHovered ? 0.15 : 0
+
+      // Horizon line with subtle terrain
+      ctx.beginPath()
+      ctx.moveTo(0, baseY)
+      // Small hills / buildings silhouette across the bottom
+      for (let px = 0; px <= w; px += 1) {
+        const frac = px / w
+        // Terrain: gentle hills with a few small building bumps
+        const hill1 = Math.sin(frac * Math.PI * 2.5) * 6
+        const hill2 = Math.sin(frac * Math.PI * 5.3 + 1.2) * 3
+        const bldg1 = (Math.abs(frac - 0.18) < 0.015) ? -12 : 0
+        const bldg2 = (Math.abs(frac - 0.32) < 0.01) ? -8 : 0
+        const bldg3 = (Math.abs(frac - 0.72) < 0.02) ? -15 : 0
+        const bldg4 = (Math.abs(frac - 0.85) < 0.012) ? -10 : 0
+        // Skip the clock tower zone (drawn separately)
+        if (Math.abs(px - cx) < halfW + 4) continue
+        const terrainY = baseY + hill1 + hill2 + bldg1 + bldg2 + bldg3 + bldg4
+        ctx.lineTo(px, terrainY)
+      }
+      ctx.lineTo(w, baseY)
+      ctx.lineTo(w, h)
+      ctx.lineTo(0, h)
+      ctx.closePath()
+      ctx.fillStyle = `rgba(2, 2, 5, ${silAlpha})`
+      ctx.fill()
+
+      // Clock tower silhouette — narrow tower with pointed/domed top
+      ctx.beginPath()
+      // Base
+      ctx.moveTo(cx - halfW, baseY)
+      // Left wall
+      ctx.lineTo(cx - halfW, topY + towerHeight * 0.35)
+      // Slight narrowing above mid-section
+      ctx.lineTo(cx - halfW + 4, topY + towerHeight * 0.25)
+      // Left side of dome
+      ctx.lineTo(cx - halfW + 6, topY + towerHeight * 0.15)
+      // Dome curve (approximated with lines)
+      ctx.lineTo(cx - 6, topY + towerHeight * 0.08)
+      ctx.lineTo(cx - 3, topY + towerHeight * 0.03)
+      // Spire
+      ctx.lineTo(cx, topY)
+      ctx.lineTo(cx + 3, topY + towerHeight * 0.03)
+      ctx.lineTo(cx + 6, topY + towerHeight * 0.08)
+      // Right side of dome
+      ctx.lineTo(cx + halfW - 6, topY + towerHeight * 0.15)
+      ctx.lineTo(cx + halfW - 4, topY + towerHeight * 0.25)
+      // Right wall narrowing
+      ctx.lineTo(cx + halfW, topY + towerHeight * 0.35)
+      // Right wall
+      ctx.lineTo(cx + halfW, baseY)
+      ctx.closePath()
+      ctx.fillStyle = `rgba(2, 2, 5, ${silAlpha})`
+      ctx.fill()
+
+      // Moonlit edge highlight (left side of tower — moonlight from the right)
+      ctx.beginPath()
+      ctx.moveTo(cx + halfW, baseY)
+      ctx.lineTo(cx + halfW, topY + towerHeight * 0.35)
+      ctx.lineTo(cx + halfW - 4, topY + towerHeight * 0.25)
+      ctx.lineTo(cx + halfW - 6, topY + towerHeight * 0.15)
+      ctx.lineTo(cx + 6, topY + towerHeight * 0.08)
+      ctx.lineTo(cx + 3, topY + towerHeight * 0.03)
+      ctx.lineTo(cx, topY)
+      ctx.strokeStyle = `rgba(200, 190, 220, ${edgeAlpha + hoverGlow})`
+      ctx.lineWidth = 1.2
+      ctx.stroke()
+
+      // Clock face on the tower (upper portion)
+      const clockCenterY = topY + towerHeight * 0.3
+      const clockR = 7
+      // Circle
+      ctx.beginPath()
+      ctx.arc(cx, clockCenterY, clockR, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(200, 190, 220, ${edgeAlpha * 0.8 + hoverGlow * 0.5})`
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+
+      // Clock hands showing real time
+      const realNow = new Date()
+      const realH = realNow.getHours() % 12
+      const realM = realNow.getMinutes()
+      // Hour hand
+      const hourAngle = ((realH + realM / 60) / 12) * Math.PI * 2 - Math.PI / 2
+      ctx.beginPath()
+      ctx.moveTo(cx, clockCenterY)
+      ctx.lineTo(cx + Math.cos(hourAngle) * clockR * 0.5, clockCenterY + Math.sin(hourAngle) * clockR * 0.5)
+      ctx.strokeStyle = `rgba(200, 190, 220, ${edgeAlpha + hoverGlow * 0.5})`
+      ctx.lineWidth = 1
+      ctx.stroke()
+      // Minute hand
+      const minAngle = (realM / 60) * Math.PI * 2 - Math.PI / 2
+      ctx.beginPath()
+      ctx.moveTo(cx, clockCenterY)
+      ctx.lineTo(cx + Math.cos(minAngle) * clockR * 0.75, clockCenterY + Math.sin(minAngle) * clockR * 0.75)
+      ctx.strokeStyle = `rgba(200, 190, 220, ${edgeAlpha * 0.7 + hoverGlow * 0.4})`
+      ctx.lineWidth = 0.6
+      ctx.stroke()
+
+      // Hover: glow and label
+      if (towerHovered) {
+        // Faint glow around the tower
+        const glowGrad = ctx.createRadialGradient(cx, topY + towerHeight * 0.4, 5, cx, topY + towerHeight * 0.4, 60)
+        glowGrad.addColorStop(0, `rgba(200, 190, 220, ${0.06 * vividness})`)
+        glowGrad.addColorStop(1, 'rgba(200, 190, 220, 0)')
+        ctx.fillStyle = glowGrad
+        ctx.fillRect(cx - 60, topY - 30, 120, towerHeight + 40)
+
+        // Label above the tower
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 190, 220, ${0.25 * vividness + 0.08})`
         ctx.textAlign = 'center'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = `rgba(200, 190, 220, ${0.08 * vividness})`
-          ctx.beginPath()
-          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
-          ctx.fill()
-        }
+        ctx.fillText('the clock tower', cx, topY - 12)
       }
     }
   }
@@ -726,16 +835,13 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
 
       canvas.addEventListener('mousemove', (e) => {
         if (!deps?.switchTo || !canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            hoveredNav = i
-            break
-          }
+        const now = new Date()
+        const hour = now.getHours()
+        const viv = getHourVividness(hour)
+        const wasHovered = towerHovered
+        towerHovered = isInsideTower(e.clientX, e.clientY, canvas.width, canvas.height, viv)
+        if (towerHovered !== wasHovered) {
+          canvas.style.cursor = towerHovered ? 'pointer' : 'default'
         }
       })
 

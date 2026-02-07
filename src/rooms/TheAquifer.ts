@@ -70,6 +70,15 @@ interface BurstParticle {
   size: number
 }
 
+interface CurrentParticle {
+  x: number
+  y: number
+  alpha: number
+  speed: number
+  phase: number  // for sinusoidal wobble
+  size: number
+}
+
 export function createAquiferRoom(deps: AquiferDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -84,7 +93,11 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
   let prevMouseX = 0
   let prevMouseY = 0
   let mouseSpeed = 0
-  let hoveredNav = -1
+
+  // Water current navigation streams
+  let wellCurrentParticles: CurrentParticle[] = []
+  let tidepoolCurrentParticles: CurrentParticle[] = []
+  let hoveredCurrent: 'well' | 'tidepool' | null = null
 
   // Bioluminescence trails and burst particles
   let glowTrails: GlowTrail[] = []
@@ -109,12 +122,6 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
   let swishSource: AudioBufferSourceNode | null = null
   let swishGain: GainNode | null = null
   let swishBandpass: BiquadFilterNode | null = null
-
-  // Navigation portals — bioluminescent markers in the dark water
-  const navPoints = [
-    { label: '◈ the well', room: 'well', xFrac: 0.5, yFrac: 0.04 },
-    { label: '◈ the tide pool', room: 'tidepool', xFrac: 0.94, yFrac: 0.5 },
-  ]
 
   // --- Depth zone helpers ---
   // Returns 0.0 (surface) to 1.0 (depths) based on y position
@@ -544,6 +551,214 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     ctx.fillText(caughtDisplayText, w / 2, h - 50)
   }
 
+  // --- Water current navigation ---
+  function spawnWellParticle(w: number, h: number) {
+    // Spawn near center-bottom, rising upward
+    wellCurrentParticles.push({
+      x: w * 0.5 + (Math.random() - 0.5) * 30,
+      y: h * 0.55 + Math.random() * 60,
+      alpha: 0.05 + Math.random() * 0.15,
+      speed: 0.6 + Math.random() * 0.4,
+      phase: Math.random() * Math.PI * 2,
+      size: 1 + Math.random() * 2,
+    })
+  }
+
+  function spawnTidepoolParticle(w: number, h: number) {
+    // Spawn near left-center, flowing rightward
+    tidepoolCurrentParticles.push({
+      x: w * 0.45 + Math.random() * 40,
+      y: h * 0.5 + (Math.random() - 0.5) * 20,
+      alpha: 0.05 + Math.random() * 0.15,
+      speed: 0.5 + Math.random() * 0.4,
+      phase: Math.random() * Math.PI * 2,
+      size: 1 + Math.random() * 2,
+    })
+  }
+
+  function updateCurrentParticles(w: number, h: number) {
+    const isWellHovered = hoveredCurrent === 'well'
+    const isTidepoolHovered = hoveredCurrent === 'tidepool'
+
+    // Spawn new particles to maintain 15-30 per stream
+    while (wellCurrentParticles.length < (isWellHovered ? 30 : 18)) {
+      spawnWellParticle(w, h)
+    }
+    while (tidepoolCurrentParticles.length < (isTidepoolHovered ? 30 : 18)) {
+      spawnTidepoolParticle(w, h)
+    }
+
+    const wellSpeedMul = isWellHovered ? 2.0 : 1.0
+    const tidepoolSpeedMul = isTidepoolHovered ? 2.0 : 1.0
+
+    // Update well current (upward)
+    for (let i = wellCurrentParticles.length - 1; i >= 0; i--) {
+      const p = wellCurrentParticles[i]
+      p.y -= p.speed * wellSpeedMul
+      // Sinusoidal wobble in X
+      p.x += Math.sin(time * 1.5 + p.phase) * 0.4
+      p.phase += 0.02
+      // Fade in near spawn, fade out near top
+      const normalY = 1 - (p.y / (h * 0.55))  // 0 at bottom, 1 at top
+      if (normalY > 0.85) {
+        p.alpha *= 0.96  // fade out near surface
+      }
+      // Remove if off-screen or faded
+      if (p.y < 10 || p.alpha < 0.005) {
+        wellCurrentParticles.splice(i, 1)
+      }
+    }
+
+    // Update tidepool current (rightward)
+    for (let i = tidepoolCurrentParticles.length - 1; i >= 0; i--) {
+      const p = tidepoolCurrentParticles[i]
+      p.x += p.speed * tidepoolSpeedMul
+      // Vertical wobble
+      p.y += Math.sin(time * 1.2 + p.phase) * 0.3
+      p.phase += 0.02
+      // Spread vertically as it moves right (widens toward edge)
+      const progressX = (p.x - w * 0.45) / (w * 0.55)
+      p.y += (Math.random() - 0.5) * progressX * 0.5
+      // Fade out near right edge
+      if (p.x > w - 60) {
+        p.alpha *= 0.96
+      }
+      // Remove if off-screen or faded
+      if (p.x > w + 10 || p.alpha < 0.005) {
+        tidepoolCurrentParticles.splice(i, 1)
+      }
+    }
+  }
+
+  function drawCurrentParticles(w: number, h: number) {
+    if (!ctx) return
+    const isWellHovered = hoveredCurrent === 'well'
+    const isTidepoolHovered = hoveredCurrent === 'tidepool'
+
+    // --- Well current (upward column) ---
+    // Source glow (bottom of column)
+    const wellSourceX = w * 0.5
+    const wellSourceY = h * 0.55
+    const srcGlow = ctx.createRadialGradient(wellSourceX, wellSourceY, 0, wellSourceX, wellSourceY, 25)
+    srcGlow.addColorStop(0, `rgba(80, 180, 220, ${isWellHovered ? 0.12 : 0.05})`)
+    srcGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
+    ctx.fillStyle = srcGlow
+    ctx.fillRect(wellSourceX - 25, wellSourceY - 25, 50, 50)
+
+    // Destination glow (top, at the water surface)
+    const wellDestX = w * 0.5
+    const wellDestY = 25
+    const destRadius = isWellHovered ? 40 : 25
+    const destGlow = ctx.createRadialGradient(wellDestX, wellDestY, 0, wellDestX, wellDestY, destRadius)
+    destGlow.addColorStop(0, `rgba(80, 180, 220, ${isWellHovered ? 0.25 : 0.08})`)
+    destGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
+    ctx.fillStyle = destGlow
+    ctx.fillRect(wellDestX - destRadius, wellDestY - destRadius, destRadius * 2, destRadius * 2)
+
+    // Room name at destination
+    const wellLabelAlpha = isWellHovered
+      ? 0.5
+      : 0.06 + Math.sin(time * 0.5) * 0.03
+    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(120, 200, 240, ${wellLabelAlpha})`
+    ctx.textAlign = 'center'
+    ctx.fillText('the well', wellDestX, wellDestY + 4)
+
+    // Particles
+    for (const p of wellCurrentParticles) {
+      const brightness = isWellHovered ? 1.4 : 1.0
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(80, 180, 220, ${p.alpha * brightness})`
+      ctx.fill()
+      // Subtle glow around each particle
+      if (p.alpha > 0.08) {
+        const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3)
+        pg.addColorStop(0, `rgba(80, 180, 220, ${p.alpha * 0.3 * brightness})`)
+        pg.addColorStop(1, 'rgba(80, 180, 220, 0)')
+        ctx.fillStyle = pg
+        ctx.fillRect(p.x - p.size * 3, p.y - p.size * 3, p.size * 6, p.size * 6)
+      }
+    }
+
+    // --- Tidepool current (rightward stream) ---
+    // Source glow (left side)
+    const tpSourceX = w * 0.45
+    const tpSourceY = h * 0.5
+    const tpSrcGlow = ctx.createRadialGradient(tpSourceX, tpSourceY, 0, tpSourceX, tpSourceY, 20)
+    tpSrcGlow.addColorStop(0, `rgba(80, 180, 220, ${isTidepoolHovered ? 0.10 : 0.04})`)
+    tpSrcGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
+    ctx.fillStyle = tpSrcGlow
+    ctx.fillRect(tpSourceX - 20, tpSourceY - 20, 40, 40)
+
+    // Destination glow (right edge)
+    const tpDestX = w - 20
+    const tpDestY = h * 0.5
+    const tpDestRadius = isTidepoolHovered ? 45 : 28
+    const tpDestGlow = ctx.createRadialGradient(tpDestX, tpDestY, 0, tpDestX, tpDestY, tpDestRadius)
+    tpDestGlow.addColorStop(0, `rgba(80, 180, 220, ${isTidepoolHovered ? 0.25 : 0.08})`)
+    tpDestGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
+    ctx.fillStyle = tpDestGlow
+    ctx.fillRect(tpDestX - tpDestRadius, tpDestY - tpDestRadius, tpDestRadius * 2, tpDestRadius * 2)
+
+    // Room name at destination
+    const tpLabelAlpha = isTidepoolHovered
+      ? 0.5
+      : 0.05 + Math.sin(time * 0.4 + 1) * 0.02
+    ctx.save()
+    ctx.translate(tpDestX, tpDestY)
+    ctx.rotate(Math.PI / 2)
+    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(120, 200, 240, ${tpLabelAlpha})`
+    ctx.textAlign = 'center'
+    ctx.fillText('the tide pool', 0, 0)
+    ctx.restore()
+
+    // Particles
+    for (const p of tidepoolCurrentParticles) {
+      const brightness = isTidepoolHovered ? 1.4 : 1.0
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(80, 180, 220, ${p.alpha * brightness})`
+      ctx.fill()
+      if (p.alpha > 0.08) {
+        const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3)
+        pg.addColorStop(0, `rgba(80, 180, 220, ${p.alpha * 0.3 * brightness})`)
+        pg.addColorStop(1, 'rgba(80, 180, 220, 0)')
+        ctx.fillStyle = pg
+        ctx.fillRect(p.x - p.size * 3, p.y - p.size * 3, p.size * 6, p.size * 6)
+      }
+    }
+  }
+
+  function detectCurrentHover(mx: number, my: number) {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+
+    // Well destination: near top-center
+    const wellDestX = w * 0.5
+    const wellDestY = 25
+    const wellDx = mx - wellDestX
+    const wellDy = my - wellDestY
+    if (wellDx * wellDx + wellDy * wellDy < 50 * 50) {
+      hoveredCurrent = 'well'
+      return
+    }
+
+    // Tidepool destination: near right edge, vertical center
+    const tpDestX = w - 20
+    const tpDestY = h * 0.5
+    const tpDx = mx - tpDestX
+    const tpDy = my - tpDestY
+    if (tpDx * tpDx + tpDy * tpDy < 50 * 50) {
+      hoveredCurrent = 'tidepool'
+      return
+    }
+
+    hoveredCurrent = null
+  }
+
   // --- Main render ---
   function render() {
     if (!canvas || !ctx || !active) return
@@ -714,20 +929,9 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     // Caught fragment display text
     drawCaughtText(w, h)
 
-    // Navigation links
-    // Up to well
-    ctx.font = '10px "Cormorant Garamond", serif'
-    ctx.fillStyle = `rgba(100, 160, 220, ${0.1 + Math.sin(time * 0.5) * 0.03})`
-    ctx.textAlign = 'center'
-    ctx.fillText('▲ ascend to the well', w / 2, 25)
-
-    // Right to tide pool
-    ctx.save()
-    ctx.translate(w - 15, h / 2)
-    ctx.rotate(Math.PI / 2)
-    ctx.fillStyle = `rgba(100, 160, 220, ${0.08 + Math.sin(time * 0.4 + 1) * 0.02})`
-    ctx.fillText('the tide pool →', 0, 0)
-    ctx.restore()
+    // Water current navigation streams
+    updateCurrentParticles(w, h)
+    drawCurrentParticles(w, h)
 
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
@@ -747,28 +951,6 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     ctx.fillStyle = 'rgba(60, 120, 180, 0.04)'
     ctx.textAlign = 'right'
     ctx.fillText(`depth: ${cursorZone}`, w - 15, h - 28)
-
-    // Navigation portals — bioluminescent markers
-    if (deps.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.4 : 0.07
-        ctx.font = '9px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(100, 180, 220, ${a})`
-        ctx.textAlign = np.xFrac < 0.5 ? 'left' : np.xFrac > 0.6 ? 'right' : 'center'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          const glow = ctx.createRadialGradient(nx, ny, 0, nx, ny, 15)
-          glow.addColorStop(0, `rgba(60, 160, 220, 0.12)`)
-          glow.addColorStop(1, 'rgba(60, 160, 220, 0)')
-          ctx.fillStyle = glow
-          ctx.fillRect(nx - 15, ny - 15, 30, 30)
-        }
-      }
-    }
 
     // Update audio based on cursor depth and speed
     updateAudioForDepth()
@@ -825,35 +1007,25 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
       canvas.addEventListener('mousemove', (e) => {
         mouseX = e.clientX
         mouseY = e.clientY
-        // Portal hover detection
-        if (deps.switchTo && canvas) {
-          hoveredNav = -1
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              hoveredNav = i
-              break
-            }
-          }
+        // Water current hover detection
+        detectCurrentHover(e.clientX, e.clientY)
+        // Update cursor style
+        if (canvas) {
+          canvas.style.cursor = hoveredCurrent ? 'pointer' : 'default'
         }
       })
 
       canvas.addEventListener('click', (e) => {
-        // Check portals first
-        if (deps.switchTo && canvas) {
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              deps.switchTo(navPoints[i].room)
-              return
-            }
-          }
+        // Check water current destinations first
+        if (hoveredCurrent === 'well') {
+          if (deps.switchTo) deps.switchTo('well')
+          else deps.toWell()
+          return
+        }
+        if (hoveredCurrent === 'tidepool') {
+          if (deps.switchTo) deps.switchTo('tidepool')
+          else deps.toTidePool()
+          return
         }
         // Top area → ascend to well
         if (e.clientY < 50) {
@@ -915,6 +1087,9 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
       bubbles = []
       glowTrails = []
       burstParticles = []
+      wellCurrentParticles = []
+      tidepoolCurrentParticles = []
+      hoveredCurrent = null
       caughtFragment = null
       caughtTimer = 0
       caughtDisplayText = ''
