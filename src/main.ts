@@ -36,6 +36,7 @@ import { createObservatoryRoom } from './rooms/TheObservatory'
 import { createSeanceRoom } from './rooms/TheSeance'
 import { createDarkroomRoom } from './rooms/TheDarkroom'
 import { createGardenRoom } from './rooms/TheGarden'
+import { createArchiveRoom } from './rooms/TheArchive'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -333,6 +334,7 @@ roomManager.addRoom(createDarkroomRoom({
 roomManager.addRoom(createGardenRoom({
   getMemories: () => journal.getMemories(),
 }))
+roomManager.addRoom(createArchiveRoom())
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
