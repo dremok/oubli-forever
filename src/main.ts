@@ -62,6 +62,9 @@ import { createCartographerRoom } from './rooms/TheCartographer'
 import { createChoirRoom } from './rooms/TheChoir'
 import { createOracleDeckRoom } from './rooms/TheOracleDeck'
 import { createLabyrinthRoom } from './rooms/TheLabyrinth'
+import { createGlaciariumRoom } from './rooms/TheGlacarium'
+import { createSatelliteRoom } from './rooms/TheSatellite'
+import { createAsteroidFieldRoom } from './rooms/TheAsteroidField'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -440,6 +443,15 @@ roomManager.addRoom(createLabyrinthRoom({
     const target = hiddenRooms[Math.floor(Math.random() * hiddenRooms.length)]
     roomManager.switchTo(target)
   },
+}))
+roomManager.addRoom(createGlaciariumRoom({
+  getMemories: () => journal.getMemories(),
+}))
+roomManager.addRoom(createSatelliteRoom({
+  getMemories: () => journal.getMemories(),
+}))
+roomManager.addRoom(createAsteroidFieldRoom({
+  getMemories: () => journal.getMemories(),
 }))
 
 // Wire room checks — features only fire in the right room
