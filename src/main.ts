@@ -445,7 +445,9 @@ roomManager.addRoom(createLighthouseRoom({
   onDescend: () => roomManager.switchTo('tidepool'),
 }))
 roomManager.addRoom(createSketchpadRoom())
-roomManager.addRoom(createWeathervaneRoom())
+roomManager.addRoom(createWeathervaneRoom({
+  switchTo: (name) => roomManager.switchTo(name),
+}))
 roomManager.addRoom(createCartographerRoom({
   switchTo: (name) => roomManager.switchTo(name),
   getActiveRoom: () => roomManager.getActiveRoom(),
@@ -460,9 +462,12 @@ roomManager.addRoom(createLabyrinthRoom({
     const target = hiddenRooms[Math.floor(Math.random() * hiddenRooms.length)]
     roomManager.switchTo(target)
   },
+  switchTo: (name) => roomManager.switchTo(name),
+  getMemories: () => journal.getMemories(),
 }))
 roomManager.addRoom(createGlaciariumRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createSatelliteRoom({
   getMemories: () => journal.getMemories(),
