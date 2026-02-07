@@ -27,7 +27,7 @@ The system is NOT limited to art — it is a living world that contains everythi
 - **Deploy target**: Railway (CLI authenticated)
 - **API keys**: FAL (image gen), ElevenLabs (voice/sound/music) stored in `.env`
 - **Audio**: Shared AudioContext singleton (`src/sound/AudioBus.ts`)
-- **Navigation**: Bottom tab bar (`the void · the study · the instrument`)
+- **Navigation**: Graph-based contextual passage bar + in-room portals (`src/navigation/RoomGraph.ts`)
 - **Room system**: Features are room-aware via `setRoomCheck()` pattern
 
 ### Features Built
@@ -952,5 +952,69 @@ Era 7 marked a fundamental shift. Every room is grounded in specific cultural re
 Surface: 34 | Hidden: 7 (catacombs, roots, ossuary, between, aquifer, midnight, mirror)
 
 ---
-*Last updated: Era 7, Feature 74 — Palimpsest Gallery*
-*"41 rooms. the house is a museum, a cinema, a space station, a glacier, a library. every room remembers differently. some rooms cost something to visit."*
+
+## Era 8: Navigation Restructure & Room Depth
+
+### 75. Graph-Based Navigation (`src/navigation/RoomGraph.ts`)
+- REPLACED flat tab bar (34 rooms in a row) with graph-based contextual navigation
+- `RoomGraph.ts` defines thematic connections between all 43 rooms (36 surface + 7 hidden)
+- Passage bar shows only 3-6 connected rooms (contextual, not flat)
+- Passage bar is very subtle: opacity 0.08, rises to 0.65 on hover — a FALLBACK, not primary nav
+- Back button with navigation history stack
+- Compass icon always available → cartographer room
+- Every surface room reachable within 4 hops from the void
+- Room clusters: Words, Sound, Space, Spirit, Nature, Water, Fire, Time, Art, Science, Meta
+
+### 76. In-Room Navigation Portals (7 key rooms)
+- TheVoid: 6 atmospheric edge portals with unique symbols (observatory, garden, study, instrument, séance, furnace)
+- TheStudy: 4 corner objects (bookshelf→library, thread→loom, cipher→cipher, diamond→void)
+- TheObservatory: 4 corner portals (satellite, asteroids, clocktower, void)
+- TheGarden: 4 corner portals (terrarium, tidepool, madeleine, void)
+- TheInstrument: 4 corner portals (choir, radio, pendulum, void)
+- TheSeance: 4 corner portals (oracle, madeleine, rememory, void)
+- TheFurnace: 4 corner portals (disintegration, clocktower, well, void)
+- TheBetween: dynamically builds doors from ALL non-hidden rooms
+
+### 77. Labyrinth Deepened
+- PERSISTENT seeded maze (25x25, mulberry32 PRNG, seed in localStorage)
+- 3 hidden artifacts as in-room navigation: cipher stone→cipher, map table→cartographer, bookshelf→library
+- Wall inscriptions mixing user memories with Borges-inspired fragments
+- Ambient audio: sub-bass drone (42Hz + 63Hz), filtered footstep synth
+- Discovery tracking persisted in localStorage
+- Press E to interact with nearby artifacts
+- Larger maze, iterative backtracker (no stack overflow)
+
+### 78. Glacarium Deepened
+- CURSOR-AS-WARMTH mechanic: crystals melt faster near mouse, visible orange glow
+- Click crystals to expand/collapse → read full memory text with degradation %
+- Ice cracking audio (periodic random cracks), arctic wind (bandpass filtered noise)
+- In-room navigation: satellite (blinking sky dot), weathervane (horizon silhouette), tidepool (underwater glow), asteroids (streak)
+- Each portal has unique visual style matching its theme
+
+### 79. Weathervane Deepened
+- VISUAL WEATHERVANE: spinning compass arrow responding to real wind direction
+- Cursor creates wind gusts: mouse velocity pushes nearby particles
+- Weathervane arrow also responds to cursor wind influence
+- Wind audio modulated by actual speed and temperature
+- In-room navigation: seismograph, radio, glacarium, tidepool as corner portals
+- `WeathervaneDeps` interface added with optional `switchTo`
+
+### Navigation Vision (IMPORTANT — read after compaction)
+PRIMARY navigation should be through IN-ROOM elements, not the passage bar:
+- Objects you find (labyrinth artifacts)
+- Visual elements in the scene (glacarium sky objects, weathervane portals)
+- Objectives to fulfill (terrarium gen 10, lighthouse 3 transmits)
+- Audio/text triggers (séance keywords)
+- The passage bar is a FALLBACK for when you're lost
+
+What's NOT done yet:
+- ~25 rooms still ONLY have passage bar navigation (no in-room portals)
+- No objective-based unlock mechanics for surface→surface connections
+- Need MORE diverse navigation styles: clickable scene objects, state-based triggers, earned unlocks
+
+### Total Rooms: 43 (was 41; +Rememory +Library added in late Era 7)
+Surface: 36 | Hidden: 7
+
+---
+*Last updated: Era 8, Feature 79 — Weathervane Deepened*
+*"43 rooms connected by a graph, not a list. the house has corridors now, not just doors. artifacts hidden in labyrinths, warmth melting ice, wind you can push. navigation as exploration."*
