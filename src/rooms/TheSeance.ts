@@ -78,15 +78,45 @@ interface SeanceDeps {
   switchTo?: (name: string) => void
 }
 
+interface SpiritWisp {
+  name: string
+  label: string
+  baseX: number  // anchor as fraction of screen width
+  baseY: number  // anchor as fraction of screen height
+  currentX: number
+  currentY: number
+  hue: string    // CSS color for the gradient
+  r: number; g: number; b: number  // RGB components for canvas drawing
+  glowAlpha: number
+  driftPhase: number
+  trail: { x: number; y: number; alpha: number }[]
+  labelReveal: number  // 0..label.length, how many chars revealed
+}
+
 export function createSeanceRoom(deps: SeanceDeps): Room {
   let overlay: HTMLElement | null = null
   let inputEl: HTMLInputElement | null = null
   let messagesEl: HTMLElement | null = null
   let candleEl: HTMLElement | null = null
   let betweenLink: HTMLElement | null = null
+  let wispCanvas: HTMLCanvasElement | null = null
+  let wispCtx: CanvasRenderingContext2D | null = null
+  let wispAnimFrame: number | null = null
   const messages: Message[] = []
   let fadeInterval: number | null = null
   let betweenRevealed = false
+
+  // Spirit wisp state
+  let hoveredWisp = -1
+  let clickedWisp = -1
+  let clickTime = 0
+
+  const spiritWisps: SpiritWisp[] = [
+    { name: 'oracle', label: 'the oracle deck', baseX: 0.12, baseY: 0.15, currentX: 0, currentY: 0, hue: 'rgba(220, 190, 80, 0.6)', r: 220, g: 190, b: 80, glowAlpha: 0.5, driftPhase: 0, trail: [], labelReveal: 0 },
+    { name: 'madeleine', label: 'the madeleine', baseX: 0.88, baseY: 0.15, currentX: 0, currentY: 0, hue: 'rgba(220, 150, 170, 0.6)', r: 220, g: 150, b: 170, glowAlpha: 0.5, driftPhase: Math.PI * 0.5, trail: [], labelReveal: 0 },
+    { name: 'rememory', label: 'the rememory', baseX: 0.88, baseY: 0.82, currentX: 0, currentY: 0, hue: 'rgba(170, 150, 220, 0.6)', r: 170, g: 150, b: 220, glowAlpha: 0.5, driftPhase: Math.PI, trail: [], labelReveal: 0 },
+    { name: 'void', label: 'the void', baseX: 0.12, baseY: 0.82, currentX: 0, currentY: 0, hue: 'rgba(255, 80, 180, 0.6)', r: 255, g: 80, b: 180, glowAlpha: 0.5, driftPhase: Math.PI * 1.5, trail: [], labelReveal: 0 },
+  ]
 
   function getFragment(): string {
     const memories = deps.getMemories()
@@ -266,6 +296,188 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
     renderMessages()
   }
 
+  // --- Spirit wisp rendering ---
+
+  function resizeWispCanvas() {
+    if (!wispCanvas || !overlay) return
+    wispCanvas.width = overlay.clientWidth
+    wispCanvas.height = overlay.clientHeight
+  }
+
+  function getWispScreenPos(w: SpiritWisp): { x: number; y: number } {
+    const cw = wispCanvas ? wispCanvas.width : window.innerWidth
+    const ch = wispCanvas ? wispCanvas.height : window.innerHeight
+    return { x: w.baseX * cw + w.currentX, y: w.baseY * ch + w.currentY }
+  }
+
+  function hitTestWisps(mx: number, my: number): number {
+    const hitRadius = 40
+    for (let i = 0; i < spiritWisps.length; i++) {
+      const pos = getWispScreenPos(spiritWisps[i])
+      const dx = mx - pos.x
+      const dy = my - pos.y
+      if (dx * dx + dy * dy < hitRadius * hitRadius) return i
+    }
+    return -1
+  }
+
+  function renderWisps(time: number) {
+    if (!wispCtx || !wispCanvas) return
+
+    const w = wispCanvas.width
+    const h = wispCanvas.height
+    if (w === 0 || h === 0) return
+
+    wispCtx.clearRect(0, 0, w, h)
+
+    const dt = time * 0.001
+
+    for (let i = 0; i < spiritWisps.length; i++) {
+      const wisp = spiritWisps[i]
+      const isHovered = hoveredWisp === i
+      const isClicked = clickedWisp === i
+
+      // Drift orbit around anchor — slower when hovered
+      const driftSpeed = isHovered ? 0.15 : 0.4
+      const driftRadius = isHovered ? 8 : 25
+      wisp.currentX = Math.cos(dt * driftSpeed + wisp.driftPhase) * driftRadius
+      wisp.currentY = Math.sin(dt * driftSpeed * 0.7 + wisp.driftPhase + 1.3) * driftRadius * 0.7
+
+      // Breathing alpha
+      const breathe = 0.3 + 0.2 * Math.sin(dt * 0.8 + wisp.driftPhase)
+      wisp.glowAlpha = isHovered ? 0.85 : (isClicked ? 1.0 : breathe)
+
+      const pos = getWispScreenPos(wisp)
+
+      // Update trail
+      wisp.trail.push({ x: pos.x, y: pos.y, alpha: 0.3 })
+      if (wisp.trail.length > 12) wisp.trail.shift()
+      for (const tp of wisp.trail) {
+        tp.alpha *= 0.92
+      }
+
+      // Draw trail particles
+      for (const tp of wisp.trail) {
+        if (tp.alpha < 0.01) continue
+        wispCtx.beginPath()
+        wispCtx.arc(tp.x, tp.y, 2, 0, Math.PI * 2)
+        wispCtx.fillStyle = `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${tp.alpha * wisp.glowAlpha * 0.5})`
+        wispCtx.fill()
+      }
+
+      // Click flash expansion
+      let flashScale = 1
+      if (isClicked) {
+        const elapsed = Date.now() - clickTime
+        flashScale = 1 + (elapsed / 500) * 3
+        const flashAlpha = Math.max(0, 1 - elapsed / 500)
+        if (flashAlpha > 0) {
+          const flashGrad = wispCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, 60 * flashScale)
+          flashGrad.addColorStop(0, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${flashAlpha * 0.9})`)
+          flashGrad.addColorStop(0.5, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${flashAlpha * 0.3})`)
+          flashGrad.addColorStop(1, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, 0)`)
+          wispCtx.beginPath()
+          wispCtx.arc(pos.x, pos.y, 60 * flashScale, 0, Math.PI * 2)
+          wispCtx.fillStyle = flashGrad
+          wispCtx.fill()
+        }
+      }
+
+      // Main wisp glow — radial gradient
+      const baseRadius = isHovered ? 28 : 18
+      const grad = wispCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, baseRadius)
+      grad.addColorStop(0, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${wisp.glowAlpha})`)
+      grad.addColorStop(0.4, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${wisp.glowAlpha * 0.4})`)
+      grad.addColorStop(1, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, 0)`)
+      wispCtx.beginPath()
+      wispCtx.arc(pos.x, pos.y, baseRadius, 0, Math.PI * 2)
+      wispCtx.fillStyle = grad
+      wispCtx.fill()
+
+      // Outer halo
+      const haloGrad = wispCtx.createRadialGradient(pos.x, pos.y, baseRadius * 0.8, pos.x, pos.y, baseRadius * 2.5)
+      haloGrad.addColorStop(0, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${wisp.glowAlpha * 0.12})`)
+      haloGrad.addColorStop(1, `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, 0)`)
+      wispCtx.beginPath()
+      wispCtx.arc(pos.x, pos.y, baseRadius * 2.5, 0, Math.PI * 2)
+      wispCtx.fillStyle = haloGrad
+      wispCtx.fill()
+
+      // Label reveal — letter by letter on hover
+      if (isHovered) {
+        wisp.labelReveal = Math.min(wisp.label.length, wisp.labelReveal + 0.15)
+      } else {
+        wisp.labelReveal = Math.max(0, wisp.labelReveal - 0.3)
+      }
+
+      if (wisp.labelReveal > 0.5) {
+        const visibleChars = Math.floor(wisp.labelReveal)
+        const partial = wisp.label.slice(0, visibleChars)
+        const labelAlpha = isHovered ? 0.7 : Math.min(0.7, wisp.labelReveal / wisp.label.length)
+
+        wispCtx.save()
+        wispCtx.font = '11px "Cormorant Garamond", serif'
+        wispCtx.fillStyle = `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${labelAlpha})`
+        wispCtx.textAlign = 'center'
+        wispCtx.fillText(partial, pos.x, pos.y + baseRadius + 18)
+        wispCtx.restore()
+      }
+    }
+
+    wispAnimFrame = requestAnimationFrame(renderWisps)
+  }
+
+  function handleOverlayMouseMove(e: MouseEvent) {
+    if (!overlay) return
+    const rect = overlay.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    const prev = hoveredWisp
+    hoveredWisp = deps.switchTo ? hitTestWisps(mx, my) : -1
+
+    // Update cursor on overlay — but only change style if we aren't over an interactive child
+    const target = e.target as HTMLElement
+    const isInteractiveChild = target === inputEl || target === betweenLink || target.tagName === 'INPUT'
+    if (!isInteractiveChild) {
+      overlay.style.cursor = hoveredWisp >= 0 ? 'pointer' : ''
+    }
+
+    // Candle flicker intensification on wisp hover
+    if (candleEl) {
+      if (hoveredWisp >= 0 && prev < 0) {
+        candleEl.style.animation = 'candleFlicker 0.6s ease-in-out infinite alternate'
+        candleEl.style.filter = 'brightness(1.5)'
+      } else if (hoveredWisp < 0 && prev >= 0) {
+        candleEl.style.animation = 'candleFlicker 3s ease-in-out infinite alternate'
+        candleEl.style.filter = ''
+      }
+    }
+  }
+
+  function handleOverlayClick(e: MouseEvent) {
+    if (!overlay || !deps.switchTo) return
+    // Don't intercept clicks on interactive children
+    const target = e.target as HTMLElement
+    if (target === inputEl || target === betweenLink || target.tagName === 'INPUT') return
+    // Also skip if the target is inside messagesEl
+    if (messagesEl && messagesEl.contains(target) && target !== overlay) return
+
+    const rect = overlay.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    const idx = hitTestWisps(mx, my)
+    if (idx >= 0) {
+      clickedWisp = idx
+      clickTime = Date.now()
+      const targetRoom = spiritWisps[idx].name
+      // Navigate after flash animation
+      setTimeout(() => {
+        deps.switchTo!(targetRoom)
+        clickedWisp = -1
+      }, 500)
+    }
+  }
+
   return {
     name: 'seance',
     label: 'the séance',
@@ -404,41 +616,25 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         overlay.appendChild(betweenLink)
       }
 
-      // In-room portals: spirit-themed connections
+      // Spirit wisp canvas — renders behind messages/input
       if (deps.switchTo) {
-        const portalData = [
-          { name: 'oracle', symbol: '\u2721', hint: 'the oracle deck', color: '200, 180, 100', pos: 'top: 24px; left: 24px;' },
-          { name: 'madeleine', symbol: '\u2055', hint: 'the madeleine', color: '220, 180, 200', pos: 'top: 24px; right: 24px;' },
-          { name: 'rememory', symbol: '\u29BE', hint: 'the rememory', color: '180, 160, 220', pos: 'bottom: 60px; right: 24px;' },
-          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
-        ]
-        for (const p of portalData) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            position: absolute; ${p.pos}
-            pointer-events: auto; cursor: pointer;
-            font-family: 'Cormorant Garamond', serif;
-            font-weight: 300; font-size: 10px;
-            letter-spacing: 2px; text-transform: lowercase;
-            color: rgba(${p.color}, 0.06);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            padding: 8px; z-index: 10;
-          `
-          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.5)`
-            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
-          })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.06)`
-            el.style.textShadow = 'none'
-          })
-          el.addEventListener('click', (e) => {
-            e.stopPropagation()
-            deps.switchTo!(p.name)
-          })
-          overlay.appendChild(el)
-        }
+        wispCanvas = document.createElement('canvas')
+        wispCanvas.style.cssText = `
+          position: absolute; top: 0; left: 0;
+          width: 100%; height: 100%;
+          pointer-events: none;
+          z-index: 0;
+        `
+        // Insert canvas as first child so it's behind everything
+        overlay.insertBefore(wispCanvas, overlay.firstChild)
+        wispCtx = wispCanvas.getContext('2d')
+
+        resizeWispCanvas()
+        window.addEventListener('resize', resizeWispCanvas)
+
+        // Interaction listeners on the overlay itself
+        overlay.addEventListener('mousemove', handleOverlayMouseMove)
+        overlay.addEventListener('click', handleOverlayClick)
       }
 
       return overlay
@@ -449,14 +645,26 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       fadeInterval = window.setInterval(fadeOldMessages, 5000)
       // Focus input after transition
       setTimeout(() => inputEl?.focus(), 1600)
+      // Start wisp animation
+      if (wispCanvas && wispCtx) {
+        resizeWispCanvas()
+        wispAnimFrame = requestAnimationFrame(renderWisps)
+      }
     },
 
     deactivate() {
       if (fadeInterval) clearInterval(fadeInterval)
+      if (wispAnimFrame) cancelAnimationFrame(wispAnimFrame)
+      wispAnimFrame = null
+      hoveredWisp = -1
+      clickedWisp = -1
     },
 
     destroy() {
       if (fadeInterval) clearInterval(fadeInterval)
+      if (wispAnimFrame) cancelAnimationFrame(wispAnimFrame)
+      wispAnimFrame = null
+      window.removeEventListener('resize', resizeWispCanvas)
       overlay?.remove()
     },
   }

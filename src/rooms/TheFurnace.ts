@@ -48,6 +48,17 @@ interface BurningChar {
   hue: number
 }
 
+interface IronPortal {
+  name: string
+  label: string
+  /** Position as fraction of canvas width/height */
+  fx: number
+  fy: number
+  hue: number
+  shape: 'tuning-fork' | 'gear' | 'hook' | 'star'
+  glowIntensity: number
+}
+
 export function createFurnaceRoom(deps: FurnaceDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -62,6 +73,18 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
   let burnProgress = 0
   let listEl: HTMLElement | null = null
   let statusEl: HTMLElement | null = null
+
+  // Iron brand portal navigation
+  const ironPortals: IronPortal[] = [
+    { name: 'disintegration', label: 'the disintegration loops', fx: 0.18, fy: 0.22, hue: 30, shape: 'tuning-fork', glowIntensity: 0 },
+    { name: 'clocktower', label: 'the clock tower', fx: 0.82, fy: 0.22, hue: 42, shape: 'gear', glowIntensity: 0 },
+    { name: 'well', label: 'the well', fx: 0.82, fy: 0.72, hue: 210, shape: 'hook', glowIntensity: 0 },
+    { name: 'void', label: 'the void', fx: 0.18, fy: 0.72, hue: 300, shape: 'star', glowIntensity: 0 },
+  ]
+  let hoveredIron = -1
+  let clickedIron = -1
+  let clickedIronTime = 0
+  let ironSparks: { x: number; y: number; vx: number; vy: number; alpha: number; hue: number }[] = []
 
   function render() {
     if (!canvas || !ctx || !active) return
@@ -225,6 +248,149 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       ctx.fillRect(barX, barY, barW, 3)
       ctx.fillStyle = `rgba(255, ${150 - burnProgress * 100}, ${50 - burnProgress * 50}, 0.6)`
       ctx.fillRect(barX, barY, barW * burnProgress, 3)
+    }
+
+    // --- Iron brand portal navigation ---
+    if (deps.switchTo) {
+      for (let pi = 0; pi < ironPortals.length; pi++) {
+        const p = ironPortals[pi]
+        const px = p.fx * w
+        const py = p.fy * h
+        const isHovered = hoveredIron === pi
+        const isClicked = clickedIron === pi
+
+        // Interpolate glow intensity toward target
+        const targetGlow = isClicked ? 1 : isHovered ? 0.7 : 0
+        p.glowIntensity += (targetGlow - p.glowIntensity) * 0.08
+
+        // Base pulse synced with fire
+        const basePulse = 0.08 + fireIntensity * 0.12 + Math.sin(time * 1.5 + pi * 1.7) * 0.03
+        const intensity = basePulse + p.glowIntensity * 0.8
+
+        // Color: dark iron at rest, orange when warm, white-hot when clicked
+        const warmth = p.glowIntensity
+        const r = Math.floor(60 + warmth * 195)
+        const g = Math.floor(25 + warmth * (warmth > 0.8 ? 175 : 95))
+        const b = Math.floor(15 + warmth * (warmth > 0.8 ? 140 : 20))
+
+        // Outer glow
+        if (intensity > 0.1) {
+          ctx.save()
+          ctx.shadowColor = `hsla(${p.hue}, 80%, ${40 + warmth * 30}%, ${intensity * 0.6})`
+          ctx.shadowBlur = 12 + warmth * 20
+          ctx.restore()
+        }
+
+        // Draw the shape
+        const sz = 18
+        ctx.save()
+        ctx.translate(px, py)
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${intensity})`
+        ctx.lineWidth = 1.5 + warmth * 1
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+
+        // Apply glow via shadow on the context
+        if (warmth > 0.1) {
+          ctx.shadowColor = `rgba(${r}, ${g}, ${b}, ${warmth * 0.5})`
+          ctx.shadowBlur = 8 + warmth * 16
+        }
+
+        ctx.beginPath()
+        if (p.shape === 'tuning-fork') {
+          // Two prongs + handle
+          ctx.moveTo(-5, -sz)
+          ctx.lineTo(-5, -sz * 0.3)
+          ctx.quadraticCurveTo(-5, 0, 0, 0)
+          ctx.quadraticCurveTo(5, 0, 5, -sz * 0.3)
+          ctx.lineTo(5, -sz)
+          ctx.moveTo(0, 0)
+          ctx.lineTo(0, sz)
+        } else if (p.shape === 'gear') {
+          // Cog outline — 6 teeth around a circle
+          const teeth = 6
+          const outerR = sz * 0.7
+          const innerR = sz * 0.45
+          for (let t = 0; t < teeth; t++) {
+            const a1 = (t / teeth) * Math.PI * 2 - Math.PI / 2
+            const a2 = ((t + 0.35) / teeth) * Math.PI * 2 - Math.PI / 2
+            const a3 = ((t + 0.65) / teeth) * Math.PI * 2 - Math.PI / 2
+            const a4 = ((t + 1) / teeth) * Math.PI * 2 - Math.PI / 2
+            if (t === 0) {
+              ctx.moveTo(Math.cos(a1) * outerR, Math.sin(a1) * outerR)
+            }
+            ctx.lineTo(Math.cos(a2) * outerR, Math.sin(a2) * outerR)
+            ctx.lineTo(Math.cos(a2) * innerR, Math.sin(a2) * innerR)
+            ctx.lineTo(Math.cos(a3) * innerR, Math.sin(a3) * innerR)
+            ctx.lineTo(Math.cos(a3) * outerR, Math.sin(a3) * outerR)
+            ctx.lineTo(Math.cos(a4) * outerR, Math.sin(a4) * outerR)
+          }
+          ctx.closePath()
+          // Center dot
+          ctx.moveTo(3, 0)
+          ctx.arc(0, 0, 3, 0, Math.PI * 2)
+        } else if (p.shape === 'hook') {
+          // Hook with chain links
+          ctx.moveTo(0, -sz)
+          ctx.lineTo(0, -sz * 0.3)
+          ctx.quadraticCurveTo(0, sz * 0.3, -sz * 0.4, sz * 0.5)
+          ctx.quadraticCurveTo(-sz * 0.5, sz * 0.7, -sz * 0.15, sz * 0.7)
+          // Chain links above
+          ctx.moveTo(-2, -sz)
+          ctx.ellipse(0, -sz - 4, 3, 4, 0, 0, Math.PI * 2)
+          ctx.moveTo(-2, -sz - 8)
+          ctx.ellipse(0, -sz - 12, 3, 4, 0, 0, Math.PI * 2)
+        } else if (p.shape === 'star') {
+          // Spike star — 5 sharp points
+          const spikes = 5
+          const outerR = sz * 0.7
+          const innerR = sz * 0.25
+          for (let s = 0; s < spikes * 2; s++) {
+            const angle = (s / (spikes * 2)) * Math.PI * 2 - Math.PI / 2
+            const r2 = s % 2 === 0 ? outerR : innerR
+            if (s === 0) ctx.moveTo(Math.cos(angle) * r2, Math.sin(angle) * r2)
+            else ctx.lineTo(Math.cos(angle) * r2, Math.sin(angle) * r2)
+          }
+          ctx.closePath()
+        }
+        ctx.stroke()
+
+        // Label (visible on hover/click)
+        if (warmth > 0.05) {
+          ctx.shadowColor = 'transparent'
+          ctx.shadowBlur = 0
+          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${warmth * 0.7})`
+          ctx.textAlign = 'center'
+          ctx.fillText(p.label, 0, sz + 16)
+        }
+
+        ctx.restore()
+      }
+
+      // Iron sparks (from clicked brand)
+      for (let si = ironSparks.length - 1; si >= 0; si--) {
+        const s = ironSparks[si]
+        s.x += s.vx
+        s.y += s.vy
+        s.vy += 0.05 // gravity
+        s.alpha -= 0.02
+        if (s.alpha <= 0) {
+          ironSparks.splice(si, 1)
+          continue
+        }
+        ctx.beginPath()
+        ctx.arc(s.x, s.y, 1.2, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(${s.hue}, 90%, 70%, ${s.alpha})`
+        ctx.fill()
+      }
+
+      // Handle delayed navigation after click
+      if (clickedIron >= 0 && time - clickedIronTime > 0.4) {
+        const target = ironPortals[clickedIron].name
+        clickedIron = -1
+        deps.switchTo!(target)
+      }
     }
   }
 
@@ -448,41 +614,51 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       }
       window.addEventListener('resize', onResize)
 
-      // In-room portals: fire-themed connections
+      // Iron brand portal — mouse interaction via overlay
       if (deps.switchTo) {
-        const portalData = [
-          { name: 'disintegration', symbol: '\uD83C\uDFB5', hint: 'the disintegration loops', color: '200, 140, 80', pos: 'top: 30px; right: 24px;' },
-          { name: 'clocktower', symbol: '\u231A', hint: 'the clock tower', color: '200, 180, 140', pos: 'top: 30px; left: 24px;' },
-          { name: 'well', symbol: '\u2B58', hint: 'the well', color: '120, 160, 200', pos: 'bottom: 60px; right: 24px;' },
-          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
-        ]
-        for (const p of portalData) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            position: absolute; ${p.pos}
-            pointer-events: auto; cursor: pointer;
-            font-family: 'Cormorant Garamond', serif;
-            font-weight: 300; font-size: 10px;
-            letter-spacing: 2px; text-transform: lowercase;
-            color: rgba(${p.color}, 0.06);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            padding: 8px; z-index: 10;
-          `
-          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.5)`
-            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
-          })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.06)`
-            el.style.textShadow = 'none'
-          })
-          el.addEventListener('click', (e) => {
-            e.stopPropagation()
-            deps.switchTo!(p.name)
-          })
-          overlay.appendChild(el)
-        }
+        const hitRadius = 28
+        overlay.addEventListener('mousemove', (e) => {
+          if (!canvas) return
+          const rect = canvas.getBoundingClientRect()
+          const mx = (e.clientX - rect.left) * (canvas.width / rect.width)
+          const my = (e.clientY - rect.top) * (canvas.height / rect.height)
+          hoveredIron = -1
+          for (let i = 0; i < ironPortals.length; i++) {
+            const p = ironPortals[i]
+            const px = p.fx * canvas.width
+            const py = p.fy * canvas.height
+            const dx = mx - px
+            const dy = my - py
+            if (dx * dx + dy * dy < hitRadius * hitRadius) {
+              hoveredIron = i
+              break
+            }
+          }
+          overlay!.style.cursor = hoveredIron >= 0 ? 'pointer' : ''
+        })
+        overlay.addEventListener('click', (e) => {
+          if (hoveredIron < 0 || clickedIron >= 0 || !canvas) return
+          // Don't intercept clicks on the panel area
+          const target = e.target as HTMLElement
+          if (target !== overlay && target !== canvas) return
+          clickedIron = hoveredIron
+          clickedIronTime = time
+          // Spawn sparks from the brand
+          const p = ironPortals[clickedIron]
+          const px = p.fx * canvas.width
+          const py = p.fy * canvas.height
+          for (let s = 0; s < 20; s++) {
+            const angle = Math.random() * Math.PI * 2
+            const speed = 1 + Math.random() * 4
+            ironSparks.push({
+              x: px, y: py,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed - 1,
+              alpha: 0.6 + Math.random() * 0.4,
+              hue: p.hue,
+            })
+          }
+        })
       }
 
       return overlay
@@ -493,6 +669,10 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       embers = []
       burningChars = []
       fireIntensity = 0.3
+      hoveredIron = -1
+      clickedIron = -1
+      ironSparks = []
+      for (const p of ironPortals) p.glowIntensity = 0
       rebuildList()
       render()
     },

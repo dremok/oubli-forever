@@ -78,6 +78,17 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
   let noteFlash = 0
   let lastNoteHue = 0
 
+  // Portal band state — frequency zones on the waveform canvas
+  const portalBands = [
+    { name: 'choir', label: 'the choir', freqRange: [0, 0.25] as [number, number], hue: 280, hoverGlow: 0 },
+    { name: 'radio', label: 'the radio', freqRange: [0.25, 0.5] as [number, number], hue: 120, hoverGlow: 0 },
+    { name: 'pendulum', label: 'the pendulum', freqRange: [0.5, 0.75] as [number, number], hue: 45, hoverGlow: 0 },
+    { name: 'void', label: 'the void', freqRange: [0.75, 1.0] as [number, number], hue: 320, hoverGlow: 0 },
+  ]
+  let hoveredBand = -1
+  let clickedBand = -1
+  let clickTime = 0
+
   function semitoneToFreq(semitone: number): number {
     return BASE_FREQ * Math.pow(2, semitone / 12)
   }
@@ -277,30 +288,135 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     const w = waveCanvas.width
     const h = waveCanvas.height
     const ctx = waveCtx
+    const bandBarH = 15
 
     ctx.clearRect(0, 0, w, h)
 
-    // Draw waveform
-    const sliceWidth = w / waveformData.length
-    let x = 0
+    // --- Portal frequency band bars at the bottom of the canvas ---
+    for (let bi = 0; bi < portalBands.length; bi++) {
+      const band = portalBands[bi]
+      const x0 = Math.floor(band.freqRange[0] * w)
+      const x1 = Math.floor(band.freqRange[1] * w)
+      const bw = x1 - x0
 
-    ctx.beginPath()
-    for (let i = 0; i < waveformData.length; i++) {
-      const v = waveformData[i] / 128.0
-      const y = (v * h) / 2
+      // Interpolate hover glow toward target
+      const target = bi === hoveredBand ? 1 : 0
+      band.hoverGlow += (target - band.hoverGlow) * 0.12
 
-      if (i === 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
-      x += sliceWidth
+      // Flash white on click
+      const isClicked = bi === clickedBand
+      const clickElapsed = clickTime ? (performance.now() - clickTime) / 1000 : 1
+      const clickFlash = isClicked ? Math.max(0, 1 - clickElapsed / 0.3) : 0
+
+      // Bar background
+      const baseAlpha = 0.04 + band.hoverGlow * 0.18 + clickFlash * 0.6
+      if (clickFlash > 0) {
+        const r = Math.round(255 * clickFlash + (1 - clickFlash) * 128)
+        const g = Math.round(255 * clickFlash + (1 - clickFlash) * 128)
+        const b = Math.round(255 * clickFlash + (1 - clickFlash) * 128)
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${baseAlpha})`
+      } else {
+        ctx.fillStyle = `hsla(${band.hue}, 60%, 55%, ${baseAlpha})`
+      }
+      ctx.fillRect(x0, h - bandBarH, bw, bandBarH)
+
+      // Top edge line of the bar
+      const edgeAlpha = 0.06 + band.hoverGlow * 0.35
+      ctx.beginPath()
+      ctx.moveTo(x0, h - bandBarH)
+      ctx.lineTo(x1, h - bandBarH)
+      ctx.strokeStyle = `hsla(${band.hue}, 60%, 65%, ${edgeAlpha})`
+      ctx.lineWidth = 0.5
+      ctx.stroke()
+
+      // Vertical separator between bands (except first)
+      if (bi > 0) {
+        ctx.beginPath()
+        ctx.moveTo(x0, h - bandBarH)
+        ctx.lineTo(x0, h)
+        ctx.strokeStyle = `rgba(255, 255, 255, 0.04)`
+        ctx.lineWidth = 0.5
+        ctx.stroke()
+      }
+
+      // Label on hover
+      if (band.hoverGlow > 0.05) {
+        const labelAlpha = band.hoverGlow * 0.7
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.textAlign = 'center'
+        ctx.fillStyle = `hsla(${band.hue}, 50%, 75%, ${labelAlpha})`
+        ctx.fillText(band.label, x0 + bw / 2, h - bandBarH - 6)
+      }
     }
+
+    // --- Handle delayed navigation on click ---
+    if (clickedBand >= 0 && clickTime) {
+      const elapsed = (performance.now() - clickTime) / 1000
+      if (elapsed >= 0.3 && instrumentDeps.switchTo) {
+        const dest = portalBands[clickedBand].name
+        clickedBand = -1
+        clickTime = 0
+        instrumentDeps.switchTo(dest)
+        return // stop rendering, we're navigating away
+      }
+    }
+
+    // --- Draw waveform with per-band tinting ---
+    const sliceWidth = w / waveformData.length
 
     // Note flash decays
     const alpha = 0.15 + noteFlash * 0.6
     noteFlash *= 0.95
 
-    ctx.strokeStyle = `hsla(${lastNoteHue}, 70%, 65%, ${alpha})`
-    ctx.lineWidth = 1.5
-    ctx.stroke()
+    if (hoveredBand >= 0) {
+      // Draw waveform in segments, tinting the hovered band's region
+      for (let bi = 0; bi < portalBands.length; bi++) {
+        const band = portalBands[bi]
+        const startX = Math.floor(band.freqRange[0] * w)
+        const endX = Math.floor(band.freqRange[1] * w)
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(startX, 0, endX - startX, h)
+        ctx.clip()
+
+        ctx.beginPath()
+        let x = 0
+        for (let i = 0; i < waveformData.length; i++) {
+          const v = waveformData[i] / 128.0
+          const y = (v * h) / 2
+          if (i === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+          x += sliceWidth
+        }
+
+        if (bi === hoveredBand) {
+          // Tint the waveform in this zone with the portal's color
+          const tintAlpha = alpha + band.hoverGlow * 0.3
+          ctx.strokeStyle = `hsla(${band.hue}, 80%, 65%, ${tintAlpha})`
+          ctx.lineWidth = 2
+        } else {
+          ctx.strokeStyle = `hsla(${lastNoteHue}, 70%, 65%, ${alpha})`
+          ctx.lineWidth = 1.5
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
+    } else {
+      // No hover — draw waveform normally
+      let x = 0
+      ctx.beginPath()
+      for (let i = 0; i < waveformData.length; i++) {
+        const v = waveformData[i] / 128.0
+        const y = (v * h) / 2
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+        x += sliceWidth
+      }
+      ctx.strokeStyle = `hsla(${lastNoteHue}, 70%, 65%, ${alpha})`
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+    }
 
     // Soft glow line at center
     ctx.beginPath()
@@ -430,41 +546,50 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       overlay.appendChild(waveRow)
       updateWaveButtons()
 
-      // In-room portals: sound-themed connections
+      // Canvas-based portal band interaction
       if (instrumentDeps.switchTo) {
-        const portalData = [
-          { name: 'choir', symbol: '\uD83C\uDFB6', hint: 'the choir', color: '180, 140, 200', pos: 'top: 24px; left: 24px;' },
-          { name: 'radio', symbol: '\uD83D\uDCE1', hint: 'the radio', color: '120, 200, 120', pos: 'top: 24px; right: 24px;' },
-          { name: 'pendulum', symbol: '\u2384', hint: 'the pendulum', color: '200, 200, 140', pos: 'bottom: 60px; right: 24px;' },
-          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
-        ]
-        for (const p of portalData) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            position: absolute; ${p.pos}
-            pointer-events: auto; cursor: pointer;
-            font-family: 'Cormorant Garamond', serif;
-            font-weight: 300; font-size: 10px;
-            letter-spacing: 2px; text-transform: lowercase;
-            color: rgba(${p.color}, 0.06);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            padding: 8px; z-index: 10;
-          `
-          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.5)`
-            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
-          })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.06)`
-            el.style.textShadow = 'none'
-          })
-          el.addEventListener('click', (e) => {
+        waveCanvas.style.cursor = 'default'
+
+        waveCanvas.addEventListener('mousemove', (e) => {
+          const rect = waveCanvas!.getBoundingClientRect()
+          const scaleX = waveCanvas!.width / rect.width
+          const scaleY = waveCanvas!.height / rect.height
+          const cx = (e.clientX - rect.left) * scaleX
+          const cy = (e.clientY - rect.top) * scaleY
+          const bandBarH = 15
+          const h = waveCanvas!.height
+          const w = waveCanvas!.width
+
+          if (cy >= h - bandBarH) {
+            // In the bar region — find which band
+            const ratio = cx / w
+            let found = -1
+            for (let i = 0; i < portalBands.length; i++) {
+              if (ratio >= portalBands[i].freqRange[0] && ratio < portalBands[i].freqRange[1]) {
+                found = i
+                break
+              }
+            }
+            hoveredBand = found
+            waveCanvas!.style.cursor = found >= 0 ? 'pointer' : 'default'
+          } else {
+            hoveredBand = -1
+            waveCanvas!.style.cursor = 'default'
+          }
+        })
+
+        waveCanvas.addEventListener('mouseleave', () => {
+          hoveredBand = -1
+          waveCanvas!.style.cursor = 'default'
+        })
+
+        waveCanvas.addEventListener('click', (e) => {
+          if (hoveredBand >= 0 && clickedBand < 0) {
+            clickedBand = hoveredBand
+            clickTime = performance.now()
             e.stopPropagation()
-            instrumentDeps.switchTo!(p.name)
-          })
-          overlay.appendChild(el)
-        }
+          }
+        })
       }
 
       return overlay

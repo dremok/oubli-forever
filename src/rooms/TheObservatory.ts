@@ -41,6 +41,7 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
   let focusPanel: HTMLElement | null = null
   let focusedId: string | null = null
   let controlsRAF = 0
+  let compassCanvases: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; draw: (t: number) => void; wrapper: HTMLElement }[] = []
 
   const raycaster = new THREE.Raycaster()
   const mouse = new THREE.Vector2()
@@ -247,41 +248,267 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       focusPanel = createFocusPanel()
       document.body.appendChild(focusPanel)
 
-      // In-room navigation portals at corners
+      // Celestial compass markers — mini canvas navigation at viewport edges
       if (deps.switchTo) {
-        const portalData = [
-          { name: 'satellite', symbol: '\uD83D\uDEF0\uFE0F', hint: 'the satellite', color: '100, 200, 255', pos: 'top: 24px; right: 24px;' },
-          { name: 'asteroids', symbol: '\u2604', hint: 'the asteroid field', color: '200, 150, 100', pos: 'bottom: 60px; left: 24px;' },
-          { name: 'clocktower', symbol: '\u231A', hint: 'the clock tower', color: '200, 180, 140', pos: 'bottom: 60px; right: 24px;' },
-          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'top: 24px; left: 24px;' },
+        compassCanvases = []
+        const SIZE = 60
+
+        const markers: { name: string; label: string; pos: string; labelPos: string; draw: (ctx: CanvasRenderingContext2D, t: number, hover: boolean) => void }[] = [
+          {
+            name: 'satellite',
+            label: 'satellite',
+            pos: 'top: 18px; right: 18px;',
+            labelPos: 'top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px;',
+            draw(ctx, t, hover) {
+              const cx = SIZE / 2, cy = SIZE / 2
+              const bright = hover ? 1.0 : 0.35
+              // Orbit ring
+              ctx.strokeStyle = `rgba(100, 200, 255, ${0.15 * bright})`
+              ctx.lineWidth = 0.8
+              ctx.beginPath()
+              ctx.ellipse(cx, cy, 22, 10, -0.4, 0, Math.PI * 2)
+              ctx.stroke()
+              // Central body
+              ctx.fillStyle = `rgba(100, 200, 255, ${0.3 * bright})`
+              ctx.beginPath()
+              ctx.arc(cx, cy, 2.5, 0, Math.PI * 2)
+              ctx.fill()
+              // Orbiting dot
+              const angle = t * 1.2
+              const ox = cx + Math.cos(angle) * 22
+              const oy = cy + Math.sin(angle) * 10 * Math.cos(-0.4) - Math.cos(angle) * 10 * Math.sin(-0.4)
+              // Trail
+              for (let i = 1; i <= 6; i++) {
+                const ta = angle - i * 0.15
+                const tx = cx + Math.cos(ta) * 22
+                const ty = cy + Math.sin(ta) * 10 * Math.cos(-0.4) - Math.cos(ta) * 10 * Math.sin(-0.4)
+                ctx.fillStyle = `rgba(100, 200, 255, ${(0.2 - i * 0.03) * bright})`
+                ctx.beginPath()
+                ctx.arc(tx, ty, 1.5 - i * 0.15, 0, Math.PI * 2)
+                ctx.fill()
+              }
+              // Satellite dot
+              ctx.fillStyle = `rgba(180, 230, 255, ${0.9 * bright})`
+              ctx.beginPath()
+              ctx.arc(ox, oy, 2, 0, Math.PI * 2)
+              ctx.fill()
+              // Glow
+              if (hover) {
+                ctx.shadowColor = 'rgba(100, 200, 255, 0.6)'
+                ctx.shadowBlur = 12
+                ctx.beginPath()
+                ctx.arc(ox, oy, 2, 0, Math.PI * 2)
+                ctx.fill()
+                ctx.shadowBlur = 0
+              }
+            },
+          },
+          {
+            name: 'asteroids',
+            label: 'asteroids',
+            pos: 'bottom: 54px; left: 18px;',
+            labelPos: 'bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px;',
+            draw(ctx, t, hover) {
+              const cx = SIZE / 2, cy = SIZE / 2
+              const bright = hover ? 1.0 : 0.35
+              // Asteroid shapes — irregular polygons
+              const rocks = [
+                { x: cx - 8, y: cy - 4, r: 7, sides: 6, phase: 0 },
+                { x: cx + 10, y: cy + 2, r: 5, sides: 5, phase: 1.2 },
+                { x: cx + 1, y: cy + 10, r: 4, sides: 7, phase: 2.5 },
+                { x: cx - 6, y: cy + 8, r: 3, sides: 5, phase: 3.8 },
+              ]
+              for (const rock of rocks) {
+                const wobble = Math.sin(t * 0.3 + rock.phase) * 1.2
+                ctx.fillStyle = `rgba(200, 150, 100, ${0.2 * bright})`
+                ctx.strokeStyle = `rgba(200, 150, 100, ${0.35 * bright})`
+                ctx.lineWidth = 0.7
+                ctx.beginPath()
+                for (let i = 0; i < rock.sides; i++) {
+                  const a = (i / rock.sides) * Math.PI * 2 + t * 0.08 + rock.phase
+                  const jitter = Math.sin(a * 3 + rock.phase) * 1.5
+                  const px = rock.x + wobble * 0.3 + Math.cos(a) * (rock.r + jitter)
+                  const py = rock.y + wobble * 0.5 + Math.sin(a) * (rock.r + jitter)
+                  if (i === 0) ctx.moveTo(px, py)
+                  else ctx.lineTo(px, py)
+                }
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+              }
+              if (hover) {
+                ctx.shadowColor = 'rgba(200, 150, 100, 0.5)'
+                ctx.shadowBlur = 10
+                for (const rock of rocks) {
+                  ctx.beginPath()
+                  ctx.arc(rock.x, rock.y, rock.r * 0.5, 0, Math.PI * 2)
+                  ctx.fill()
+                }
+                ctx.shadowBlur = 0
+              }
+            },
+          },
+          {
+            name: 'clocktower',
+            label: 'clock tower',
+            pos: 'bottom: 54px; right: 18px;',
+            labelPos: 'bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px;',
+            draw(ctx, t, hover) {
+              const cx = SIZE / 2, cy = SIZE / 2
+              const bright = hover ? 1.0 : 0.35
+              // Clock face
+              ctx.strokeStyle = `rgba(200, 180, 140, ${0.25 * bright})`
+              ctx.lineWidth = 1
+              ctx.beginPath()
+              ctx.arc(cx, cy, 20, 0, Math.PI * 2)
+              ctx.stroke()
+              // Hour ticks
+              for (let i = 0; i < 12; i++) {
+                const a = (i / 12) * Math.PI * 2 - Math.PI / 2
+                const inner = 17
+                const outer = 20
+                ctx.strokeStyle = `rgba(200, 180, 140, ${0.2 * bright})`
+                ctx.lineWidth = i % 3 === 0 ? 1.2 : 0.5
+                ctx.beginPath()
+                ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner)
+                ctx.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer)
+                ctx.stroke()
+              }
+              // Single sweeping hand — continuous motion
+              const handAngle = t * 0.5 - Math.PI / 2
+              ctx.strokeStyle = `rgba(200, 180, 140, ${0.6 * bright})`
+              ctx.lineWidth = 1.2
+              ctx.beginPath()
+              ctx.moveTo(cx, cy)
+              ctx.lineTo(cx + Math.cos(handAngle) * 15, cy + Math.sin(handAngle) * 15)
+              ctx.stroke()
+              // Center dot
+              ctx.fillStyle = `rgba(200, 180, 140, ${0.5 * bright})`
+              ctx.beginPath()
+              ctx.arc(cx, cy, 1.5, 0, Math.PI * 2)
+              ctx.fill()
+              if (hover) {
+                ctx.shadowColor = 'rgba(200, 180, 140, 0.5)'
+                ctx.shadowBlur = 10
+                ctx.beginPath()
+                ctx.arc(cx, cy, 20, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.shadowBlur = 0
+              }
+            },
+          },
+          {
+            name: 'void',
+            label: 'the void',
+            pos: 'top: 18px; left: 18px;',
+            labelPos: 'top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px;',
+            draw(ctx, t, hover) {
+              const cx = SIZE / 2, cy = SIZE / 2
+              const bright = hover ? 1.0 : 0.35
+              const pulse = 0.85 + Math.sin(t * 1.5) * 0.15
+              const radius = 14 * pulse
+              // Dark center
+              const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius + 6)
+              grad.addColorStop(0, `rgba(2, 1, 8, ${0.9 * bright})`)
+              grad.addColorStop(0.6, `rgba(2, 1, 8, ${0.5 * bright})`)
+              grad.addColorStop(1, 'rgba(2, 1, 8, 0)')
+              ctx.fillStyle = grad
+              ctx.beginPath()
+              ctx.arc(cx, cy, radius + 6, 0, Math.PI * 2)
+              ctx.fill()
+              // Magenta rim
+              ctx.strokeStyle = `rgba(255, 20, 147, ${(0.3 + Math.sin(t * 2) * 0.1) * bright})`
+              ctx.lineWidth = 1.5
+              ctx.beginPath()
+              ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+              ctx.stroke()
+              // Inner glow ring
+              ctx.strokeStyle = `rgba(255, 20, 147, ${0.1 * bright})`
+              ctx.lineWidth = 0.5
+              ctx.beginPath()
+              ctx.arc(cx, cy, radius * 0.6, 0, Math.PI * 2)
+              ctx.stroke()
+              if (hover) {
+                ctx.shadowColor = 'rgba(255, 20, 147, 0.6)'
+                ctx.shadowBlur = 15
+                ctx.beginPath()
+                ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.shadowBlur = 0
+              }
+            },
+          },
         ]
-        for (const p of portalData) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            position: absolute; ${p.pos}
+
+        for (const m of markers) {
+          // Wrapper div for positioning
+          const wrapper = document.createElement('div')
+          wrapper.style.cssText = `
+            position: absolute; ${m.pos}
+            width: ${SIZE}px; height: ${SIZE}px;
             pointer-events: auto; cursor: pointer;
+            z-index: 10;
+          `
+
+          // Mini canvas for procedural drawing
+          const c = document.createElement('canvas')
+          c.width = SIZE
+          c.height = SIZE
+          c.style.cssText = `width: ${SIZE}px; height: ${SIZE}px; display: block;`
+          wrapper.appendChild(c)
+
+          // Label — hidden until hover
+          const label = document.createElement('div')
+          label.style.cssText = `
+            position: absolute; ${m.labelPos}
             font-family: 'Cormorant Garamond', serif;
             font-weight: 300; font-size: 10px;
-            letter-spacing: 2px; text-transform: lowercase;
-            color: rgba(${p.color}, 0.06);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            text-shadow: none;
-            padding: 8px; z-index: 10;
+            letter-spacing: 2px; white-space: nowrap;
+            color: rgba(255, 255, 255, 0.5);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
           `
-          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.5)`
-            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
+          label.textContent = m.label
+          wrapper.appendChild(label)
+
+          let hovered = false
+          wrapper.addEventListener('mouseenter', () => {
+            hovered = true
+            label.style.opacity = '1'
           })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.06)`
-            el.style.textShadow = 'none'
+          wrapper.addEventListener('mouseleave', () => {
+            hovered = false
+            label.style.opacity = '0'
           })
-          el.addEventListener('click', (e) => {
+          wrapper.addEventListener('click', (e) => {
             e.stopPropagation()
-            deps.switchTo!(p.name)
+            // Flash effect — briefly brighten before navigating
+            const flashCtx = c.getContext('2d')
+            if (flashCtx) {
+              flashCtx.clearRect(0, 0, SIZE, SIZE)
+              flashCtx.fillStyle = 'rgba(255, 255, 255, 0.3)'
+              flashCtx.beginPath()
+              flashCtx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2)
+              flashCtx.fill()
+            }
+            setTimeout(() => deps.switchTo!(m.name), 300)
           })
-          overlay.appendChild(el)
+
+          overlay.appendChild(wrapper)
+
+          const ctx2d = c.getContext('2d')
+          if (ctx2d) {
+            compassCanvases.push({
+              canvas: c,
+              ctx: ctx2d,
+              draw: (t: number) => {
+                ctx2d.clearRect(0, 0, SIZE, SIZE)
+                m.draw(ctx2d, t, hovered)
+              },
+              wrapper,
+            })
+          }
         }
       }
 
@@ -307,10 +534,12 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       controls.enablePan = true
       controls.panSpeed = 0.5
 
-      // Update controls each frame (needed for damping)
+      // Update controls + compass canvases each frame
       const updateLoop = () => {
         if (!controls) return
         controls.update()
+        const t = performance.now() * 0.001
+        for (const cc of compassCanvases) cc.draw(t)
         controlsRAF = requestAnimationFrame(updateLoop)
       }
       controlsRAF = requestAnimationFrame(updateLoop)
@@ -399,6 +628,7 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
         controls = null
       }
       cancelAnimationFrame(controlsRAF)
+      compassCanvases = []
       focusPanel?.remove()
       overlay?.remove()
     },
