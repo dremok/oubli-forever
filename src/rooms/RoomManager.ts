@@ -12,6 +12,7 @@
 export interface Room {
   name: string
   label: string
+  hidden?: boolean // hidden rooms don't appear in tab bar
   create: () => HTMLElement
   activate: () => void
   deactivate: () => void
@@ -186,8 +187,8 @@ export class RoomManager {
     this.tabBar.innerHTML = ''
     this.tabButtons.clear()
 
-    // Dynamically show ALL registered rooms in registration order
-    const roomEntries = [...this.rooms.entries()]
+    // Dynamically show visible rooms in registration order (hidden rooms excluded)
+    const roomEntries = [...this.rooms.entries()].filter(([, r]) => !r.hidden)
     let first = true
 
     for (const [name, room] of roomEntries) {

@@ -54,10 +54,15 @@ function formatTimestamp(ts: string): string {
   return `${y}-${m}-${d}`
 }
 
-export function createArchiveRoom(): Room {
+interface ArchiveDeps {
+  onDescend?: () => void
+}
+
+export function createArchiveRoom(deps?: ArchiveDeps): Room {
   let overlay: HTMLElement | null = null
   let active = false
   let searching = false
+  let searchCount = 0
 
   async function searchWayback(query: string): Promise<ArchiveResult[]> {
     // The CDX API lets us search for URLs matching a pattern
@@ -312,6 +317,30 @@ export function createArchiveRoom(): Room {
       hint.textContent = '~38% of web pages from 2013 no longer exist. what did they hold?'
       overlay.appendChild(hint)
 
+      // Hidden descent link — appears after 2+ searches
+      const descent = document.createElement('div')
+      descent.style.cssText = `
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300; font-size: 11px; font-style: italic;
+        color: rgba(180, 160, 120, 0);
+        letter-spacing: 2px;
+        cursor: pointer;
+        transition: color 1s ease;
+        margin-bottom: 40px;
+        text-align: center;
+      `
+      descent.textContent = '▼ descend deeper'
+      descent.addEventListener('mouseenter', () => {
+        if (searchCount >= 2) descent.style.color = 'rgba(180, 160, 120, 0.4)'
+      })
+      descent.addEventListener('mouseleave', () => {
+        if (searchCount >= 2) descent.style.color = 'rgba(180, 160, 120, 0.12)'
+      })
+      descent.addEventListener('click', () => {
+        if (searchCount >= 2 && deps?.onDescend) deps.onDescend()
+      })
+      overlay.appendChild(descent)
+
       async function doSearch() {
         const query = input.value.trim()
         if (!query || searching) return
@@ -324,6 +353,11 @@ export function createArchiveRoom(): Room {
         try {
           const data = await searchWayback(query)
           renderResults(data, results, status)
+          searchCount++
+          // Reveal descent link after 2 searches
+          if (searchCount >= 2 && deps?.onDescend) {
+            descent.style.color = 'rgba(180, 160, 120, 0.12)'
+          }
         } catch {
           status.textContent = 'the archive is unreachable. try again.'
         } finally {
