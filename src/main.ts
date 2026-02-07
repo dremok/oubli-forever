@@ -35,6 +35,7 @@ import { createInstrumentRoom } from './rooms/TheInstrument'
 import { createObservatoryRoom } from './rooms/TheObservatory'
 import { createSeanceRoom } from './rooms/TheSeance'
 import { createDarkroomRoom } from './rooms/TheDarkroom'
+import { createGardenRoom } from './rooms/TheGarden'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -327,6 +328,9 @@ roomManager.addRoom(createSeanceRoom({
     : undefined,
 }))
 roomManager.addRoom(createDarkroomRoom({
+  getMemories: () => journal.getMemories(),
+}))
+roomManager.addRoom(createGardenRoom({
   getMemories: () => journal.getMemories(),
 }))
 
