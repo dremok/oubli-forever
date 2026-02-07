@@ -60,9 +60,21 @@ interface Message {
   time: number
 }
 
+// Trigger words that reveal the passage to The Between
+const BETWEEN_TRIGGERS = ['between', 'liminal', 'threshold', 'doorway', 'passage', 'corridor', 'hallway', 'bardo', 'transition']
+
+const BETWEEN_RESPONSES = [
+  'you speak of the space between... there is a place like that. a corridor. you can feel it, can\'t you?',
+  'the threshold. yes. there is a hallway here, between all rooms. it has always been here.',
+  'between... between... the corridor flickers. a door appears in the darkness.',
+  'the liminal space calls to you. look below — a passage has opened.',
+  'you named it. the between-place. the hallway of doors. it materializes.',
+]
+
 interface SeanceDeps {
   getMemories: () => StoredMemory[]
   speakText?: (text: string) => Promise<void>
+  onBetween?: () => void
 }
 
 export function createSeanceRoom(deps: SeanceDeps): Room {
@@ -70,8 +82,10 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
   let inputEl: HTMLInputElement | null = null
   let messagesEl: HTMLElement | null = null
   let candleEl: HTMLElement | null = null
+  let betweenLink: HTMLElement | null = null
   const messages: Message[] = []
   let fadeInterval: number | null = null
+  let betweenRevealed = false
 
   function getFragment(): string {
     const memories = deps.getMemories()
@@ -195,6 +209,11 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
     messagesEl.scrollTop = messagesEl.scrollHeight
   }
 
+  function checkBetweenTrigger(text: string): boolean {
+    const lower = text.toLowerCase()
+    return BETWEEN_TRIGGERS.some(t => lower.includes(t))
+  }
+
   async function handleSubmit() {
     if (!inputEl) return
     const text = inputEl.value.trim()
@@ -209,10 +228,24 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       setTimeout(() => { if (candleEl) candleEl.style.transform = 'scale(1)' }, 300)
     }
 
+    // Check for between-trigger words
+    const isBetweenTrigger = !betweenRevealed && deps.onBetween && checkBetweenTrigger(text)
+
     // Delay before void responds (1-3 seconds)
     const delay = 1000 + Math.random() * 2000
     setTimeout(async () => {
-      const response = generateResponse(text)
+      let response: string
+      if (isBetweenTrigger) {
+        response = BETWEEN_RESPONSES[Math.floor(Math.random() * BETWEEN_RESPONSES.length)]
+        // Reveal the between link
+        betweenRevealed = true
+        if (betweenLink) {
+          betweenLink.style.color = 'rgba(180, 160, 220, 0.15)'
+          betweenLink.style.pointerEvents = 'auto'
+        }
+      } else {
+        response = generateResponse(text)
+      }
       addMessage(response, 'void')
 
       // Speak the response if TTS is available
@@ -343,6 +376,32 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       `
       hint.textContent = 'the void answers from your memories'
       overlay.appendChild(hint)
+
+      // Hidden passage to The Between
+      if (deps.onBetween) {
+        betweenLink = document.createElement('div')
+        betweenLink.style.cssText = `
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 11px; font-style: italic;
+          color: rgba(180, 160, 220, 0);
+          letter-spacing: 2px;
+          cursor: pointer;
+          transition: color 2s ease;
+          margin-top: 20px;
+          pointer-events: none;
+        `
+        betweenLink.textContent = '▸ step into the between'
+        betweenLink.addEventListener('mouseenter', () => {
+          if (betweenRevealed && betweenLink) betweenLink.style.color = 'rgba(180, 160, 220, 0.4)'
+        })
+        betweenLink.addEventListener('mouseleave', () => {
+          if (betweenRevealed && betweenLink) betweenLink.style.color = 'rgba(180, 160, 220, 0.15)'
+        })
+        betweenLink.addEventListener('click', () => {
+          if (betweenRevealed) deps.onBetween!()
+        })
+        overlay.appendChild(betweenLink)
+      }
 
       return overlay
     },

@@ -42,6 +42,7 @@ import { createLoomRoom } from './rooms/TheLoom'
 import { createRootsRoom } from './rooms/TheRoots'
 import { createOssuaryRoom } from './rooms/TheOssuary'
 import { createTidePoolRoom } from './rooms/TheTidePool'
+import { createBetweenRoom } from './rooms/TheBetween'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -332,6 +333,7 @@ roomManager.addRoom(createSeanceRoom({
   speakText: voidWhisper.isAvailable()
     ? (text) => voidWhisper.onDream(text)
     : undefined,
+  onBetween: () => roomManager.switchTo('between'),
 }))
 roomManager.addRoom(createDarkroomRoom({
   getMemories: () => journal.getMemories(),
@@ -362,6 +364,10 @@ roomManager.addRoom(createOssuaryRoom({
 }))
 roomManager.addRoom(createTidePoolRoom({
   getMemories: () => journal.getMemories(),
+}))
+roomManager.addRoom(createBetweenRoom({
+  switchTo: (name) => roomManager.switchTo(name),
+  getActiveRoom: () => roomManager.getActiveRoom(),
 }))
 
 // Wire room checks — features only fire in the right room
