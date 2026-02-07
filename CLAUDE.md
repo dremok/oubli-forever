@@ -26,6 +26,13 @@ After context compaction/reset:
 - **Transitions between existing features and small non-interfering additions are TOTALLY FINE and encouraged** — connecting things, adding subtle links between rooms, small visual polish, cross-room effects are all good as long as they don't break existing behavior
 - Test that existing features (typing, voice, navigation, sound) still work after adding anything
 
+## Feature Diversity — CRITICAL
+- **NOT everything has to revolve around saved memories.** Many rooms use `getMemories()` as their primary content source — this is getting repetitive
+- Think MORE outside the box: rooms can be about real-time data, external APIs, generative systems, pure interaction, games, tools, narratives, live feeds, sensor data, browser APIs, or anything else
+- Features can be completely self-contained with no connection to the memory system
+- Variety is essential — each new room should feel like a genuinely different experience, not just "another way to view your memories"
+- The system is a living world that contains EVERYTHING, not just a memory gallery
+
 ## Workflow
 - Commit and push after every major feature
 - Deploy to Railway after EACH feature: `railway up --detach`

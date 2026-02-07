@@ -32,6 +32,7 @@ export class RoomManager {
   private tabButtons = new Map<string, HTMLElement>()
   private roomIndicator: HTMLDivElement
   private changeListeners: RoomChangeListener[] = []
+  private roomVisits = new Map<string, number>()
 
   constructor() {
     // Room container — holds the active room's UI
@@ -145,6 +146,7 @@ export class RoomManager {
 
     this.activeOverlay = overlay
     this.activeRoom = name
+    this.roomVisits.set(name, (this.roomVisits.get(name) || 0) + 1)
     room.activate()
 
     // Update tab highlights
@@ -164,6 +166,10 @@ export class RoomManager {
 
   getActiveRoom(): string {
     return this.activeRoom
+  }
+
+  getRoomVisits(): Map<string, number> {
+    return new Map(this.roomVisits)
   }
 
   private showArrival(label: string) {
