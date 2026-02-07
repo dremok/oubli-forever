@@ -26,6 +26,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 
 interface LoomDeps {
   getMemories: () => StoredMemory[]
+  switchTo?: (name: string) => void
 }
 
 function textToPattern(text: string): number[] {
@@ -56,6 +57,14 @@ export function createLoomRoom(deps: LoomDeps): Room {
   let shuttleX = 0
   let shuttleDir = 1
   let weavingProgress = 0
+  let hoveredSpool = -1
+
+  const spools = [
+    { label: 'study', room: 'study' },
+    { label: 'darkroom', room: 'darkroom' },
+    { label: 'gallery', room: 'palimpsestgallery' },
+    { label: 'sketchpad', room: 'sketchpad' },
+  ]
 
   function render() {
     if (!canvas || !ctx || !active) return
@@ -204,6 +213,29 @@ export function createLoomRoom(deps: LoomDeps): Room {
       ctx.textAlign = 'center'
       ctx.fillText('the textile is complete', w / 2, h - margin / 2 + 10)
     }
+
+    // Thread spool portals (bottom)
+    if (deps.switchTo) {
+      const spoolW = 55
+      const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
+      const spoolStartX = (w - totalSpW) / 2
+      const spoolY = h - 30
+      for (let i = 0; i < spools.length; i++) {
+        const sx = spoolStartX + i * (spoolW + 12)
+        const hovered = hoveredSpool === i
+        // Spool circle
+        ctx.beginPath()
+        ctx.arc(sx + spoolW / 2, spoolY, 6, 0, Math.PI * 2)
+        ctx.strokeStyle = `rgba(200, 160, 80, ${hovered ? 0.3 : 0.08})`
+        ctx.lineWidth = 1
+        ctx.stroke()
+        // Label
+        ctx.font = '7px monospace'
+        ctx.fillStyle = `rgba(180, 140, 100, ${hovered ? 0.3 : 0.06})`
+        ctx.textAlign = 'center'
+        ctx.fillText(spools[i].label, sx + spoolW / 2, spoolY + 16)
+      }
+    }
   }
 
   return {
@@ -223,6 +255,43 @@ export function createLoomRoom(deps: LoomDeps): Room {
       canvas.height = window.innerHeight
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
+
+      // Spool portal click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps.switchTo || !canvas) return
+        const spoolW = 55
+        const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
+        const spoolStartX = (canvas.width - totalSpW) / 2
+        const spoolY = canvas.height - 30
+        for (let i = 0; i < spools.length; i++) {
+          const sx = spoolStartX + i * (spoolW + 12) + spoolW / 2
+          const dx = e.clientX - sx
+          const dy = e.clientY - spoolY
+          if (dx * dx + dy * dy < 400) {
+            deps.switchTo(spools[i].room)
+            return
+          }
+        }
+      })
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredSpool = -1
+        const spoolW = 55
+        const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
+        const spoolStartX = (canvas.width - totalSpW) / 2
+        const spoolY = canvas.height - 30
+        for (let i = 0; i < spools.length; i++) {
+          const sx = spoolStartX + i * (spoolW + 12) + spoolW / 2
+          const dx = e.clientX - sx
+          const dy = e.clientY - spoolY
+          if (dx * dx + dy * dy < 400) {
+            hoveredSpool = i
+            break
+          }
+        }
+      })
+
       overlay.appendChild(canvas)
 
       const onResize = () => {

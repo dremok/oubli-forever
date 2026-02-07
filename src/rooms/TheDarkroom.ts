@@ -25,6 +25,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 
 interface DarkroomDeps {
   getMemories: () => StoredMemory[]
+  switchTo?: (name: string) => void
 }
 
 interface DevelopedPrint {
@@ -554,6 +555,44 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       `
       renderGallery(gallery)
       overlay.appendChild(gallery)
+
+      // Navigation — chemical bottles along the shelf
+      if (deps.switchTo) {
+        const shelf = document.createElement('div')
+        shelf.style.cssText = `
+          display: flex; gap: 24px; justify-content: center;
+          margin-bottom: 40px; margin-top: 12px;
+          border-top: 1px solid rgba(200, 100, 100, 0.05);
+          padding-top: 16px;
+        `
+
+        const passages: { name: string; label: string; hint: string }[] = [
+          { name: 'projection', label: 'projector', hint: 'the projection room hums next door' },
+          { name: 'palimpsestgallery', label: 'gallery', hint: 'prints line the hall to the gallery' },
+          { name: 'sketchpad', label: 'sketchpad', hint: 'pencil marks lead somewhere' },
+          { name: 'loom', label: 'thread', hint: 'a thread of silver gelatin' },
+        ]
+
+        for (const p of passages) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 10px; font-style: italic;
+            color: rgba(200, 100, 100, 0.12);
+            cursor: pointer; text-align: center;
+            transition: color 0.4s ease;
+            max-width: 80px;
+          `
+          el.textContent = p.hint
+          el.title = p.label
+          el.addEventListener('mouseenter', () => { el.style.color = 'rgba(200, 100, 100, 0.5)' })
+          el.addEventListener('mouseleave', () => { el.style.color = 'rgba(200, 100, 100, 0.12)' })
+          el.addEventListener('click', () => deps.switchTo!(p.name))
+          shelf.appendChild(el)
+        }
+
+        overlay.appendChild(shelf)
+      }
 
       return overlay
     },

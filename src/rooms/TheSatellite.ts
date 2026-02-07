@@ -34,6 +34,7 @@ interface Memory {
 
 interface SatelliteDeps {
   getMemories: () => Memory[]
+  switchTo?: (name: string) => void
 }
 
 interface Beacon {
@@ -60,6 +61,15 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
   let receivedMessage: { text: string; alpha: number } | null = null
   let fetchInterval: number | null = null
   let totalReceived = 0
+  let hoveredNav = -1
+
+  const navPoints = [
+    { label: 'observatory', room: 'observatory', xFrac: 0.06, yFrac: 0.08 },
+    { label: 'radio', room: 'radio', xFrac: 0.94, yFrac: 0.08 },
+    { label: 'lighthouse', room: 'lighthouse', xFrac: 0.06, yFrac: 0.92 },
+    { label: 'glacarium', room: 'glacarium', xFrac: 0.94, yFrac: 0.55 },
+    { label: 'asteroids', room: 'asteroids', xFrac: 0.5, yFrac: 0.05 },
+  ]
 
   // Simple equirectangular projection
   function project(lat: number, lon: number, w: number, h: number): { x: number; y: number } {
@@ -432,6 +442,27 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       c.fillText('type something into the void to create a beacon', w / 2, h * 0.88 + 20)
     }
 
+    // Navigation constellation points
+    if (deps.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.35 : 0.06
+        // Star marker
+        c.beginPath()
+        c.arc(nx, ny, hovered ? 5 : 3, 0, Math.PI * 2)
+        c.fillStyle = `rgba(255, 215, 0, ${a})`
+        c.fill()
+        // Label
+        c.font = '7px monospace'
+        c.fillStyle = `rgba(255, 215, 0, ${hovered ? 0.3 : 0.04})`
+        c.textAlign = 'center'
+        c.fillText(np.label, nx, ny + 14)
+      }
+    }
+
     // Context
     c.font = '9px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(255, 215, 0, ${0.03 + Math.sin(time * 0.2) * 0.01})`
@@ -456,6 +487,36 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       canvas.height = window.innerHeight
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
+
+      // Navigation clicks + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps.switchTo || !canvas) return
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 400) {
+            deps.switchTo(navPoints[i].room)
+            return
+          }
+        }
+      })
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 400) {
+            hoveredNav = i
+            break
+          }
+        }
+      })
 
       const onResize = () => {
         if (canvas) {

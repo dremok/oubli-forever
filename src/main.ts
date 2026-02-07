@@ -375,6 +375,7 @@ roomManager.addRoom(createSeanceRoom({
 }))
 roomManager.addRoom(createDarkroomRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createGardenRoom({
   getMemories: () => journal.getMemories(),
@@ -390,6 +391,7 @@ roomManager.addRoom(createCatacombsRoom({
 }))
 roomManager.addRoom(createLoomRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createRootsRoom({
   getMemories: () => journal.getMemories(),
@@ -403,6 +405,7 @@ roomManager.addRoom(createOssuaryRoom({
 }))
 roomManager.addRoom(createTidePoolRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createBetweenRoom({
   switchTo: (name) => roomManager.switchTo(name),
@@ -415,6 +418,7 @@ roomManager.addRoom(createFurnaceRoom({
 }))
 roomManager.addRoom(createRadioRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createWellRoom({
   getMemories: () => journal.getMemories(),
@@ -428,6 +432,7 @@ roomManager.addRoom(createAquiferRoom({
 roomManager.addRoom(createClockTowerRoom({
   getMemories: () => journal.getMemories(),
   onMidnight: () => roomManager.switchTo('midnight'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createMidnightRoom())
 roomManager.addRoom(createMirrorRoom({
@@ -471,9 +476,11 @@ roomManager.addRoom(createGlaciariumRoom({
 }))
 roomManager.addRoom(createSatelliteRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createAsteroidFieldRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createDisintegrationLoopsRoom({
   getMemories: () => journal.getMemories(),
@@ -490,6 +497,7 @@ roomManager.addRoom(createMadeleineRoom({
 }))
 roomManager.addRoom(createLibraryRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createPalimpsestGalleryRoom({
   getMemories: () => journal.getMemories(),

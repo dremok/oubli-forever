@@ -37,6 +37,7 @@ interface Memory {
 
 interface LibraryDeps {
   getMemories: () => Memory[]
+  switchTo?: (name: string) => void
 }
 
 // Simple seedable PRNG
@@ -83,6 +84,16 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
   let memoryFragmentPositions: { line: number; col: number; length: number }[] = []
   let scrollY = 0
   let pagesViewed = 0
+  let hoveredShelf = -1
+
+  const shelfLinks = [
+    { label: 'study', hint: 'return to the study', room: 'study' },
+    { label: 'archive', hint: 'the archive stacks', room: 'archive' },
+    { label: 'cipher', hint: 'encoded volumes', room: 'cipher' },
+    { label: 'oracle', hint: 'prophetic texts', room: 'oracle' },
+    { label: 'projection', hint: 'illuminated pages', room: 'projection' },
+    { label: 'date paintings', hint: 'numbered days', room: 'datepaintings' },
+  ]
 
   function generatePage(loc: LibraryLocation): { lines: string[]; fragments: typeof memoryFragmentPositions } {
     const memories = deps.getMemories()
@@ -316,6 +327,30 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       }
     }
 
+    // Shelf portals (right edge — book spines)
+    if (deps.switchTo) {
+      const shelfX = w - 50
+      const shelfStartY = 80
+      const shelfSpacing = 28
+      c.textAlign = 'right'
+      for (let i = 0; i < shelfLinks.length; i++) {
+        const sy = shelfStartY + i * shelfSpacing
+        const hovered = hoveredShelf === i
+        const alpha = hovered ? 0.3 : 0.07
+        // Book spine
+        c.fillStyle = `rgba(140, 120, 90, ${alpha})`
+        c.fillRect(shelfX, sy, 40, 20)
+        c.strokeStyle = `rgba(140, 120, 90, ${alpha * 0.5})`
+        c.lineWidth = 0.5
+        c.strokeRect(shelfX, sy, 40, 20)
+        // Spine text
+        c.font = '7px monospace'
+        c.fillStyle = `rgba(255, 215, 0, ${hovered ? 0.4 : 0.1})`
+        c.textAlign = 'center'
+        c.fillText(shelfLinks[i].label, shelfX + 20, sy + 13)
+      }
+    }
+
     // Title
     c.font = '10px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
@@ -364,14 +399,44 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click to navigate to memory's location
+      // Click to navigate to memory's location or shelf portal
       canvas.addEventListener('click', (e) => {
+        // Check shelf portals
+        if (deps.switchTo && canvas) {
+          const shelfX = canvas.width - 50
+          const shelfStartY = 80
+          for (let i = 0; i < shelfLinks.length; i++) {
+            const sy = shelfStartY + i * 28
+            if (e.clientX >= shelfX && e.clientX <= shelfX + 40 &&
+                e.clientY >= sy && e.clientY <= sy + 20) {
+              deps.switchTo(shelfLinks[i].room)
+              return
+            }
+          }
+        }
+
         const memories = deps.getMemories()
         // Check if clicked on a memory in the sidebar
         if (e.clientX < 200 && e.clientY > 60 && e.clientY < 60 + memories.length * 14) {
           const idx = Math.floor((e.clientY - 60) / 14)
           if (idx >= 0 && idx < memories.length) {
             goToMemoryLocation(idx)
+          }
+        }
+      })
+
+      // Hover detection for shelf portals
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredShelf = -1
+        const shelfX = canvas.width - 50
+        const shelfStartY = 80
+        for (let i = 0; i < shelfLinks.length; i++) {
+          const sy = shelfStartY + i * 28
+          if (e.clientX >= shelfX && e.clientX <= shelfX + 40 &&
+              e.clientY >= sy && e.clientY <= sy + 20) {
+            hoveredShelf = i
+            break
           }
         }
       })

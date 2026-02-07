@@ -28,6 +28,7 @@ import { getAudioContext } from '../sound/AudioBus'
 
 interface RadioDeps {
   getMemories: () => StoredMemory[]
+  switchTo?: (name: string) => void
 }
 
 interface Station {
@@ -54,6 +55,32 @@ export function createRadioRoom(deps: RadioDeps): Room {
   let toneGain: GainNode | null = null
   let audioInitialized = false
   let staticLines: { y: number; speed: number; alpha: number }[] = []
+  let hoveredPreset = -1
+
+  const presets = [
+    { freq: '89.1', label: 'INSTRUMENT', room: 'instrument' },
+    { freq: '94.7', label: 'LIGHTHOUSE', room: 'lighthouse' },
+    { freq: '101.3', label: 'SATELLITE', room: 'satellite' },
+    { freq: '106.5', label: 'WEATHERVANE', room: 'weathervane' },
+  ]
+
+  function getPresetBounds(w: number, h: number) {
+    const panelX = w * 0.15
+    const panelW = w * 0.7
+    const bandY = h * 0.15 + 70
+    const bandH = 60
+    const dialY = bandY + bandH + 40
+    const presetY = dialY + 50
+    const btnW = panelW * 0.2
+    const btnH = 28
+    const gap = (panelW - btnW * 4) / 5
+    return presets.map((_, i) => ({
+      x: panelX + gap + i * (btnW + gap),
+      y: presetY,
+      w: btnW,
+      h: btnH,
+    }))
+  }
 
   function buildStations() {
     const memories = deps.getMemories()
@@ -424,6 +451,44 @@ export function createRadioRoom(deps: RadioDeps): Room {
       }
     }
 
+    // --- PRESET BUTTONS (navigation portals) ---
+    if (deps.switchTo) {
+      const bounds = getPresetBounds(w, h)
+      for (let i = 0; i < presets.length; i++) {
+        const b = bounds[i]
+        const p = presets[i]
+        const hovered = hoveredPreset === i
+        const alpha = hovered ? 0.4 : 0.12
+        const glowAlpha = hovered ? 0.08 : 0
+
+        // Button background
+        ctx.fillStyle = `rgba(10, 30, 10, ${alpha})`
+        ctx.fillRect(b.x, b.y, b.w, b.h)
+        ctx.strokeStyle = `rgba(100, 255, 100, ${alpha})`
+        ctx.lineWidth = 0.5
+        ctx.strokeRect(b.x, b.y, b.w, b.h)
+
+        // Glow on hover
+        if (glowAlpha > 0) {
+          ctx.shadowColor = 'rgba(100, 255, 100, 0.3)'
+          ctx.shadowBlur = 8
+          ctx.strokeRect(b.x, b.y, b.w, b.h)
+          ctx.shadowBlur = 0
+        }
+
+        // Frequency label
+        ctx.font = '8px monospace'
+        ctx.fillStyle = `rgba(100, 255, 100, ${hovered ? 0.5 : 0.2})`
+        ctx.textAlign = 'center'
+        ctx.fillText(p.freq, b.x + b.w / 2, b.y + 11)
+
+        // Room label
+        ctx.font = '7px monospace'
+        ctx.fillStyle = `rgba(100, 255, 100, ${hovered ? 0.35 : 0.1})`
+        ctx.fillText(p.label, b.x + b.w / 2, b.y + 22)
+      }
+    }
+
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(100, 255, 100, ${0.1 + Math.sin(time * 0.3) * 0.03})`
@@ -484,17 +549,42 @@ export function createRadioRoom(deps: RadioDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Mouse/touch events for dial
+      // Mouse/touch events for dial and presets
       canvas.addEventListener('mousedown', (e) => {
+        // Check preset buttons first
+        if (deps.switchTo && canvas) {
+          const bounds = getPresetBounds(canvas.width, canvas.height)
+          for (let i = 0; i < bounds.length; i++) {
+            const b = bounds[i]
+            if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
+                e.clientY >= b.y && e.clientY <= b.y + b.h) {
+              deps.switchTo(presets[i].room)
+              return
+            }
+          }
+        }
         isDragging = true
         handleDrag(e.clientX)
         initAudio()
       })
       canvas.addEventListener('mousemove', (e) => {
         if (isDragging) handleDrag(e.clientX)
+        // Hover detection for presets
+        if (canvas) {
+          const bounds = getPresetBounds(canvas.width, canvas.height)
+          hoveredPreset = -1
+          for (let i = 0; i < bounds.length; i++) {
+            const b = bounds[i]
+            if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
+                e.clientY >= b.y && e.clientY <= b.y + b.h) {
+              hoveredPreset = i
+              break
+            }
+          }
+        }
       })
       canvas.addEventListener('mouseup', () => { isDragging = false })
-      canvas.addEventListener('mouseleave', () => { isDragging = false })
+      canvas.addEventListener('mouseleave', () => { isDragging = false; hoveredPreset = -1 })
 
       // Touch support
       canvas.addEventListener('touchstart', (e) => {

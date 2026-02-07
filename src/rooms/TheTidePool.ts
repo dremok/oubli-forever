@@ -27,6 +27,7 @@ import { getAudioContext } from '../sound/AudioBus'
 
 interface TidePoolDeps {
   getMemories: () => StoredMemory[]
+  switchTo?: (name: string) => void
 }
 
 interface Flotsam {
@@ -51,6 +52,15 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
   let audioCtx: AudioContext | null = null
   let noiseSource: AudioBufferSourceNode | null = null
   let noiseGain: GainNode | null = null
+  let hoveredLandmark = -1
+
+  const landmarks = [
+    { label: 'garden', room: 'garden', xFrac: 0.12 },
+    { label: 'well', room: 'well', xFrac: 0.32 },
+    { label: 'lighthouse', room: 'lighthouse', xFrac: 0.68 },
+    { label: 'glacarium', room: 'glacarium', xFrac: 0.82 },
+    { label: 'weathervane', room: 'weathervane', xFrac: 0.92 },
+  ]
 
   function buildFlotsam() {
     const memories = deps.getMemories()
@@ -265,6 +275,27 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
       ctx.restore()
     }
 
+    // Horizon landmarks (navigation)
+    if (deps.switchTo) {
+      const horizonY = h * 0.35
+      for (let i = 0; i < landmarks.length; i++) {
+        const lm = landmarks[i]
+        const lx = w * lm.xFrac
+        const hovered = hoveredLandmark === i
+        const a = hovered ? 0.3 : 0.06
+        // Silhouette dot on horizon
+        ctx.beginPath()
+        ctx.arc(lx, horizonY, hovered ? 5 : 3, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(200, 220, 240, ${a})`
+        ctx.fill()
+        // Label
+        ctx.font = '8px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 220, 240, ${hovered ? 0.3 : 0.05})`
+        ctx.textAlign = 'center'
+        ctx.fillText(lm.label, lx, horizonY - 10)
+      }
+    }
+
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(200, 220, 240, 0.1)'
@@ -305,6 +336,37 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
       canvas.height = window.innerHeight
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
+
+      // Click and hover for horizon landmarks
+      canvas.addEventListener('click', (e) => {
+        if (!deps.switchTo || !canvas) return
+        const horizonY = canvas.height * 0.35
+        for (let i = 0; i < landmarks.length; i++) {
+          const lx = canvas.width * landmarks[i].xFrac
+          const dx = e.clientX - lx
+          const dy = e.clientY - horizonY
+          if (dx * dx + dy * dy < 400) { // 20px radius
+            deps.switchTo(landmarks[i].room)
+            return
+          }
+        }
+      })
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredLandmark = -1
+        const horizonY = canvas.height * 0.35
+        for (let i = 0; i < landmarks.length; i++) {
+          const lx = canvas.width * landmarks[i].xFrac
+          const dx = e.clientX - lx
+          const dy = e.clientY - horizonY
+          if (dx * dx + dy * dy < 400) {
+            hoveredLandmark = i
+            break
+          }
+        }
+      })
+
       overlay.appendChild(canvas)
 
       const onResize = () => {

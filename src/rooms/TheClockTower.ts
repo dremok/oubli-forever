@@ -25,6 +25,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 interface ClockTowerDeps {
   getMemories: () => StoredMemory[]
   onMidnight?: () => void
+  switchTo?: (name: string) => void
 }
 
 export function createClockTowerRoom(deps: ClockTowerDeps): Room {
@@ -40,6 +41,14 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
   let lastHour = -1
   let portalVisible = false
   let portalAlpha = 0
+  let hoveredPortal = -1
+
+  const clockPortals = [
+    { label: 'III', hint: 'observatory', room: 'observatory' },
+    { label: 'VI', hint: 'date paintings', room: 'datepaintings' },
+    { label: 'IX', hint: 'furnace', room: 'furnace' },
+    { label: 'XII', hint: 'pendulum', room: 'pendulum' },
+  ]
 
   function render() {
     if (!canvas || !ctx || !active) return
@@ -276,6 +285,30 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     ctx.fillStyle = bobGrad
     ctx.fill()
 
+    // === PASSAGE PORTALS ===
+    if (deps.switchTo) {
+      const portalW = 60
+      const portalH = 22
+      const totalW = clockPortals.length * portalW + (clockPortals.length - 1) * 8
+      const startX = (w - totalW) / 2
+      const portalY = 50
+      for (let i = 0; i < clockPortals.length; i++) {
+        const px = startX + i * (portalW + 8)
+        const hovered = hoveredPortal === i
+        const a = hovered ? 0.25 : 0.06
+        ctx.fillStyle = `rgba(180, 160, 120, ${a * 0.3})`
+        ctx.fillRect(px, portalY, portalW, portalH)
+        ctx.strokeStyle = `rgba(180, 160, 120, ${a})`
+        ctx.lineWidth = 0.5
+        ctx.strokeRect(px, portalY, portalW, portalH)
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(180, 160, 120, ${hovered ? 0.35 : 0.1})`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`${clockPortals[i].label} · ${clockPortals[i].hint}`, px + portalW / 2, portalY + portalH / 2)
+      }
+    }
+
     // === TITLE & INFO ===
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(180, 160, 120, ${0.08 + Math.sin(time * 0.3) * 0.02})`
@@ -342,12 +375,45 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%; cursor: default;'
       ctx = canvas.getContext('2d')
 
-      // Click: portal to midnight
+      // Click: portals or midnight portal
       canvas.addEventListener('click', (e) => {
+        // Check passage portals
+        if (deps.switchTo && canvas) {
+          const portalW = 60
+          const totalW = clockPortals.length * portalW + (clockPortals.length - 1) * 8
+          const startX = (canvas.width - totalW) / 2
+          const portalBtnY = 50
+          for (let i = 0; i < clockPortals.length; i++) {
+            const px = startX + i * (portalW + 8)
+            if (e.clientX >= px && e.clientX <= px + portalW &&
+                e.clientY >= portalBtnY && e.clientY <= portalBtnY + 22) {
+              deps.switchTo(clockPortals[i].room)
+              return
+            }
+          }
+        }
+
         if (portalVisible && portalAlpha > 0.02 && deps.onMidnight) {
-          // Click bottom area for portal
           if (e.clientY > window.innerHeight * 0.8) {
             deps.onMidnight()
+          }
+        }
+      })
+
+      // Hover detection for passage portals
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredPortal = -1
+        const portalW = 60
+        const totalW = clockPortals.length * portalW + (clockPortals.length - 1) * 8
+        const startX = (canvas.width - totalW) / 2
+        const portalBtnY = 50
+        for (let i = 0; i < clockPortals.length; i++) {
+          const px = startX + i * (portalW + 8)
+          if (e.clientX >= px && e.clientX <= px + portalW &&
+              e.clientY >= portalBtnY && e.clientY <= portalBtnY + 22) {
+            hoveredPortal = i
+            break
           }
         }
       })

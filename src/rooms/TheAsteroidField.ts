@@ -39,6 +39,7 @@ interface Memory {
 
 interface AsteroidFieldDeps {
   getMemories: () => Memory[]
+  switchTo?: (name: string) => void
 }
 
 interface Asteroid {
@@ -77,6 +78,14 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
   let memoryPoints: MemoryPoint[] = []
   let dataLoaded = false
   let asteroidCount = 0
+  let hoveredSensor = -1
+
+  const sensors = [
+    { label: 'SATELLITE', room: 'satellite' },
+    { label: 'SEISMOGRAPH', room: 'seismograph' },
+    { label: 'OBSERVATORY', room: 'observatory' },
+    { label: 'GLACARIUM', room: 'glacarium' },
+  ]
 
   async function fetchAsteroids() {
     try {
@@ -367,6 +376,20 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
       c.fillText('scanning near-earth space...', w / 2, h * 0.95)
     }
 
+    // Sensor readout portals (top-right)
+    if (deps.switchTo) {
+      const sensorX = w - 110
+      const sensorStartY = 50
+      for (let i = 0; i < sensors.length; i++) {
+        const sy = sensorStartY + i * 20
+        const hovered = hoveredSensor === i
+        c.font = '7px monospace'
+        c.fillStyle = `rgba(150, 140, 130, ${hovered ? 0.3 : 0.06})`
+        c.textAlign = 'right'
+        c.fillText(`▸ ${sensors[i].label}`, sensorX + 95, sy + 10)
+      }
+    }
+
     // Context line
     c.font = '9px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(150, 140, 130, ${0.03 + Math.sin(time * 0.2) * 0.01})`
@@ -391,6 +414,36 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
       canvas.height = window.innerHeight
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
+
+      // Sensor portal click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps.switchTo || !canvas) return
+        const sensorX = canvas.width - 110
+        const sensorStartY = 50
+        for (let i = 0; i < sensors.length; i++) {
+          const sy = sensorStartY + i * 20
+          if (e.clientX >= sensorX && e.clientX <= sensorX + 100 &&
+              e.clientY >= sy && e.clientY <= sy + 16) {
+            deps.switchTo(sensors[i].room)
+            return
+          }
+        }
+      })
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredSensor = -1
+        const sensorX = canvas.width - 110
+        const sensorStartY = 50
+        for (let i = 0; i < sensors.length; i++) {
+          const sy = sensorStartY + i * 20
+          if (e.clientX >= sensorX && e.clientX <= sensorX + 100 &&
+              e.clientY >= sy && e.clientY <= sy + 16) {
+            hoveredSensor = i
+            break
+          }
+        }
+      })
 
       const onResize = () => {
         if (canvas) {
