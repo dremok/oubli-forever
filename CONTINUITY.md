@@ -752,6 +752,31 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     séance → (ask "between") → BETWEEN (doors to all rooms)
 ```
 
+60. **The Sketchpad** (`src/rooms/TheSketchpad.ts`) — ERA 6
+    - Draw with light — impermanent drawing tool
+    - Strokes fade over 60 seconds, smooth quadratic curves
+    - Scroll to change hue, shift+scroll for width
+    - Touch support, double-click to clear
+    - Cannot save, undo, or export. Impermanence as feature. ZERO MEMORY DEPENDENCY.
+
+61. **The Weathervane** (`src/rooms/TheWeathervane.ts`) — ERA 6
+    - LIVE WEATHER from Open-Meteo API with geolocation
+    - Temperature→color, wind→particle movement, humidity→fog
+    - Rain (falling streaks) and snow (floating dots) particles
+    - Uses Geolocation API, falls back to Paris. ZERO MEMORY DEPENDENCY.
+
+62. **The Cartographer** (`src/rooms/TheCartographer.ts`) — ERA 6
+    - Meta-room: interactive map of Oubli's room topology
+    - Surface rooms in ellipse, hidden rooms below
+    - Visited rooms glow brighter, unvisited hidden rooms show '?'
+    - Click any visible room to navigate there
+    - Stats: rooms visited count, secrets found count
+    - Oubli becomes self-aware: mapping its own body. ZERO MEMORY DEPENDENCY.
+
+### Cross-Room Passages Added
+- Lighthouse → Tide Pool (after 3+ manual transmissions)
+- Terrarium → Garden (when creatures reach generation 10)
+
 ---
-*Last updated: Era 6, Feature 59 — Seismograph, Pendulum, Cipher, Terrarium, Lighthouse*
-*"some rooms are alive. some rooms solve puzzles. some rooms listen to the earth. the lighthouse signals to no one."*
+*Last updated: Era 6, Feature 62 — Sketchpad, Weathervane, Cartographer*
+*"some rooms draw. some rooms feel the weather. one room maps all the others. 29 rooms and counting."*
