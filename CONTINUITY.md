@@ -419,6 +419,39 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - When time arrives, text reveals and degradation begins
     - Gives users a reason to return — a star waits to thaw
 
+37. **The Darkroom** (`src/rooms/TheDarkroom.ts`) — ERA 5
+    - New room: develop memories into photographs via fal.ai
+    - Red safelight aesthetic with chemical development animation
+    - Image emerges slowly: expose → develop → fix (like real darkroom)
+    - Gallery persists in localStorage, prints yellow over time (sepia filter)
+    - "Use a memory" button pulls from stored memories as prompts
+    - Max 12 prints stored, click to view full-size with caption
+
+38. **The Garden** (`src/rooms/TheGarden.ts`) — ERA 5
+    - New room: each memory grows as a unique procedural plant
+    - L-system-like growth from text hash → deterministic plant shape
+    - Plant health tied to memory degradation: dying memories wither/brown
+    - Flowers bloom on healthy plants, leaves on branches
+    - Wind sway animation, twinkling star background, ground line
+    - Memory text fragments shown below each plant, vitality stats at bottom
+
+39. **The Archive** (`src/rooms/TheArchive.ts`) — ERA 5
+    - New room: search the real Wayback Machine CDX API
+    - Search by URL or domain for dead websites
+    - Results show original URL, capture date, status code
+    - Click results to open archived version in Wayback Machine
+    - Curated suggestion chips: geocities, vine, myspace, etc.
+    - Hidden passage to The Catacombs appears after 2+ searches
+
+40. **The Catacombs** (`src/rooms/TheCatacombs.ts`) — ERA 5
+    - HIDDEN room — not in tab bar, only accessible from The Archive
+    - Scrolling descent through internet history strata: 2020s → 1990s → before
+    - Each era: inscriptions, dead URLs, raw HTML source code, epitaphs
+    - Aesthetic degrades per era: from polished to raw <blink> tags
+    - Auto-scrolls downward, ends in void with "ascend to archive" link
+    - First example of convoluted navigation between non-void rooms
+    - RoomManager gains `hidden` property — hidden rooms skip tab bar
+
 ### Feature Isolation Directive
 - New features should interfere as little as possible with existing features
 - Prefer creating new rooms/spaces for completely new features
@@ -434,6 +467,10 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 | the instrument | Synth | Keyboard synth with waveform viz |
 | the observatory | Stars | Orbit through memory constellations |
 | the séance | Oracle | Ask questions, void answers from memories |
+| the darkroom | Photos | Develop memories into photographs via fal.ai |
+| the garden | Growth | Memories grow as procedural plants |
+| the archive | Dig | Search Wayback Machine for dead websites |
+| (hidden) the catacombs | Descent | Strata of dead internet history |
 
 ### Backlog (Prioritized)
 1. **WebGPU particle system** — TSL compute shaders, 1M+ particles (Three.js r171 supports this)
@@ -462,6 +499,12 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Railway: https://oubli-forever-production.up.railway.app
 - Auto-deploy via `railway up`
 
+### Navigation Paths
+- Tab bar → all visible rooms (void, study, instrument, observatory, séance, darkroom, garden, archive)
+- The Archive → (hidden) The Catacombs (after 2+ searches, "descend deeper" link)
+- The Catacombs → The Archive ("ascend" link at bottom)
+- More convoluted paths to come — not everything connects through the void
+
 ---
-*Last updated: Era 4, Feature 36 — Séance, Time Capsule, Void Whisper, Ambient Textures*
-*"seal a memory for the future. somewhere in the void, a star is waiting to thaw."*
+*Last updated: Era 5, Feature 40 — Darkroom, Garden, Archive, Catacombs*
+*"beneath the archive, the bones of the old internet. descend deeper."*
