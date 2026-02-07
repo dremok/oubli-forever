@@ -23,6 +23,7 @@ After context compaction/reset:
 - Avoid adding global keyboard handlers, global DOM overlays, or global event listeners that could conflict with existing rooms
 - If a feature is room-specific, use `setRoomCheck()` to scope it properly
 - When in doubt, make it a new room — rooms are self-contained and low-risk
+- **Transitions between existing features and small non-interfering additions are TOTALLY FINE and encouraged** — connecting things, adding subtle links between rooms, small visual polish, cross-room effects are all good as long as they don't break existing behavior
 - Test that existing features (typing, voice, navigation, sound) still work after adding anything
 
 ## Workflow

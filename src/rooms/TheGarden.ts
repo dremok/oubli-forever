@@ -23,6 +23,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 
 interface GardenDeps {
   getMemories: () => StoredMemory[]
+  onDescend?: () => void
 }
 
 interface Plant {
@@ -303,6 +304,14 @@ export function createGardenRoom(deps: GardenDeps): Room {
       ctx.fillText(label, plant.x + Math.sin(time * plant.swaySpeed + plant.swayPhase) * 1, groundY + 18)
     }
 
+    // Descent hint — click ground to go to roots
+    if (deps.onDescend && plants.length > 0) {
+      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(120, 90, 50, ${0.06 + Math.sin(time * 0.3) * 0.02})`
+      ctx.textAlign = 'center'
+      ctx.fillText('▼ click the soil to see the roots', w / 2, groundY + 40)
+    }
+
     // Info text
     const memCount = plants.length
     const avgHealth = plants.length > 0
@@ -333,6 +342,17 @@ export function createGardenRoom(deps: GardenDeps): Room {
         width: 100%; height: 100%;
       `
       ctx = canvas.getContext('2d')
+
+      // Click on ground area to descend to roots
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas!.getBoundingClientRect()
+        const y = e.clientY - rect.top
+        const groundY = canvas!.height * 0.82
+        if (y > groundY && deps.onDescend) {
+          deps.onDescend()
+        }
+      })
+
       overlay.appendChild(canvas)
 
       // Handle resize
