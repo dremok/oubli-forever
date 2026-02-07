@@ -72,7 +72,19 @@ export function createLoomRoom(deps: LoomDeps): Room {
   let shuttleDir = 1
   let prevShuttleDir = 1
   let weavingProgress = 0
-  let hoveredSpool = -1
+  // Pull-thread navigation state
+  let navThreads = [
+    { label: 'study', room: 'study', color: [210, 170, 60] as [number, number, number] },       // warm amber/gold
+    { label: 'darkroom', room: 'darkroom', color: [160, 30, 40] as [number, number, number] },   // deep crimson
+    { label: 'gallery', room: 'palimpsestgallery', color: [140, 170, 210] as [number, number, number] }, // pale blue/silver
+    { label: 'sketchpad', room: 'sketchpad', color: [140, 80, 180] as [number, number, number] }, // violet
+  ]
+  let hoveredNavThread = -1
+  let pullingNavThread = -1
+  let pullStartY = 0
+  let pullCurrentY = 0
+  let navThreadFlash = -1
+  let navThreadFlashTimer = 0
 
   // Click-to-examine state
   let selectedThread = -1
@@ -100,13 +112,6 @@ export function createLoomRoom(deps: LoomDeps): Room {
   let droneGain: GainNode | null = null
   let droneFilter: BiquadFilterNode | null = null
   let creakInterval = 0
-
-  const spools = [
-    { label: 'study', room: 'study' },
-    { label: 'darkroom', room: 'darkroom' },
-    { label: 'gallery', room: 'palimpsestgallery' },
-    { label: 'sketchpad', room: 'sketchpad' },
-  ]
 
   // --- Audio ---
 
@@ -723,26 +728,113 @@ export function createLoomRoom(deps: LoomDeps): Room {
       ctx.fillText('the textile is complete', w / 2, h - margin / 2 + 10)
     }
 
-    // Thread spool portals (bottom)
+    // Pull-thread navigation (loose threads hanging from right edge of weaving)
     if (deps.switchTo) {
-      const spoolW = 55
-      const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
-      const spoolStartX = (w - totalSpW) / 2
-      const spoolY = h - 30
-      for (let i = 0; i < spools.length; i++) {
-        const sx = spoolStartX + i * (spoolW + 12)
-        const hovered = hoveredSpool === i
-        // Spool circle
+      const rightEdgeX = margin + Math.min(visibleCols * cellSize, weaveW)
+      const threadSpacingNav = weaveH / (navThreads.length + 1)
+
+      // Flash effect
+      if (navThreadFlash >= 0) {
+        navThreadFlashTimer -= 0.016
+        if (navThreadFlashTimer <= 0) {
+          navThreadFlash = -1
+        }
+      }
+
+      for (let i = 0; i < navThreads.length; i++) {
+        const nt = navThreads[i]
+        const anchorY = margin + (i + 1) * threadSpacingNav
+        const [r, g, b] = nt.color
+        const isHovered = hoveredNavThread === i
+        const isPulling = pullingNavThread === i
+        const isFlashing = navThreadFlash === i
+
+        // Calculate thread droop - catenary curve
+        const baseHangLen = 80
+        const hangX = rightEdgeX + 40  // horizontal extent to the right
+        let droopAmount = baseHangLen  // vertical droop
+
+        // When pulling, reduce droop (thread tightens)
+        let pullDist = 0
+        if (isPulling) {
+          pullDist = pullCurrentY - pullStartY
+          if (pullDist > 0) {
+            droopAmount = Math.max(20, baseHangLen - pullDist * 0.8)
+          }
+        } else if (isHovered) {
+          droopAmount = baseHangLen - 15  // slight tightening on hover
+        }
+
+        // Sway animation
+        const swayPhase = time * 0.8 + i * 1.5
+        const swayAmount = isPulling ? 1 : (isHovered ? 2 : 4)
+
+        // Draw the catenary thread as a bezier curve
+        const endX = hangX
+        const endY = anchorY + droopAmount
+        const cpSag = droopAmount * 0.7 // control point sag
+
+        // Thread glow when hovered, pulling, or flashing
+        const needsGlow = isHovered || isPulling || isFlashing
+        if (needsGlow) {
+          ctx.save()
+          if (isFlashing) {
+            const flashAlpha = navThreadFlashTimer / 0.3
+            ctx.shadowColor = `rgba(${r}, ${g}, ${b}, ${flashAlpha})`
+            ctx.shadowBlur = 20
+          } else {
+            ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.6)`
+            ctx.shadowBlur = isPulling ? 12 : 6
+          }
+        }
+
+        const alpha = isHovered || isPulling ? 0.7 : 0.35
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`
+        ctx.lineWidth = isPulling ? 2.5 : (isHovered ? 2 : 1.5)
+
         ctx.beginPath()
-        ctx.arc(sx + spoolW / 2, spoolY, 6, 0, Math.PI * 2)
-        ctx.strokeStyle = `rgba(200, 160, 80, ${hovered ? 0.3 : 0.08})`
-        ctx.lineWidth = 1
+        ctx.moveTo(rightEdgeX, anchorY)
+        // Bezier curve: anchor -> control point with sag -> end
+        const midX = (rightEdgeX + endX) / 2 + Math.sin(swayPhase) * swayAmount
+        const midY = anchorY + cpSag + Math.sin(swayPhase * 0.7) * swayAmount
+        ctx.quadraticCurveTo(midX, midY, endX, endY + Math.sin(swayPhase * 0.5) * swayAmount)
         ctx.stroke()
-        // Label
-        ctx.font = '7px monospace'
-        ctx.fillStyle = `rgba(180, 140, 100, ${hovered ? 0.3 : 0.06})`
+
+        // Small fibers at the loose end
+        const looseEndX = endX
+        const looseEndY = endY + Math.sin(swayPhase * 0.5) * swayAmount
+        const fiberAlpha = isHovered || isPulling ? 0.5 : 0.2
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${fiberAlpha})`
+        ctx.lineWidth = 0.5
+        for (let f = 0; f < 3; f++) {
+          const fAngle = (-0.3 + f * 0.3) + Math.sin(swayPhase + f) * 0.15
+          const fLen = 6 + Math.sin(time * 1.2 + f * 2) * 2
+          ctx.beginPath()
+          ctx.moveTo(looseEndX, looseEndY)
+          ctx.lineTo(
+            looseEndX + Math.cos(fAngle + Math.PI * 0.5) * fLen,
+            looseEndY + Math.sin(fAngle + Math.PI * 0.5) * fLen
+          )
+          ctx.stroke()
+        }
+
+        if (needsGlow) {
+          ctx.restore()
+        }
+
+        // Pull progress indicator (subtle line showing threshold)
+        if (isPulling && pullDist > 0) {
+          const progress = Math.min(1, pullDist / 60)
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${progress * 0.3})`
+          ctx.fillRect(endX - 15, looseEndY + 4, 30 * progress, 1)
+        }
+
+        // Label at the loose end
+        const labelAlpha = isHovered || isPulling ? 0.6 : 0.12
+        ctx.font = '8px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${labelAlpha})`
         ctx.textAlign = 'center'
-        ctx.fillText(spools[i].label, sx + spoolW / 2, spoolY + 16)
+        ctx.fillText(nt.label, looseEndX, looseEndY + 16)
       }
     }
   }
@@ -761,17 +853,45 @@ export function createLoomRoom(deps: LoomDeps): Room {
     return -1
   }
 
-  function hitTestSpool(clientX: number, clientY: number): number {
-    if (!canvas) return -1
-    const spoolW = 55
-    const totalSpW = spools.length * spoolW + (spools.length - 1) * 12
-    const spoolStartX = (canvas.width - totalSpW) / 2
-    const spoolY = canvas.height - 30
-    for (let i = 0; i < spools.length; i++) {
-      const sx = spoolStartX + i * (spoolW + 12) + spoolW / 2
-      const dx = clientX - sx
-      const dy = clientY - spoolY
-      if (dx * dx + dy * dy < 400) return i
+  function getNavThreadLooseEnd(i: number): { x: number; y: number } | null {
+    if (!canvas) return null
+    const memories = deps.getMemories()
+    if (memories.length === 0) return null
+    const margin = 60
+    const weaveW = canvas.width - margin * 2 - 20
+    const weaveH = canvas.height - margin * 2
+    const cellSize = Math.max(4, Math.min(12, weaveW / 80))
+    const maxCols = Math.floor(weaveW / cellSize)
+    const visibleCols = Math.min(Math.floor(weavingProgress), maxCols)
+    const rightEdgeX = margin + Math.min(visibleCols * cellSize, weaveW)
+    const threadSpacingNav = weaveH / (navThreads.length + 1)
+
+    const anchorY = margin + (i + 1) * threadSpacingNav
+    const baseHangLen = 80
+    const hangX = rightEdgeX + 40
+    let droopAmount = baseHangLen
+    if (pullingNavThread === i) {
+      const pullDist = pullCurrentY - pullStartY
+      if (pullDist > 0) {
+        droopAmount = Math.max(20, baseHangLen - pullDist * 0.8)
+      }
+    } else if (hoveredNavThread === i) {
+      droopAmount = baseHangLen - 15
+    }
+    const swayPhase = time * 0.8 + i * 1.5
+    const swayAmount = pullingNavThread === i ? 1 : (hoveredNavThread === i ? 2 : 4)
+    const endY = anchorY + droopAmount + Math.sin(swayPhase * 0.5) * swayAmount
+    return { x: hangX, y: endY }
+  }
+
+  function hitTestNavThread(clientX: number, clientY: number): number {
+    const hitRadius = 20
+    for (let i = 0; i < navThreads.length; i++) {
+      const pos = getNavThreadLooseEnd(i)
+      if (!pos) continue
+      const dx = clientX - pos.x
+      const dy = clientY - pos.y
+      if (dx * dx + dy * dy < hitRadius * hitRadius) return i
     }
     return -1
   }
@@ -795,43 +915,82 @@ export function createLoomRoom(deps: LoomDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click handler: spool portals + thread examine
+      // Click handler: thread examine (nav threads use mousedown/mousemove/mouseup)
       canvas.addEventListener('click', (e) => {
         if (!canvas) return
+        // If we were pulling a nav thread, don't also examine
+        if (pullingNavThread >= 0) return
 
-        // Check spools first
-        if (deps.switchTo) {
-          const spoolIdx = hitTestSpool(e.clientX, e.clientY)
-          if (spoolIdx >= 0) {
-            deps.switchTo(spools[spoolIdx].room)
-            return
-          }
-        }
-
-        // Check thread click
+        // Check thread click for examine
         const memories = deps.getMemories()
         const threadIdx = hitTestThread(e.clientX, e.clientY)
         if (threadIdx >= 0 && threadIdx < memories.length) {
           selectedThread = threadIdx
           showExamineOverlay(memories[threadIdx])
         } else {
-          // Click elsewhere dismisses
           dismissExamineOverlay()
         }
       })
 
+      // Pull-thread navigation: mousedown starts pull
+      canvas.addEventListener('mousedown', (e) => {
+        if (!canvas || !deps.switchTo) return
+        const navIdx = hitTestNavThread(e.clientX, e.clientY)
+        if (navIdx >= 0) {
+          pullingNavThread = navIdx
+          pullStartY = e.clientY
+          pullCurrentY = e.clientY
+          e.preventDefault()
+        }
+      })
+
+      // mousemove: update hover state and pull distance
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
-        hoveredSpool = -1
-        const spoolIdx = hitTestSpool(e.clientX, e.clientY)
-        if (spoolIdx >= 0) {
-          hoveredSpool = spoolIdx
-          canvas.style.cursor = 'pointer'
+
+        // Update pull if actively pulling
+        if (pullingNavThread >= 0) {
+          pullCurrentY = e.clientY
+          const pullDist = pullCurrentY - pullStartY
+          // Check if pull threshold met (60px downward)
+          if (pullDist >= 60 && deps.switchTo) {
+            const room = navThreads[pullingNavThread].room
+            // Flash effect
+            navThreadFlash = pullingNavThread
+            navThreadFlashTimer = 0.3
+            pullingNavThread = -1
+            // Navigate after brief flash
+            setTimeout(() => {
+              deps.switchTo!(room)
+            }, 150)
+          }
+          canvas.style.cursor = 'grabbing'
           return
         }
-        // Check thread hover
+
+        // Hover detection for nav threads
+        hoveredNavThread = -1
+        const navIdx = hitTestNavThread(e.clientX, e.clientY)
+        if (navIdx >= 0) {
+          hoveredNavThread = navIdx
+          canvas.style.cursor = 'grab'
+          return
+        }
+
+        // Check weaving thread hover
         const threadIdx = hitTestThread(e.clientX, e.clientY)
         canvas.style.cursor = threadIdx >= 0 ? 'pointer' : 'default'
+      })
+
+      // mouseup: cancel pull if threshold not met
+      canvas.addEventListener('mouseup', () => {
+        pullingNavThread = -1
+      })
+
+      // mouseleave: cancel pull
+      canvas.addEventListener('mouseleave', () => {
+        pullingNavThread = -1
+        hoveredNavThread = -1
       })
 
       overlay.appendChild(canvas)

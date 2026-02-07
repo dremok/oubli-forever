@@ -158,6 +158,24 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
   // Cached painting layout (rebuilt each frame)
   let paintingRects: { x: number; y: number; w: number; h: number; index: number }[] = []
 
+  // Portal painting state
+  interface PortalPainting {
+    name: string
+    dateLabel: string
+    subtitle: string
+    bgColor: [number, number, number] // RGB
+  }
+  const portalPaintings: PortalPainting[] = [
+    { name: 'clocktower', dateLabel: 'JAN. 1, \u221E', subtitle: 'the clocktower', bgColor: [18, 22, 48] },   // midnight blue
+    { name: 'library', dateLabel: 'FEB. 29, \u2014', subtitle: 'the library', bgColor: [30, 34, 20] },        // dark olive
+    { name: 'archive', dateLabel: 'DEC. 31, 0', subtitle: 'the archive', bgColor: [48, 30, 18] },             // warm umber
+  ]
+  let portalRects: { x: number; y: number; w: number; h: number; portalIndex: number }[] = []
+  let hoveredPortal = -1
+  let portalFlashIndex = -1
+  let portalFlashTime = 0
+  const PORTAL_FLASH_DURATION = 0.3 // seconds
+
   function loadRecord() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
@@ -892,9 +910,113 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
     c.fillStyle = `rgba(200, 190, 170, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.fillText('after On Kawara (1932–2014)', w / 2, 40)
 
+    // --- Portal paintings (canvas-rendered On Kawara-style mini-paintings) ---
+    if (deps.switchTo) {
+      const portalW = Math.min(120, w * 0.12)
+      const portalH = portalW * 0.55
+      const portalGap = 24
+      const totalPortalW = portalPaintings.length * portalW + (portalPaintings.length - 1) * portalGap
+      const portalStartX = (w - totalPortalW) / 2
+      const portalY = h - portalH - 38
+
+      portalRects = []
+      hoveredPortal = -1
+
+      for (let pi = 0; pi < portalPaintings.length; pi++) {
+        const pp = portalPaintings[pi]
+        const px = portalStartX + pi * (portalW + portalGap)
+        const py = portalY
+
+        portalRects.push({ x: px, y: py, w: portalW, h: portalH, portalIndex: pi })
+
+        // Check hover
+        const isHovered = enlargedIndex < 0 &&
+          mouseX >= px && mouseX <= px + portalW &&
+          mouseY >= py && mouseY <= py + portalH
+        if (isHovered) hoveredPortal = pi
+
+        // Check flash state
+        const isFlashing = portalFlashIndex === pi && portalFlashTime > 0
+        let flashProgress = 0
+        if (isFlashing) {
+          const elapsed = time - portalFlashTime
+          if (elapsed < PORTAL_FLASH_DURATION) {
+            flashProgress = 1 - (elapsed / PORTAL_FLASH_DURATION)
+          } else {
+            // Flash done — navigate
+            portalFlashIndex = -1
+            portalFlashTime = 0
+            deps.switchTo!(pp.name)
+            continue
+          }
+        }
+
+        c.save()
+
+        // Hover: lighten background
+        const hoverShift = isHovered ? 20 : 0
+        const [br, bg, bb] = pp.bgColor
+        const fr = Math.min(255, br + hoverShift)
+        const fg = Math.min(255, bg + hoverShift)
+        const fb = Math.min(255, bb + hoverShift)
+
+        // Glow behind painting on hover
+        if (isHovered) {
+          const glow = c.createRadialGradient(
+            px + portalW / 2, py + portalH / 2, portalW * 0.2,
+            px + portalW / 2, py + portalH / 2, portalW * 0.7,
+          )
+          glow.addColorStop(0, `rgba(${br + 60}, ${bg + 60}, ${bb + 60}, 0.08)`)
+          glow.addColorStop(1, 'rgba(0, 0, 0, 0)')
+          c.fillStyle = glow
+          c.fillRect(px - 20, py - 20, portalW + 40, portalH + 40)
+        }
+
+        // Shadow
+        c.fillStyle = 'rgba(0, 0, 0, 0.25)'
+        c.fillRect(px + 1.5, py + portalH, portalW, 1.5)
+
+        // Painting background
+        c.fillStyle = `rgb(${fr}, ${fg}, ${fb})`
+        c.fillRect(px, py, portalW, portalH)
+
+        // Subtle frame — slightly brighter on hover
+        const frameAlpha = isHovered ? 0.25 : 0.12
+        c.strokeStyle = `rgba(${br + 40}, ${bg + 40}, ${bb + 40}, ${frameAlpha})`
+        c.lineWidth = 0.8
+        c.strokeRect(px - 0.5, py - 0.5, portalW + 1, portalH + 1)
+
+        // Date text (On Kawara style)
+        const dateFontSize = Math.floor(portalW * 0.1)
+        c.font = `${dateFontSize}px monospace`
+        c.fillStyle = `rgba(240, 235, 225, ${isHovered ? 0.85 : 0.6})`
+        c.textAlign = 'center'
+        c.textBaseline = 'middle'
+        c.fillText(pp.dateLabel, px + portalW / 2, py + portalH / 2)
+
+        // Subtitle (room name) — only on hover, fades in
+        if (isHovered) {
+          c.font = `${Math.floor(portalW * 0.065)}px "Cormorant Garamond", serif`
+          c.fillStyle = 'rgba(200, 190, 170, 0.4)'
+          c.textAlign = 'center'
+          c.textBaseline = 'top'
+          c.fillText(pp.subtitle, px + portalW / 2, py + portalH + 6)
+        }
+
+        // Flash overlay (white fading out)
+        if (flashProgress > 0) {
+          c.fillStyle = `rgba(255, 255, 255, ${flashProgress * 0.9})`
+          c.fillRect(px, py, portalW, portalH)
+        }
+
+        c.restore()
+      }
+    }
+
     // Bottom
     c.font = '9px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 190, 170, ${0.03 + Math.sin(time * 0.15) * 0.01})`
+    c.textAlign = 'center'
     c.fillText('I am still alive', w / 2, h - 4)
   }
 
@@ -915,14 +1037,22 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
 
     // Update cursor style
     if (enlargedIndex < 0 && canvas) {
-      let isOverPainting = false
+      let isOverInteractive = false
       for (const r of paintingRects) {
         if (mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h) {
-          isOverPainting = true
+          isOverInteractive = true
           break
         }
       }
-      canvas.style.cursor = isOverPainting ? 'pointer' : 'default'
+      if (!isOverInteractive) {
+        for (const r of portalRects) {
+          if (mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h) {
+            isOverInteractive = true
+            break
+          }
+        }
+      }
+      canvas.style.cursor = isOverInteractive ? 'pointer' : 'default'
     }
   }
 
@@ -935,6 +1065,18 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
     const scaleY = (canvas?.height || 1) / rect.height
     const cx = (e.clientX - rect.left) * scaleX
     const cy = (e.clientY - rect.top) * scaleY
+
+    // Check portal paintings first
+    if (deps.switchTo) {
+      for (const r of portalRects) {
+        if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
+          // Trigger flash animation — navigation happens when flash completes in render()
+          portalFlashIndex = r.portalIndex
+          portalFlashTime = time
+          return
+        }
+      }
+    }
 
     for (const r of paintingRects) {
       if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
@@ -979,45 +1121,6 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
-
-      // Navigation portals — On Kawara minimalist date-like labels at bottom
-      if (deps.switchTo) {
-        const portalData = [
-          { name: 'clocktower', label: 'JAN.1,∞ — clocktower', color: '200, 190, 170' },
-          { name: 'library', label: 'FEB.29,— — library', color: '180, 180, 200' },
-          { name: 'archive', label: 'DEC.31,0 — archive', color: '160, 150, 140' },
-        ]
-        const totalW = portalData.length
-        for (let i = 0; i < portalData.length; i++) {
-          const p = portalData[i]
-          const el = document.createElement('div')
-          const leftPct = ((i + 0.5) / totalW) * 100
-          el.style.cssText = `
-            position: absolute; bottom: 22px; left: ${leftPct}%;
-            transform: translateX(-50%);
-            pointer-events: auto; cursor: pointer;
-            font-family: monospace;
-            font-size: 7px; letter-spacing: 2px;
-            color: rgba(${p.color}, 0.05);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            padding: 6px 10px; z-index: 10;
-          `
-          el.textContent = p.label
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.4)`
-            el.style.textShadow = `0 0 8px rgba(${p.color}, 0.12)`
-          })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.05)`
-            el.style.textShadow = 'none'
-          })
-          el.addEventListener('click', (e) => {
-            e.stopPropagation()
-            deps.switchTo!(p.name)
-          })
-          overlay.appendChild(el)
-        }
-      }
 
       return overlay
     },

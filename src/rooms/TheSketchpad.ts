@@ -58,7 +58,156 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
   let brushWidth = 2
   let drawing = false
   let totalStrokes = 0
-  let hoveredLink = -1
+
+  // Sigil navigation system — draw symbols to navigate
+  interface SigilTemplate {
+    room: string
+    label: string
+    // Path as normalized points (0-1 range), will be scaled to screen
+    path: { x: number; y: number }[]
+    glow: number // current glow intensity (0-1)
+    matchProgress: number // how close current stroke is to matching (0-1)
+    flash: number // flash animation timer (0 = no flash)
+  }
+
+  const sigils: SigilTemplate[] = [
+    {
+      room: 'darkroom',
+      label: 'darkroom',
+      // Circle (lens aperture)
+      path: (() => {
+        const pts: { x: number; y: number }[] = []
+        for (let i = 0; i <= 32; i++) {
+          const a = (i / 32) * Math.PI * 2
+          pts.push({ x: 0.5 + Math.cos(a) * 0.4, y: 0.5 + Math.sin(a) * 0.4 })
+        }
+        return pts
+      })(),
+      glow: 0,
+      matchProgress: 0,
+      flash: 0,
+    },
+    {
+      room: 'pendulum',
+      label: 'pendulum',
+      // Figure-8 / infinity sign (harmonograph trace)
+      path: (() => {
+        const pts: { x: number; y: number }[] = []
+        for (let i = 0; i <= 48; i++) {
+          const t = (i / 48) * Math.PI * 2
+          pts.push({
+            x: 0.5 + Math.sin(t) * 0.4,
+            y: 0.5 + Math.sin(t * 2) * 0.3,
+          })
+        }
+        return pts
+      })(),
+      glow: 0,
+      matchProgress: 0,
+      flash: 0,
+    },
+    {
+      room: 'loom',
+      label: 'loom',
+      // Zigzag / weave pattern (warp/weft)
+      path: (() => {
+        const pts: { x: number; y: number }[] = []
+        const segments = 6
+        for (let i = 0; i <= segments; i++) {
+          const t = i / segments
+          pts.push({
+            x: 0.1 + t * 0.8,
+            y: i % 2 === 0 ? 0.2 : 0.8,
+          })
+        }
+        return pts
+      })(),
+      glow: 0,
+      matchProgress: 0,
+      flash: 0,
+    },
+  ]
+
+  const SIGIL_SIZE = 70 // pixel size of each sigil template area
+  const SIGIL_Y_OFFSET = 90 // pixels from bottom of screen
+  let pendingNav: string | null = null
+  let pendingNavTimer = 0
+
+  function getSigilScreenPositions(w: number, h: number): { cx: number; cy: number }[] {
+    const spacing = 140
+    const totalWidth = (sigils.length - 1) * spacing
+    const startX = w / 2 - totalWidth / 2
+    const cy = h - SIGIL_Y_OFFSET
+    return sigils.map((_, i) => ({ cx: startX + i * spacing, cy }))
+  }
+
+  function sigilPathToScreen(path: { x: number; y: number }[], cx: number, cy: number): { x: number; y: number }[] {
+    return path.map(p => ({
+      x: cx + (p.x - 0.5) * SIGIL_SIZE,
+      y: cy + (p.y - 0.5) * SIGIL_SIZE,
+    }))
+  }
+
+  function matchStrokeToSigil(strokePoints: { x: number; y: number }[], sigilScreenPath: { x: number; y: number }[], cx: number, cy: number): number {
+    if (strokePoints.length < 5) return 0
+
+    // Check if the stroke is even near the sigil area
+    const strokeBounds = {
+      minX: Infinity, maxX: -Infinity,
+      minY: Infinity, maxY: -Infinity,
+    }
+    for (const p of strokePoints) {
+      strokeBounds.minX = Math.min(strokeBounds.minX, p.x)
+      strokeBounds.maxX = Math.max(strokeBounds.maxX, p.x)
+      strokeBounds.minY = Math.min(strokeBounds.minY, p.y)
+      strokeBounds.maxY = Math.max(strokeBounds.maxY, p.y)
+    }
+    const strokeCx = (strokeBounds.minX + strokeBounds.maxX) / 2
+    const strokeCy = (strokeBounds.minY + strokeBounds.maxY) / 2
+
+    // Must be within generous range of the sigil center
+    const distToCenter = Math.sqrt((strokeCx - cx) ** 2 + (strokeCy - cy) ** 2)
+    if (distToCenter > SIGIL_SIZE * 1.5) return 0
+
+    // For each point on the sigil path, find the minimum distance to any stroke point
+    let totalMinDist = 0
+    const tolerance = SIGIL_SIZE * 0.5 // generous tolerance
+    let closePoints = 0
+
+    for (const sp of sigilScreenPath) {
+      let minDist = Infinity
+      for (const tp of strokePoints) {
+        const d = Math.sqrt((sp.x - tp.x) ** 2 + (sp.y - tp.y) ** 2)
+        if (d < minDist) minDist = d
+      }
+      totalMinDist += minDist
+      if (minDist < tolerance) closePoints++
+    }
+
+    const coverage = closePoints / sigilScreenPath.length
+    const avgDist = totalMinDist / sigilScreenPath.length
+    const distScore = Math.max(0, 1 - avgDist / (SIGIL_SIZE * 0.8))
+
+    // Combined score: coverage matters most, distance refines it
+    return coverage * 0.6 + distScore * 0.4
+  }
+
+  function checkSigilMatch(strokePoints: { x: number; y: number }[]) {
+    if (!canvas || !deps.switchTo) return
+    const positions = getSigilScreenPositions(canvas.width, canvas.height)
+    for (let i = 0; i < sigils.length; i++) {
+      const pos = positions[i]
+      const screenPath = sigilPathToScreen(sigils[i].path, pos.cx, pos.cy)
+      const score = matchStrokeToSigil(strokePoints, screenPath, pos.cx, pos.cy)
+      sigils[i].matchProgress = score
+      if (score > 0.45) {
+        // Trigger navigation with flash
+        sigils[i].flash = 1.0
+        pendingNav = sigils[i].room
+        pendingNavTimer = 0.6 // seconds of flash before nav
+      }
+    }
+  }
 
   // Symmetry mode
   let symmetryMode = false
@@ -85,12 +234,6 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
 
   // Background breathing
   let breathPhase = 0
-
-  const sketchLinks = [
-    { label: 'darkroom', room: 'darkroom' },
-    { label: 'pendulum', room: 'pendulum' },
-    { label: 'loom', room: 'loom' },
-  ]
 
   const FADE_TIME = 60 // seconds before stroke fully fades
   const GHOST_EXTRA = 8 // extra seconds ghosts linger after stroke fades
@@ -434,17 +577,70 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     c.fillText(`hue: ${drawHue}`, w - 12, h - 30)
     c.fillText(`width: ${brushWidth}`, w - 12, h - 18)
 
-    // Navigation links (bottom corners)
+    // Sigil navigation templates
     if (deps.switchTo) {
-      const linkY = h - 50
-      const positions = [20, w / 2, w - 20]
-      const aligns: CanvasTextAlign[] = ['left', 'center', 'right']
-      for (let i = 0; i < sketchLinks.length; i++) {
-        const hovered = hoveredLink === i
+      const positions = getSigilScreenPositions(w, h)
+      for (let i = 0; i < sigils.length; i++) {
+        const sigil = sigils[i]
+        const pos = positions[i]
+        const screenPath = sigilPathToScreen(sigil.path, pos.cx, pos.cy)
+
+        // Decay glow and flash
+        sigil.glow = sigil.glow * 0.92 + sigil.matchProgress * 0.08
+        if (sigil.flash > 0) {
+          sigil.flash -= 0.016 / 0.6 // decay over 0.6s
+          if (sigil.flash < 0) sigil.flash = 0
+        }
+
+        // Base alpha — ghost outline
+        const baseAlpha = 0.04 + Math.sin(time * 0.5 + i * 2) * 0.01
+        const glowBoost = sigil.glow * 0.2
+        const flashBoost = sigil.flash * 0.6
+        const alpha = Math.min(1, baseAlpha + glowBoost + flashBoost)
+
+        const hue = sigil.flash > 0 ? 60 : 270 // flash gold, otherwise purple
+
+        // Draw sigil template outline
+        c.strokeStyle = `hsla(${hue}, 50%, 65%, ${alpha})`
+        c.lineWidth = 1.5 + sigil.glow * 1.5 + sigil.flash * 2
+        c.lineCap = 'round'
+        c.lineJoin = 'round'
+        c.beginPath()
+        if (screenPath.length > 0) {
+          c.moveTo(screenPath[0].x, screenPath[0].y)
+          for (let j = 1; j < screenPath.length; j++) {
+            c.lineTo(screenPath[j].x, screenPath[j].y)
+          }
+        }
+        c.stroke()
+
+        // Outer glow when actively matching
+        if (sigil.glow > 0.1 || sigil.flash > 0) {
+          c.strokeStyle = `hsla(${hue}, 60%, 70%, ${(sigil.glow * 0.1 + sigil.flash * 0.3)})`
+          c.lineWidth = 4 + sigil.flash * 4
+          c.stroke()
+        }
+
+        // Room label beneath sigil
         c.font = '8px "Cormorant Garamond", serif'
-        c.fillStyle = `rgba(180, 160, 200, ${hovered ? 0.25 : 0.04})`
-        c.textAlign = aligns[i]
-        c.fillText(sketchLinks[i].label, positions[i], linkY)
+        c.fillStyle = `rgba(180, 160, 200, ${0.04 + sigil.glow * 0.12 + sigil.flash * 0.4})`
+        c.textAlign = 'center'
+        c.fillText(sigil.label, pos.cx, pos.cy + SIGIL_SIZE / 2 + 14)
+      }
+
+      // Handle pending navigation
+      if (pendingNav) {
+        pendingNavTimer -= 0.016
+        if (pendingNavTimer <= 0) {
+          const room = pendingNav
+          pendingNav = null
+          deps.switchTo(room)
+        }
+      }
+
+      // Reset match progress each frame (it gets set fresh from live stroke check)
+      for (const sigil of sigils) {
+        if (!drawing) sigil.matchProgress = 0
       }
     }
 
@@ -453,6 +649,7 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     c.fillStyle = 'rgba(180, 160, 200, 0.04)'
     c.textAlign = 'center'
     c.fillText('draw with light \u00B7 scroll to change color \u00B7 shift+scroll for width \u00B7 S for symmetry \u00B7 double-click to clear', w / 2, h - 8)
+    c.fillText('trace a sigil below to travel', w / 2, h - 4 + 14)
   }
 
   function startStroke(x: number, y: number) {
@@ -514,10 +711,25 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
 
       // Update audio
       updateAudio(x, y, currentSpeed)
+
+      // Live sigil matching feedback while drawing
+      if (canvas && deps.switchTo && currentStroke.points.length > 5) {
+        const positions = getSigilScreenPositions(canvas.width, canvas.height)
+        for (let si = 0; si < sigils.length; si++) {
+          const pos = positions[si]
+          const screenPath = sigilPathToScreen(sigils[si].path, pos.cx, pos.cy)
+          sigils[si].matchProgress = matchStrokeToSigil(currentStroke.points, screenPath, pos.cx, pos.cy)
+        }
+      }
     }
   }
 
   function endStroke() {
+    // Check sigil match before clearing the stroke
+    if (currentStroke && currentStroke.points.length >= 5) {
+      checkSigilMatch(currentStroke.points)
+    }
+
     if (currentStroke && currentStroke.points.length >= 2) {
       strokes.push(currentStroke)
       totalStrokes++
@@ -573,33 +785,10 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
 
       // Mouse events
       canvas.addEventListener('mousedown', (e) => {
-        // Check navigation links
-        if (deps.switchTo && canvas) {
-          const linkY = canvas.height - 50
-          const positions = [20, canvas.width / 2, canvas.width - 20]
-          for (let i = 0; i < sketchLinks.length; i++) {
-            if (Math.abs(e.clientY - linkY) < 12 && Math.abs(e.clientX - positions[i]) < 40) {
-              deps.switchTo(sketchLinks[i].room)
-              return
-            }
-          }
-        }
         startStroke(e.clientX, e.clientY)
       })
       canvas.addEventListener('mousemove', (e) => {
         if (drawing) addPoint(e.clientX, e.clientY)
-        // Hover for links
-        if (canvas) {
-          hoveredLink = -1
-          const linkY = canvas.height - 50
-          const positions = [20, canvas.width / 2, canvas.width - 20]
-          for (let i = 0; i < sketchLinks.length; i++) {
-            if (Math.abs(e.clientY - linkY) < 12 && Math.abs(e.clientX - positions[i]) < 40) {
-              hoveredLink = i
-              break
-            }
-          }
-        }
       })
       canvas.addEventListener('mouseup', () => endStroke())
       canvas.addEventListener('mouseleave', () => endStroke())

@@ -40,7 +40,41 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
   let frameId = 0
   let time = 0
   let traceTime = 0
-  let hoveredNav = -1
+  // Navigation pendulum bobs — swing to navigate
+  interface NavBob {
+    room: string
+    label: string
+    hue: number          // bob color hue
+    edge: 'N' | 'S' | 'E' | 'W'
+    swingAngle: number   // current swing offset (pixels)
+    swingVel: number     // angular velocity
+    amplitude: number    // current swing amplitude (grows on interaction)
+    baseAmplitude: number // idle swing amplitude
+    rings: { r: number; alpha: number }[] // resonance rings
+    triggered: boolean   // navigation triggered, waiting for ring anim
+    triggerTime: number  // when triggered
+    showLabel: boolean   // show room name
+  }
+
+  const navBobs: NavBob[] = [
+    { room: 'instrument', label: 'instrument', hue: 42, edge: 'N',
+      swingAngle: 0, swingVel: 0, amplitude: 6, baseAmplitude: 6,
+      rings: [], triggered: false, triggerTime: 0, showLabel: false },
+    { room: 'clocktower', label: 'clocktower', hue: 210, edge: 'S',
+      swingAngle: 0, swingVel: 0, amplitude: 6, baseAmplitude: 6,
+      rings: [], triggered: false, triggerTime: 0, showLabel: false },
+    { room: 'automaton', label: 'automaton', hue: 140, edge: 'W',
+      swingAngle: 0, swingVel: 0, amplitude: 6, baseAmplitude: 6,
+      rings: [], triggered: false, triggerTime: 0, showLabel: false },
+    { room: 'cipher', label: 'cipher', hue: 280, edge: 'E',
+      swingAngle: 0, swingVel: 0, amplitude: 6, baseAmplitude: 6,
+      rings: [], triggered: false, triggerTime: 0, showLabel: false },
+  ]
+
+  const NAV_BOB_RADIUS = 8
+  const NAV_TRIGGER_AMPLITUDE = 35
+  const NAV_RING_SPEED = 80
+  const NAV_RING_COUNT = 3
 
   // Cursor state (normalized -1..1 from center)
   let cursorX = 0
@@ -59,14 +93,6 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
   let wetGain: GainNode | null = null
   let audioMaster: GainNode | null = null
   const BASE_HZ = 150
-
-  // Directional markers on the floor — N/S/E/W compass-style
-  const navPoints = [
-    { label: 'N \u2191 instrument', room: 'instrument', xFrac: 0.5, yFrac: 0.04 },
-    { label: 'S \u2193 clocktower', room: 'clocktower', xFrac: 0.5, yFrac: 0.97 },
-    { label: 'W \u2190 automaton', room: 'automaton', xFrac: 0.03, yFrac: 0.5 },
-    { label: 'E \u2192 cipher', room: 'cipher', xFrac: 0.97, yFrac: 0.5 },
-  ]
 
   // Two pendulums for X, two for Y (full harmonograph has 4)
   let pendulums: PendulumState[] = []
@@ -273,6 +299,191 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     return [x, y]
   }
 
+  // --- Nav Bob Helpers ---
+
+  /** Get the anchor position for a nav bob (center of the edge it lives on) */
+  function getBobAnchor(bob: NavBob, w: number, h: number): [number, number] {
+    switch (bob.edge) {
+      case 'N': return [w / 2, 36]
+      case 'S': return [w / 2, h - 36]
+      case 'W': return [36, h / 2]
+      case 'E': return [w - 36, h / 2]
+    }
+  }
+
+  /** Get the current bob position including swing offset */
+  function getBobPosition(bob: NavBob, w: number, h: number): [number, number] {
+    const [ax, ay] = getBobAnchor(bob, w, h)
+    // N/S bobs swing horizontally, E/W bobs swing vertically
+    if (bob.edge === 'N' || bob.edge === 'S') {
+      return [ax + bob.swingAngle, ay]
+    } else {
+      return [ax, ay + bob.swingAngle]
+    }
+  }
+
+  /** Update nav bob physics for one frame */
+  function updateNavBobs(dt: number) {
+    for (const bob of navBobs) {
+      // Simple harmonic motion with damping toward baseAmplitude
+      // Each bob has a slightly different natural frequency for variety
+      const freq = bob.edge === 'N' ? 1.8 : bob.edge === 'S' ? 1.5 : bob.edge === 'W' ? 1.3 : 2.0
+      bob.swingVel += -freq * freq * bob.swingAngle * dt
+      bob.swingVel *= 0.995 // light damping
+      bob.swingAngle += bob.swingVel * dt * 60
+
+      // If amplitude is decaying back toward base, do so gently
+      if (!bob.triggered && bob.amplitude > bob.baseAmplitude + 1) {
+        bob.amplitude += (bob.baseAmplitude - bob.amplitude) * 0.02
+      }
+
+      // Keep swing energy near target amplitude
+      const energy = Math.sqrt(bob.swingAngle * bob.swingAngle + (bob.swingVel / freq) * (bob.swingVel / freq))
+      if (energy < bob.amplitude * 0.3 && !bob.triggered) {
+        // Inject a tiny kick to keep it alive
+        bob.swingVel += (Math.random() - 0.5) * bob.amplitude * 0.3
+      }
+
+      // Show label when amplitude is high
+      bob.showLabel = bob.amplitude > bob.baseAmplitude + 8 || bob.triggered
+
+      // Check trigger threshold
+      if (!bob.triggered && bob.amplitude >= NAV_TRIGGER_AMPLITUDE) {
+        bob.triggered = true
+        bob.triggerTime = time
+        bob.rings = []
+      }
+
+      // Update rings
+      if (bob.triggered) {
+        const elapsed = time - bob.triggerTime
+        // Spawn rings at intervals
+        const ringInterval = 0.3
+        const expectedRings = Math.min(NAV_RING_COUNT, Math.floor(elapsed / ringInterval) + 1)
+        while (bob.rings.length < expectedRings) {
+          bob.rings.push({ r: 0, alpha: 0.6 })
+        }
+        // Expand rings
+        for (const ring of bob.rings) {
+          ring.r += NAV_RING_SPEED * dt
+          ring.alpha = Math.max(0, 0.6 - ring.r * 0.006)
+        }
+        // Navigate after all rings have expanded enough
+        if (bob.rings.length >= NAV_RING_COUNT && bob.rings[NAV_RING_COUNT - 1].r > 30) {
+          if (deps?.switchTo) {
+            deps.switchTo(bob.room)
+          }
+          // Reset bob state
+          bob.triggered = false
+          bob.amplitude = bob.baseAmplitude
+          bob.rings = []
+        }
+      }
+    }
+  }
+
+  /** Draw all nav bobs */
+  function drawNavBobs(ctx: CanvasRenderingContext2D, w: number, h: number) {
+    const cx = w / 2
+    const cy = h / 2
+
+    for (const bob of navBobs) {
+      const [bx, by] = getBobPosition(bob, w, h)
+      const [ax, ay] = getBobAnchor(bob, w, h)
+
+      // Arm: thin line from near center to the bob
+      // Arm origin is partway from center toward the bob's edge
+      const armOriginX = cx + (ax - cx) * 0.15
+      const armOriginY = cy + (ay - cy) * 0.15
+
+      const glowIntensity = Math.min(1, (bob.amplitude - bob.baseAmplitude) / (NAV_TRIGGER_AMPLITUDE - bob.baseAmplitude))
+      const armAlpha = 0.06 + glowIntensity * 0.15
+
+      ctx.strokeStyle = `hsla(${bob.hue}, 40%, 55%, ${armAlpha})`
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(armOriginX, armOriginY)
+      ctx.lineTo(bx, by)
+      ctx.stroke()
+
+      // Bob glow (grows with amplitude)
+      const glowRadius = NAV_BOB_RADIUS + glowIntensity * 12
+      const glow = ctx.createRadialGradient(bx, by, 0, bx, by, glowRadius)
+      glow.addColorStop(0, `hsla(${bob.hue}, 60%, 75%, ${0.15 + glowIntensity * 0.5})`)
+      glow.addColorStop(0.5, `hsla(${bob.hue}, 50%, 60%, ${0.05 + glowIntensity * 0.2})`)
+      glow.addColorStop(1, 'transparent')
+      ctx.fillStyle = glow
+      ctx.beginPath()
+      ctx.arc(bx, by, glowRadius, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Bob core
+      const coreAlpha = 0.3 + glowIntensity * 0.5
+      ctx.fillStyle = `hsla(${bob.hue}, 55%, 70%, ${coreAlpha})`
+      ctx.beginPath()
+      ctx.arc(bx, by, NAV_BOB_RADIUS, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Inner highlight
+      ctx.fillStyle = `hsla(${bob.hue}, 40%, 85%, ${coreAlpha * 0.6})`
+      ctx.beginPath()
+      ctx.arc(bx - 2, by - 2, NAV_BOB_RADIUS * 0.4, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Resonance rings
+      for (const ring of bob.rings) {
+        if (ring.alpha <= 0) continue
+        ctx.strokeStyle = `hsla(${bob.hue}, 50%, 65%, ${ring.alpha})`
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.arc(bx, by, ring.r, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+
+      // Label (visible when swinging wide or triggered)
+      if (bob.showLabel) {
+        const labelAlpha = Math.min(0.5, glowIntensity * 0.5 + (bob.triggered ? 0.4 : 0))
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.fillStyle = `hsla(${bob.hue}, 30%, 70%, ${labelAlpha})`
+        ctx.textAlign = 'center'
+        const labelOffY = bob.edge === 'S' ? 20 : bob.edge === 'N' ? -16 : 0
+        const labelOffX = bob.edge === 'E' ? 20 : bob.edge === 'W' ? -20 : 0
+        const labelX = bx + labelOffX
+        const labelY = by + labelOffY
+        if (bob.edge === 'W' || bob.edge === 'E') {
+          ctx.textAlign = bob.edge === 'W' ? 'right' : 'left'
+        }
+        ctx.fillText(bob.label, labelX, labelY)
+      }
+    }
+  }
+
+  /** Find which nav bob (if any) is near the given screen coordinates */
+  function findNearestBob(sx: number, sy: number, w: number, h: number): NavBob | null {
+    let closest: NavBob | null = null
+    let closestDist = Infinity
+    for (const bob of navBobs) {
+      const [bx, by] = getBobPosition(bob, w, h)
+      const dx = sx - bx
+      const dy = sy - by
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < 40 && dist < closestDist) {
+        closest = bob
+        closestDist = dist
+      }
+    }
+    return closest
+  }
+
+  /** Excite a bob — increase its swing amplitude */
+  function exciteBob(bob: NavBob, amount: number) {
+    if (bob.triggered) return
+    bob.amplitude = Math.min(NAV_TRIGGER_AMPLITUDE + 5, bob.amplitude + amount)
+    // Add velocity kick in current swing direction
+    const dir = bob.swingAngle >= 0 ? 1 : -1
+    bob.swingVel += dir * amount * 0.5
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -406,25 +617,24 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       ctx.fillText('scroll to adjust decay', w - 12, h - 18)
     }
 
-    // Navigation portals — directional markers on the floor
+    // Navigation pendulum bobs — update physics and draw
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.3 : 0.05
-        ctx.font = '8px monospace'
-        ctx.fillStyle = `rgba(180, 160, 200, ${a})`
-        ctx.textAlign = np.xFrac < 0.2 ? 'left' : np.xFrac > 0.8 ? 'right' : 'center'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = 'rgba(180, 160, 200, 0.12)'
-          ctx.beginPath()
-          ctx.arc(nx, ny - 3, 3, 0, Math.PI * 2)
-          ctx.fill()
+      updateNavBobs(0.016)
+
+      // Proximity excitation: if cursor is near an edge, excite the bob there
+      const mouseScreenX = (cursorX * 0.5 + 0.5) * w
+      const mouseScreenY = (cursorY * 0.5 + 0.5) * h
+      for (const bob of navBobs) {
+        const [bx, by] = getBobPosition(bob, w, h)
+        const dx = mouseScreenX - bx
+        const dy = mouseScreenY - by
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < 60) {
+          exciteBob(bob, (60 - dist) * 0.008)
         }
       }
+
+      drawNavBobs(ctx, w, h)
     }
 
     // Hint
@@ -452,19 +662,14 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%; cursor: crosshair;'
       ctx = canvas.getContext('2d')
 
-      // Mousedown: start drag (or shift+click to randomize)
+      // Mousedown: start drag (or shift+click to randomize, or click nav bob)
       canvas.addEventListener('mousedown', (e) => {
-        // Check nav portals first
+        // Check nav bobs first — clicking near a bob excites it strongly
         if (deps?.switchTo && canvas) {
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              deps.switchTo(navPoints[i].room)
-              return
-            }
+          const nearBob = findNearestBob(e.clientX, e.clientY, canvas.width, canvas.height)
+          if (nearBob) {
+            exciteBob(nearBob, 15)
+            return
           }
         }
 
@@ -521,7 +726,7 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
         cursorY = 0
       })
 
-      // Mousemove: update cursor for perturbation + nav hover + drag
+      // Mousemove: update cursor for perturbation + drag
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
 
@@ -544,18 +749,14 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
           }
         }
 
-        // Navigation hover
+        // Nav bob hover: show label when cursor is near a bob
         if (deps?.switchTo) {
-          hoveredNav = -1
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              hoveredNav = i
-              break
-            }
+          for (const bob of navBobs) {
+            const [bx, by] = getBobPosition(bob, canvas.width, canvas.height)
+            const dx = e.clientX - bx
+            const dy = e.clientY - by
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            bob.showLabel = bob.showLabel || dist < 40
           }
         }
       })
