@@ -606,6 +606,48 @@ The core metaphor: We forget details to learn larger structures. We forget the o
        └─► OSSUARY ◄─┘        TIDE POOL
 ```
 
+50. **House Weather** (`src/atmosphere/HouseWeather.ts`) — ERA 5
+    - Ambient cross-room influence system
+    - Smoke drifts from furnace burns, fog from degradation
+    - Residual warmth when you return to recently visited rooms
+    - Subtle overlay layer (z-index 50, pointer-events: none)
+
+51. **The Clock Tower** (`src/rooms/TheClockTower.ts`) — ERA 5
+    - Real-time clock face with 12 memory positions
+    - Clock hands move with real time but distort with degradation
+    - Second hand jitters, numbers become glitch characters
+    - At >60% degradation, clock runs backwards
+    - Physics-based pendulum, hour-change portal to The Midnight
+
+52. **The Midnight** (`src/rooms/TheMidnight.ts`) — ERA 5, HIDDEN
+    - Room that materializes based on real-world time
+    - Midnight = 100% vivid, Noon = 10% vivid
+    - 24 unique poems, one per hour
+    - Characters fade proportionally to daylight
+    - Accessible from Clock Tower when the hour changes
+
+### Updated Navigation Map
+```
+                       TAB BAR (surface)
+    ┌────────────────────────────────────────────────────────────┐
+    │ void · study · instrument · observatory · séance           │
+    │ darkroom · garden · archive · loom · tide pool             │
+    │ furnace · radio · well · clock tower                       │
+    └──┬──────┬──────────────┬──────────────┬────────────────────┘
+       │      │              │              │
+    garden  archive        well       clock tower
+       │      │              │         (hour change)
+       │(soil) │(2+ search)  │(drop enough) │
+       ▼      ▼              ▼              ▼
+    ROOTS  CATACOMBS     AQUIFER       MIDNIGHT
+       │       │              │        (time-gated)
+       │(deep) │(bottom)      │(right)
+       ▼       ▼              ▼
+       └─► OSSUARY ◄─┘    TIDE POOL
+
+    séance → (ask "between") → BETWEEN (doors to all rooms)
+```
+
 ---
-*Last updated: Era 5, Feature 49 — Between, Furnace, Radio, Well, Aquifer*
-*"some rooms create. some rooms destroy. some rooms just listen."*
+*Last updated: Era 5, Feature 52 — ClockTower, Midnight, HouseWeather*
+*"some rooms create. some rooms destroy. some rooms just listen. one only exists at midnight."*
