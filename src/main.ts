@@ -38,6 +38,7 @@ import { createDarkroomRoom } from './rooms/TheDarkroom'
 import { createGardenRoom } from './rooms/TheGarden'
 import { createArchiveRoom } from './rooms/TheArchive'
 import { createCatacombsRoom } from './rooms/TheCatacombs'
+import { createLoomRoom } from './rooms/TheLoom'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -339,6 +340,9 @@ roomManager.addRoom(createArchiveRoom({
   onDescend: () => roomManager.switchTo('catacombs'),
 }))
 roomManager.addRoom(createCatacombsRoom(() => roomManager.switchTo('archive')))
+roomManager.addRoom(createLoomRoom({
+  getMemories: () => journal.getMemories(),
+}))
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
