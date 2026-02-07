@@ -191,6 +191,15 @@ export class MemoryJournal {
     this.onMemoryAdded = callback
   }
 
+  /** Accelerate degradation on a specific memory (e.g., burning in the furnace) */
+  accelerateDegradation(id: string, amount: number) {
+    const memory = this.memories.find(m => m.id === id)
+    if (!memory) return
+    memory.degradation = Math.min(0.95, memory.degradation + amount)
+    memory.currentText = this.degradeText(memory.originalText, memory.degradation)
+    this.save()
+  }
+
   /** Get a formatted view of all memories for display */
   getFormattedView(): string {
     if (this.memories.length === 0) {

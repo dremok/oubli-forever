@@ -43,6 +43,7 @@ import { createRootsRoom } from './rooms/TheRoots'
 import { createOssuaryRoom } from './rooms/TheOssuary'
 import { createTidePoolRoom } from './rooms/TheTidePool'
 import { createBetweenRoom } from './rooms/TheBetween'
+import { createFurnaceRoom } from './rooms/TheFurnace'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -368,6 +369,10 @@ roomManager.addRoom(createTidePoolRoom({
 roomManager.addRoom(createBetweenRoom({
   switchTo: (name) => roomManager.switchTo(name),
   getActiveRoom: () => roomManager.getActiveRoom(),
+}))
+roomManager.addRoom(createFurnaceRoom({
+  getMemories: () => journal.getMemories(),
+  accelerateDegradation: (id, amount) => journal.accelerateDegradation(id, amount),
 }))
 
 // Wire room checks — features only fire in the right room
