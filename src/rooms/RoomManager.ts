@@ -58,19 +58,19 @@ export class RoomManager {
     `
     document.body.appendChild(this.arrivalWhisper)
 
-    // Tab bar — bottom of screen
+    // Tab bar — bottom of screen, wraps into rows
     this.tabBar = document.createElement('div')
     this.tabBar.setAttribute('data-no-resonance', 'true')
     this.tabBar.style.cssText = `
       position: fixed; bottom: 0; left: 0; width: 100%;
       z-index: 700; pointer-events: none;
-      display: flex; justify-content: center; align-items: center;
-      gap: 0; padding: 14px 0 18px 0;
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+      gap: 2px 0; padding: 8px 20px 12px 20px;
       opacity: 0.2;
       transition: opacity 0.6s ease;
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 13px;
-      letter-spacing: 3px; text-transform: lowercase;
+      font-weight: 300; font-size: 11px;
+      letter-spacing: 2px; text-transform: lowercase;
     `
     this.tabBar.addEventListener('mouseenter', () => {
       this.tabBar.style.opacity = '0.7'
@@ -196,9 +196,10 @@ export class RoomManager {
       if (!first) {
         const sep = document.createElement('span')
         sep.style.cssText = `
-          color: rgba(255, 215, 0, 0.15);
-          margin: 0 12px;
+          color: rgba(255, 215, 0, 0.12);
+          margin: 0 6px;
           pointer-events: none;
+          font-size: 8px;
         `
         sep.textContent = '·'
         this.tabBar.appendChild(sep)
@@ -209,9 +210,10 @@ export class RoomManager {
       btn.style.cssText = `
         cursor: pointer;
         pointer-events: auto;
-        padding: 6px 4px;
+        padding: 4px 2px;
         transition: color 0.4s ease;
         color: rgba(255, 215, 0, 0.3);
+        white-space: nowrap;
       `
       btn.textContent = room.label
 
