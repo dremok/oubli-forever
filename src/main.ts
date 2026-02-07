@@ -33,6 +33,7 @@ import { createVoidRoom } from './rooms/TheVoid'
 import { createStudyRoom } from './rooms/TheStudy'
 import { createInstrumentRoom } from './rooms/TheInstrument'
 import { createObservatoryRoom } from './rooms/TheObservatory'
+import { createSeanceRoom } from './rooms/TheSeance'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -316,6 +317,12 @@ roomManager.addRoom(createObservatoryRoom({
   getCanvas: () => voidRenderer.getCanvas(),
   pauseCamera: () => voidRenderer.pauseCameraDrift(),
   resumeCamera: () => voidRenderer.resumeCameraDrift(),
+}))
+roomManager.addRoom(createSeanceRoom({
+  getMemories: () => journal.getMemories(),
+  speakText: voidWhisper.isAvailable()
+    ? (text) => voidWhisper.onDream(text)
+    : undefined,
 }))
 
 // Wire room checks — features only fire in the right room
