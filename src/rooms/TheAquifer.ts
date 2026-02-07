@@ -16,10 +16,16 @@
  * Inspired by: Underground rivers, the water table, aquatic caves,
  * the collective unconscious (Jung), how memories blend together
  * over time, the water cycle as a metaphor for memory recycling
+ *
+ * Deepened with: underwater audio (drone, bubbles, water pressure),
+ * depth zones (surface/midwater/depths), bioluminescence (cursor trails,
+ * spontaneous pulses, click bursts), fragment catching mechanic,
+ * water surface effect with light rays from above
  */
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface AquiferDeps {
   getMemories: () => StoredMemory[]
@@ -37,6 +43,8 @@ interface FloatingFragment {
   alpha: number
   size: number
   hue: number
+  // Bioluminescence glow (0-1), decays over time
+  glow: number
 }
 
 interface Bubble {
@@ -45,6 +53,21 @@ interface Bubble {
   vy: number
   size: number
   alpha: number
+}
+
+interface GlowTrail {
+  x: number
+  y: number
+  alpha: number
+}
+
+interface BurstParticle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  alpha: number
+  size: number
 }
 
 export function createAquiferRoom(deps: AquiferDeps): Room {
@@ -58,7 +81,34 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
   let bubbles: Bubble[] = []
   let mouseX = 0
   let mouseY = 0
+  let prevMouseX = 0
+  let prevMouseY = 0
+  let mouseSpeed = 0
   let hoveredNav = -1
+
+  // Bioluminescence trails and burst particles
+  let glowTrails: GlowTrail[] = []
+  let burstParticles: BurstParticle[] = []
+
+  // Fragment catching
+  let caughtFragment: FloatingFragment | null = null
+  let caughtTimer = 0
+  let caughtDisplayText = ''
+
+  // Audio nodes
+  let audioInitialized = false
+  let audioCtxRef: AudioContext | null = null
+  let masterVol: GainNode | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneOsc2: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneLowpass: BiquadFilterNode | null = null
+  let pressureSource: AudioBufferSourceNode | null = null
+  let pressureGain: GainNode | null = null
+  let pressureLowpass: BiquadFilterNode | null = null
+  let swishSource: AudioBufferSourceNode | null = null
+  let swishGain: GainNode | null = null
+  let swishBandpass: BiquadFilterNode | null = null
 
   // Navigation portals — bioluminescent markers in the dark water
   const navPoints = [
@@ -66,6 +116,192 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     { label: '◈ the tide pool', room: 'tidepool', xFrac: 0.94, yFrac: 0.5 },
   ]
 
+  // --- Depth zone helpers ---
+  // Returns 0.0 (surface) to 1.0 (depths) based on y position
+  function getDepthFactor(y: number, h: number): number {
+    return Math.min(1, Math.max(0, y / h))
+  }
+
+  // Returns 'surface' | 'midwater' | 'depths'
+  function getZone(y: number, h: number): string {
+    const ratio = y / h
+    if (ratio < 0.2) return 'surface'
+    if (ratio < 0.8) return 'midwater'
+    return 'depths'
+  }
+
+  // Speed multiplier based on depth: surface=1.4, mid=1.0, depths=0.6
+  function depthSpeedFactor(y: number, h: number): number {
+    const d = getDepthFactor(y, h)
+    return 1.4 - d * 0.8
+  }
+
+  // --- Audio ---
+  async function initAudio() {
+    if (audioInitialized) return
+    audioInitialized = true
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+      audioCtxRef = ac
+
+      masterVol = ac.createGain()
+      masterVol.gain.value = 0
+      masterVol.connect(dest)
+      // Fade in
+      masterVol.gain.setTargetAtTime(1, ac.currentTime, 0.5)
+
+      // --- Deep drone: two slightly detuned low sines ---
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0.04
+      droneLowpass = ac.createBiquadFilter()
+      droneLowpass.type = 'lowpass'
+      droneLowpass.frequency.value = 120
+      droneLowpass.Q.value = 1
+      droneGain.connect(droneLowpass)
+      droneLowpass.connect(masterVol)
+
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'sine'
+      droneOsc.frequency.value = 50
+      droneOsc.connect(droneGain)
+      droneOsc.start()
+
+      droneOsc2 = ac.createOscillator()
+      droneOsc2.type = 'sine'
+      droneOsc2.frequency.value = 50.7 // slight detune for beating
+      droneOsc2.connect(droneGain)
+      droneOsc2.start()
+
+      // --- Water pressure: brown noise through tight lowpass ---
+      const brownBuffer = createBrownNoise(ac, 4)
+      pressureGain = ac.createGain()
+      pressureGain.gain.value = 0.025
+      pressureLowpass = ac.createBiquadFilter()
+      pressureLowpass.type = 'lowpass'
+      pressureLowpass.frequency.value = 100
+      pressureLowpass.Q.value = 0.7
+      pressureGain.connect(pressureLowpass)
+      pressureLowpass.connect(masterVol)
+
+      pressureSource = ac.createBufferSource()
+      pressureSource.buffer = brownBuffer
+      pressureSource.loop = true
+      pressureSource.connect(pressureGain)
+      pressureSource.start()
+
+      // --- Swish: white noise through bandpass, volume controlled by mouse speed ---
+      const swishBuffer = createWhiteNoise(ac, 2)
+      swishGain = ac.createGain()
+      swishGain.gain.value = 0 // controlled by mouse speed
+      swishBandpass = ac.createBiquadFilter()
+      swishBandpass.type = 'bandpass'
+      swishBandpass.frequency.value = 800
+      swishBandpass.Q.value = 2
+      swishGain.connect(swishBandpass)
+      swishBandpass.connect(masterVol)
+
+      swishSource = ac.createBufferSource()
+      swishSource.buffer = swishBuffer
+      swishSource.loop = true
+      swishSource.connect(swishGain)
+      swishSource.start()
+    } catch (_) {
+      /* audio not available */
+    }
+  }
+
+  function createBrownNoise(ac: AudioContext, seconds: number): AudioBuffer {
+    const length = ac.sampleRate * seconds
+    const buffer = ac.createBuffer(1, length, ac.sampleRate)
+    const data = buffer.getChannelData(0)
+    let lastOut = 0
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1
+      lastOut = (lastOut + 0.02 * white) / 1.02
+      data[i] = lastOut * 3.5
+    }
+    return buffer
+  }
+
+  function createWhiteNoise(ac: AudioContext, seconds: number): AudioBuffer {
+    const length = ac.sampleRate * seconds
+    const buffer = ac.createBuffer(1, length, ac.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < length; i++) {
+      data[i] = Math.random() * 2 - 1
+    }
+    return buffer
+  }
+
+  function playBubblePop() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      const freq = 2000 + Math.random() * 2000
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      const g = ac.createGain()
+      g.gain.value = 0.008 + Math.random() * 0.006
+      g.gain.setTargetAtTime(0, ac.currentTime + 0.02, 0.015)
+      osc.connect(g)
+      g.connect(masterVol)
+      osc.start()
+      osc.stop(ac.currentTime + 0.08)
+    } catch (_) { /* */ }
+  }
+
+  function updateAudioForDepth() {
+    if (!audioCtxRef || !droneOsc || !droneOsc2 || !droneLowpass) return
+    const h = canvas?.height || window.innerHeight
+    const depthFactor = getDepthFactor(mouseY, h)
+    // Drone pitch: 50Hz at depths, 65Hz at surface
+    const basePitch = 50 + (1 - depthFactor) * 15
+    const t = audioCtxRef.currentTime
+    droneOsc.frequency.setTargetAtTime(basePitch, t, 0.3)
+    droneOsc2.frequency.setTargetAtTime(basePitch + 0.7, t, 0.3)
+    // Lowpass opens slightly at surface
+    droneLowpass.frequency.setTargetAtTime(120 + (1 - depthFactor) * 40, t, 0.3)
+  }
+
+  function updateSwish() {
+    if (!audioCtxRef || !swishGain) return
+    // Volume proportional to mouse speed, capped
+    const vol = Math.min(0.03, mouseSpeed * 0.002)
+    swishGain.gain.setTargetAtTime(vol, audioCtxRef.currentTime, 0.05)
+  }
+
+  function stopAudio() {
+    if (masterVol && audioCtxRef) {
+      masterVol.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.3)
+    }
+  }
+
+  function destroyAudio() {
+    stopAudio()
+    try {
+      droneOsc?.stop()
+      droneOsc2?.stop()
+      pressureSource?.stop()
+      swishSource?.stop()
+    } catch (_) { /* already stopped */ }
+    droneOsc = null
+    droneOsc2 = null
+    droneGain = null
+    droneLowpass = null
+    pressureSource = null
+    pressureGain = null
+    pressureLowpass = null
+    swishSource = null
+    swishGain = null
+    swishBandpass = null
+    masterVol = null
+    audioCtxRef = null
+    audioInitialized = false
+  }
+
+  // --- Fragment shattering ---
   function shatterMemories() {
     fragments = []
     const memories = deps.getMemories()
@@ -103,27 +339,235 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
         alpha: 0.1 + Math.random() * 0.2,
         size: 10 + Math.random() * 6,
         hue: wordData.hue * 360,
+        glow: 0,
       })
     }
   }
 
+  // --- Water surface drawing ---
+  function drawWaterSurface(w: number, h: number) {
+    if (!ctx) return
+    // Wavy surface line at the very top — as if looking up from underwater
+    ctx.save()
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    for (let x = 0; x <= w; x += 4) {
+      const waveY = 12 + Math.sin(x * 0.015 + time * 0.8) * 5
+        + Math.sin(x * 0.03 + time * 1.2) * 3
+        + Math.sin(x * 0.007 + time * 0.4) * 4
+      ctx.lineTo(x, waveY)
+    }
+    ctx.lineTo(w, 0)
+    ctx.closePath()
+    // Above the surface line: lighter, like sky through water
+    const surfGrad = ctx.createLinearGradient(0, 0, 0, 25)
+    surfGrad.addColorStop(0, 'rgba(60, 130, 180, 0.08)')
+    surfGrad.addColorStop(1, 'rgba(20, 60, 100, 0)')
+    ctx.fillStyle = surfGrad
+    ctx.fill()
+
+    // Surface line itself — bright rippling edge
+    ctx.beginPath()
+    for (let x = 0; x <= w; x += 4) {
+      const waveY = 12 + Math.sin(x * 0.015 + time * 0.8) * 5
+        + Math.sin(x * 0.03 + time * 1.2) * 3
+        + Math.sin(x * 0.007 + time * 0.4) * 4
+      if (x === 0) ctx.moveTo(x, waveY)
+      else ctx.lineTo(x, waveY)
+    }
+    ctx.strokeStyle = `rgba(120, 200, 240, ${0.08 + Math.sin(time * 0.6) * 0.02})`
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // --- Light rays from surface ---
+  function drawLightRays(w: number, h: number) {
+    if (!ctx) return
+    ctx.save()
+    for (let i = 0; i < 5; i++) {
+      const baseX = w * (0.15 + i * 0.18) + Math.sin(time * 0.15 + i * 1.3) * 30
+      const spread = 40 + Math.sin(time * 0.2 + i * 0.7) * 15
+      const alpha = 0.012 + Math.sin(time * 0.25 + i * 2) * 0.004
+
+      ctx.beginPath()
+      ctx.moveTo(baseX - spread * 0.3, 0)
+      ctx.lineTo(baseX + spread * 0.3, 0)
+      ctx.lineTo(baseX + spread * 2, h * 0.6)
+      ctx.lineTo(baseX - spread * 0.5, h * 0.6)
+      ctx.closePath()
+
+      const rayGrad = ctx.createLinearGradient(baseX, 0, baseX, h * 0.6)
+      rayGrad.addColorStop(0, `rgba(100, 180, 220, ${alpha})`)
+      rayGrad.addColorStop(0.5, `rgba(60, 140, 200, ${alpha * 0.4})`)
+      rayGrad.addColorStop(1, 'rgba(40, 100, 160, 0)')
+      ctx.fillStyle = rayGrad
+      ctx.fill()
+    }
+    ctx.restore()
+  }
+
+  // --- Depth zone background coloring ---
+  function drawDepthZones(w: number, h: number) {
+    if (!ctx) return
+    // Base gradient with zone differences
+    const bg = ctx.createLinearGradient(0, 0, 0, h)
+    // Surface zone (top 20%): slightly lighter
+    bg.addColorStop(0, 'rgba(5, 15, 35, 1)')
+    bg.addColorStop(0.15, 'rgba(4, 12, 28, 1)')
+    // Midwater (20-80%): standard deep blue
+    bg.addColorStop(0.2, 'rgba(3, 10, 25, 1)')
+    bg.addColorStop(0.5, 'rgba(3, 12, 30, 1)')
+    bg.addColorStop(0.8, 'rgba(2, 8, 22, 1)')
+    // Depths (bottom 20%): darkest, near black
+    bg.addColorStop(0.85, 'rgba(1, 5, 14, 1)')
+    bg.addColorStop(1, 'rgba(1, 3, 10, 1)')
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, w, h)
+  }
+
+  // --- Bioluminescence ---
+  function updateGlowTrails() {
+    // Add trail point if mouse is moving
+    if (mouseSpeed > 1) {
+      glowTrails.push({ x: mouseX, y: mouseY, alpha: Math.min(0.25, mouseSpeed * 0.015) })
+    }
+    // Decay and remove
+    for (let i = glowTrails.length - 1; i >= 0; i--) {
+      glowTrails[i].alpha -= 0.003
+      if (glowTrails[i].alpha <= 0) {
+        glowTrails.splice(i, 1)
+      }
+    }
+    if (glowTrails.length > 80) glowTrails.splice(0, 20)
+  }
+
+  function drawGlowTrails() {
+    if (!ctx) return
+    for (const t of glowTrails) {
+      const grad = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, 15)
+      grad.addColorStop(0, `rgba(80, 200, 180, ${t.alpha})`)
+      grad.addColorStop(1, 'rgba(40, 160, 140, 0)')
+      ctx.fillStyle = grad
+      ctx.fillRect(t.x - 15, t.y - 15, 30, 30)
+    }
+  }
+
+  function updateBurstParticles() {
+    for (let i = burstParticles.length - 1; i >= 0; i--) {
+      const p = burstParticles[i]
+      p.x += p.vx
+      p.y += p.vy
+      p.vx *= 0.97
+      p.vy *= 0.97
+      p.alpha -= 0.008
+      if (p.alpha <= 0) {
+        burstParticles.splice(i, 1)
+      }
+    }
+    if (burstParticles.length > 100) burstParticles.splice(0, 30)
+  }
+
+  function drawBurstParticles() {
+    if (!ctx) return
+    for (const p of burstParticles) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(80, 220, 180, ${p.alpha})`
+      ctx.fill()
+    }
+  }
+
+  function spawnBurst(x: number, y: number) {
+    const count = 12 + Math.floor(Math.random() * 8)
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 0.5 + Math.random() * 1.5
+      burstParticles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        alpha: 0.3 + Math.random() * 0.3,
+        size: 1 + Math.random() * 2,
+      })
+    }
+  }
+
+  // Spontaneous bioluminescent pulses on random fragments
+  function triggerSpontaneousPulse() {
+    if (fragments.length === 0) return
+    const frag = fragments[Math.floor(Math.random() * fragments.length)]
+    if (frag !== caughtFragment) {
+      frag.glow = 0.6 + Math.random() * 0.4
+    }
+  }
+
+  // --- Caught fragment logic ---
+  function updateCaughtFragment(dt: number) {
+    if (!caughtFragment) return
+    caughtTimer += dt
+    // Dissolve after 5 seconds
+    if (caughtTimer > 5) {
+      // Release — rejoin as new words
+      const w = canvas?.width || window.innerWidth
+      const h = canvas?.height || window.innerHeight
+      caughtFragment.x = Math.random() * w
+      caughtFragment.y = Math.random() * h
+      caughtFragment.vx = (Math.random() - 0.5) * 0.3
+      caughtFragment.vy = (Math.random() - 0.5) * 0.2
+      caughtFragment.alpha = 0.1 + Math.random() * 0.2
+      caughtFragment.glow = 0
+      caughtFragment = null
+      caughtTimer = 0
+      caughtDisplayText = ''
+    } else {
+      // Keep caught fragment stationary, glowing
+      caughtFragment.vx = 0
+      caughtFragment.vy = 0
+      caughtFragment.glow = Math.max(0.5, 1 - caughtTimer * 0.15)
+      // Fade out in last 2 seconds
+      if (caughtTimer > 3) {
+        caughtFragment.alpha = Math.max(0, 0.5 * (1 - (caughtTimer - 3) / 2))
+      } else {
+        caughtFragment.alpha = 0.5
+      }
+    }
+  }
+
+  function drawCaughtText(w: number, h: number) {
+    if (!ctx || !caughtDisplayText || !caughtFragment) return
+    // Fade factor for the display text
+    const fade = caughtTimer > 3 ? Math.max(0, 1 - (caughtTimer - 3) / 2) : 1
+    ctx.font = '18px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(120, 220, 200, ${0.4 * fade})`
+    ctx.textAlign = 'center'
+    ctx.fillText(caughtDisplayText, w / 2, h - 50)
+  }
+
+  // --- Main render ---
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
-    time += 0.016
+    const dt = 0.016
+    time += dt
 
     const w = canvas.width
     const h = canvas.height
 
+    // Mouse speed calculation
+    const mdx = mouseX - prevMouseX
+    const mdy = mouseY - prevMouseY
+    mouseSpeed = Math.sqrt(mdx * mdx + mdy * mdy)
+    prevMouseX = mouseX
+    prevMouseY = mouseY
+
     ctx.clearRect(0, 0, w, h)
 
-    // Background — deep underwater
-    const bg = ctx.createLinearGradient(0, 0, 0, h)
-    bg.addColorStop(0, 'rgba(2, 8, 20, 1)')
-    bg.addColorStop(0.5, 'rgba(3, 12, 30, 1)')
-    bg.addColorStop(1, 'rgba(2, 6, 15, 1)')
-    ctx.fillStyle = bg
-    ctx.fillRect(0, 0, w, h)
+    // Depth zone background
+    drawDepthZones(w, h)
+
+    // Light rays from surface
+    drawLightRays(w, h)
 
     // Underwater caustic patterns
     for (let i = 0; i < 6; i++) {
@@ -151,11 +595,37 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
       ctx.stroke()
     }
 
+    // Bioluminescence trails
+    updateGlowTrails()
+    drawGlowTrails()
+
+    // Burst particles
+    updateBurstParticles()
+    drawBurstParticles()
+
+    // Spontaneous bioluminescent pulses (~every 3 seconds on average)
+    if (Math.random() < 0.005) {
+      triggerSpontaneousPulse()
+    }
+
+    // Update caught fragment
+    updateCaughtFragment(dt)
+
     // Floating text fragments — the dissolved memories
     for (const frag of fragments) {
-      // Current drift
-      frag.x += frag.vx + Math.sin(time * 0.5 + frag.y * 0.01) * 0.2
-      frag.y += frag.vy + Math.cos(time * 0.3 + frag.x * 0.01) * 0.1
+      // Skip movement for caught fragment
+      if (frag === caughtFragment) {
+        // Draw caught fragment with strong glow
+        drawFragment(frag, w, h)
+        continue
+      }
+
+      // Depth-aware speed
+      const speedMul = depthSpeedFactor(frag.y, h)
+
+      // Current drift (scaled by depth)
+      frag.x += (frag.vx + Math.sin(time * 0.5 + frag.y * 0.01) * 0.2) * speedMul
+      frag.y += (frag.vy + Math.cos(time * 0.3 + frag.x * 0.01) * 0.1) * speedMul
 
       // Mouse influence — fragments drift away from cursor
       const dx = frag.x - mouseX
@@ -167,6 +637,14 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
         frag.vy += (dy / dist) * force * 0.01
       }
 
+      // Proximity bioluminescence: cursor near fragment makes it glow
+      if (dist < 100) {
+        frag.glow = Math.max(frag.glow, (100 - dist) / 100 * 0.6)
+      }
+
+      // Decay glow
+      frag.glow = Math.max(0, frag.glow - 0.008)
+
       // Dampen velocity
       frag.vx *= 0.99
       frag.vy *= 0.99
@@ -177,22 +655,33 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
       if (frag.y < -50) frag.y = h + 30
       if (frag.y > h + 50) frag.y = -30
 
-      // Draw fragment
-      ctx.font = `${frag.size}px "Cormorant Garamond", serif`
-      ctx.fillStyle = `hsla(${200 + frag.hue * 0.2}, 50%, 60%, ${frag.alpha})`
-      ctx.textAlign = 'center'
-      ctx.fillText(frag.text, frag.x, frag.y)
+      drawFragment(frag, w, h)
     }
 
-    // Bubbles
-    if (Math.random() < 0.05) {
-      bubbles.push({
-        x: Math.random() * w,
-        y: h + 10,
+    // Bubbles — more common in depths, rare at surface
+    const bubbleChance = (() => {
+      // Mouse zone affects bubble spawn
+      const cursorZone = getZone(mouseY, h)
+      if (cursorZone === 'depths') return 0.08
+      if (cursorZone === 'midwater') return 0.05
+      return 0.02
+    })()
+    if (Math.random() < bubbleChance) {
+      const spawnX = Math.random() * w
+      // Bubbles spawn in lower half more often
+      const spawnY = h * (0.5 + Math.random() * 0.5)
+      const newBubble: Bubble = {
+        x: spawnX,
+        y: spawnY,
         vy: -0.5 - Math.random() * 1,
         size: 1 + Math.random() * 3,
         alpha: 0.1 + Math.random() * 0.1,
-      })
+      }
+      bubbles.push(newBubble)
+      // Occasional bubble pop sound (~20% of spawns)
+      if (Math.random() < 0.2) {
+        playBubblePop()
+      }
     }
     for (let i = bubbles.length - 1; i >= 0; i--) {
       const b = bubbles[i]
@@ -213,11 +702,17 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     }
     if (bubbles.length > 50) bubbles.splice(0, 10)
 
+    // Water surface effect
+    drawWaterSurface(w, h)
+
     // Mouse proximity glow
     ctx.beginPath()
     ctx.arc(mouseX, mouseY, 60, 0, Math.PI * 2)
     ctx.fillStyle = 'rgba(60, 120, 200, 0.015)'
     ctx.fill()
+
+    // Caught fragment display text
+    drawCaughtText(w, h)
 
     // Navigation links
     // Up to well
@@ -246,6 +741,13 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     ctx.textAlign = 'right'
     ctx.fillText(`${fragments.length} fragments dissolved`, w - 15, h - 15)
 
+    // Depth indicator
+    const cursorZone = getZone(mouseY, h)
+    ctx.font = '8px monospace'
+    ctx.fillStyle = 'rgba(60, 120, 180, 0.04)'
+    ctx.textAlign = 'right'
+    ctx.fillText(`depth: ${cursorZone}`, w - 15, h - 28)
+
     // Navigation portals — bioluminescent markers
     if (deps.switchTo) {
       for (let i = 0; i < navPoints.length; i++) {
@@ -267,6 +769,37 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
         }
       }
     }
+
+    // Update audio based on cursor depth and speed
+    updateAudioForDepth()
+    updateSwish()
+  }
+
+  // Draw a single fragment with its glow
+  function drawFragment(frag: FloatingFragment, _w: number, _h: number) {
+    if (!ctx) return
+    // Bioluminescent glow aura
+    if (frag.glow > 0.05) {
+      const glowRadius = 20 + frag.glow * 15
+      const grad = ctx.createRadialGradient(frag.x, frag.y - frag.size * 0.3, 0, frag.x, frag.y - frag.size * 0.3, glowRadius)
+      grad.addColorStop(0, `rgba(60, 200, 170, ${frag.glow * 0.15})`)
+      grad.addColorStop(1, 'rgba(40, 160, 140, 0)')
+      ctx.fillStyle = grad
+      ctx.fillRect(frag.x - glowRadius, frag.y - frag.size * 0.3 - glowRadius, glowRadius * 2, glowRadius * 2)
+    }
+
+    // Fragment text
+    ctx.font = `${frag.size}px "Cormorant Garamond", serif`
+    // Mix in bioluminescent color when glowing
+    const baseAlpha = frag.alpha + frag.glow * 0.3
+    if (frag.glow > 0.1) {
+      // Shift toward cyan-green when glowing
+      ctx.fillStyle = `rgba(${80 + frag.glow * 60}, ${180 + frag.glow * 40}, ${170 + frag.glow * 30}, ${baseAlpha})`
+    } else {
+      ctx.fillStyle = `hsla(${200 + frag.hue * 0.2}, 50%, 60%, ${baseAlpha})`
+    }
+    ctx.textAlign = 'center'
+    ctx.fillText(frag.text, frag.x, frag.y)
   }
 
   return {
@@ -325,11 +858,43 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
         // Top area → ascend to well
         if (e.clientY < 50) {
           deps.toWell()
+          return
         }
         // Right edge → tide pool
-        else if (e.clientX > window.innerWidth * 0.85) {
+        if (e.clientX > window.innerWidth * 0.85) {
           deps.toTidePool()
+          return
         }
+
+        // Check if clicking near a fragment to catch it
+        let closestFrag: FloatingFragment | null = null
+        let closestDist = Infinity
+        for (const frag of fragments) {
+          if (frag === caughtFragment) continue
+          const dx = frag.x - e.clientX
+          const dy = frag.y - e.clientY
+          const d = Math.sqrt(dx * dx + dy * dy)
+          if (d < 40 && d < closestDist) {
+            closestDist = d
+            closestFrag = frag
+          }
+        }
+
+        if (closestFrag) {
+          // Release any previously caught fragment
+          if (caughtFragment) {
+            caughtFragment.glow = 0
+            caughtFragment.alpha = 0.1 + Math.random() * 0.2
+          }
+          // Catch this fragment
+          caughtFragment = closestFrag
+          caughtTimer = 0
+          caughtDisplayText = closestFrag.text
+          closestFrag.glow = 1
+        }
+
+        // Always spawn bioluminescent burst on click
+        spawnBurst(e.clientX, e.clientY)
       })
 
       overlay.appendChild(canvas)
@@ -348,18 +913,26 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     activate() {
       active = true
       bubbles = []
+      glowTrails = []
+      burstParticles = []
+      caughtFragment = null
+      caughtTimer = 0
+      caughtDisplayText = ''
       shatterMemories()
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      stopAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
       overlay?.remove()
     },
   }
