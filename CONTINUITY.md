@@ -292,6 +292,44 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - **MemoryConstellations performance**: Word sets cached per node, connections
       recomputed only when memories added (was O(n²) per frame)
 
+27. **The Observatory** (`src/rooms/TheObservatory.ts`) — ERA 4
+    - New room: interactive memory constellation exploration
+    - OrbitControls: drag to orbit, scroll to zoom, pan to explore
+    - Click on memory stars → detail panel slides in from right
+    - Shows: memory text, degradation %, time since creation, connection count, 3D coordinates
+    - Spatial audio: each star plays a bell tone from its 3D position via PannerNode (HRTF)
+    - Frequency based on memory hue (220-660Hz), with detuned harmonic
+    - AudioListener tracks camera position for proper spatialization
+    - VoidRenderer camera drift paused during visit, resumes smoothly on exit
+    - Raycasting via THREE.Raycaster against constellation sprites
+    - Tab bar now shows 4 rooms: void · study · instrument · observatory
+
+28. **Sharp Wave Ripples** (`src/replay/SharpWaveRipples.ts`) — ERA 4
+    - Named after hippocampal sharp-wave ripples (memory replay during rest)
+    - Every 3-6 minutes idle: particles organize into text of a stored memory
+    - Animation phases: gathering → formed → scattering → fading
+    - Dots per character (3-5) converge from random positions to text layout
+    - Degraded memories have corrupted replay: dots miss targets, gaps appear
+    - Gentle drift during formed phase, outward scatter during dissolution
+    - Faint "sharp wave ripple" label during peak formation
+    - Void-room only, idle-triggered
+    - Inspired by: 2026 Alzheimer's research showing replay persists but loses structure
+
+29. **Input behavior fixes** — ERA 4
+    - Spacebar no longer initiates text input (only adds spaces to existing text)
+    - Voice input disabled when ForgettingMachine has active text
+    - Voice text dissolves letter-by-letter with drift, rotation, and glow
+      (was just fading; now matches ForgettingMachine dissolution aesthetic)
+    - Instrument waveform: clickable buttons replace obscure backtick key
+
+### Rooms
+| Tab | Name | Purpose |
+|-----|------|---------|
+| the void | Default | Particle cosmos, text overlays, memory input |
+| the study | Writing | Distraction-free writing with prompts |
+| the instrument | Synth | Keyboard synth with waveform viz |
+| the observatory | Stars | Orbit through memory constellations |
+
 ### Drift States
 | Key | Name | Particles | Colors | Sound | Vibe |
 |-----|------|-----------|--------|-------|------|
@@ -319,6 +357,10 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Palimpsest ↔ Archaeology, manuscript history, urban layers
 - Resonance map ↔ Theremin, singing bowls, musica universalis
 - Affordance whispers ↔ The void developing self-awareness
+- Observatory orbit ↔ Planetariums, memory palaces, hippocampal place cells
+- Spatial audio ↔ How memories have spatial presence, sound localization
+- Sharp wave ripples ↔ Hippocampal replay, Alzheimer's corrupted consolidation (2026)
+- Letter dissolution ↔ Memory traces degrading, the physics of forgetting
 
 ### Backlog (Prioritized)
 1. **WebGPU particle system** — TSL compute shaders, 1M+ particles (Three.js r171 supports this)
@@ -349,5 +391,5 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 3.5, Feature 26 — Consolidation (tab nav, shared audio, room-aware features)*
-*"the house learns which rooms you visit and which you avoid"*
+*Last updated: Era 4, Feature 29 — Observatory, Sharp Wave Ripples, input fixes*
+*"the void replays what it cannot hold — corrupted echoes of what you once gave it"*
