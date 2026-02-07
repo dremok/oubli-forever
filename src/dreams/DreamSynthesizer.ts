@@ -87,6 +87,7 @@ export class DreamSynthesizer {
   private frame = 0
   private nextDreamFrame = 0
   private hidden = false
+  private dreamCallback: ((text: string) => void) | null = null
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -197,6 +198,9 @@ export class DreamSynthesizer {
       y: this.height * 0.45,
       blur: 8,
     }
+
+    // Notify listeners (e.g., DreamVisions for image generation)
+    this.dreamCallback?.(dreamText)
   }
 
   private generateDream(): string {
@@ -245,6 +249,11 @@ export class DreamSynthesizer {
     const start = Math.floor(Math.random() * Math.max(1, words.length - 3))
     const len = 2 + Math.floor(Math.random() * 3)
     return words.slice(start, start + len).join(' ')
+  }
+
+  /** Register callback for when a new dream is synthesized */
+  onDream(fn: (text: string) => void) {
+    this.dreamCallback = fn
   }
 
   setVisible(v: boolean) {

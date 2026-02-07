@@ -245,6 +245,19 @@ export class AmbientDrone {
     )
   }
 
+  /** Apply dissonance — detune drones for unsettling effect (0 = none, 1 = max) */
+  setDissonance(amount: number) {
+    if (!this.ctx || this.drones.length === 0) return
+    const now = this.ctx.currentTime
+    for (const d of this.drones) {
+      // Detune up to 50 cents at max dissonance
+      d.detune.linearRampToValueAtTime(
+        (Math.random() - 0.5) * amount * 50,
+        now + 4
+      )
+    }
+  }
+
   destroy() {
     if (this.modulationInterval) {
       clearInterval(this.modulationInterval)

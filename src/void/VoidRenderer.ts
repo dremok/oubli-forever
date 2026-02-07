@@ -125,6 +125,7 @@ const filmGrainShader = {
     tDiffuse: { value: null },
     uTime: { value: 0 },
     uIntensity: { value: 0.08 },
+    uAberration: { value: 0.002 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -137,6 +138,7 @@ const filmGrainShader = {
     uniform sampler2D tDiffuse;
     uniform float uTime;
     uniform float uIntensity;
+    uniform float uAberration;
     varying vec2 vUv;
 
     float random(vec2 st) {
@@ -154,8 +156,8 @@ const filmGrainShader = {
       float vignette = 1.0 - smoothstep(0.4, 1.4, length(vUv - 0.5) * 1.8);
       color.rgb *= vignette;
 
-      // Slight chromatic aberration at edges
-      float aberration = length(vUv - 0.5) * 0.002;
+      // Chromatic aberration at edges (modulated by uAberration)
+      float aberration = length(vUv - 0.5) * uAberration;
       color.r = texture2D(tDiffuse, vUv + vec2(aberration, 0.0)).r;
       color.b = texture2D(tDiffuse, vUv - vec2(aberration, 0.0)).b;
 
@@ -470,6 +472,13 @@ export class VoidRenderer {
   setGrainIntensity(intensity: number) {
     if (this.grainPass) {
       this.grainPass.uniforms.uIntensity.value = intensity
+    }
+  }
+
+  /** Set chromatic aberration strength (default 0.002) */
+  setChromaticAberration(strength: number) {
+    if (this.grainPass) {
+      this.grainPass.uniforms.uAberration.value = strength
     }
   }
 

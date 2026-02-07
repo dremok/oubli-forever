@@ -34,6 +34,8 @@ import { createStudyRoom } from './rooms/TheStudy'
 import { createInstrumentRoom } from './rooms/TheInstrument'
 import { createObservatoryRoom } from './rooms/TheObservatory'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
+import { DreamVisions } from './dreams/DreamVisions'
+import { TippingPoint } from './events/TippingPoint'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -169,10 +171,28 @@ const _visitor = new VisitorLog()
 const ripples = new SharpWaveRipples()
 ripples.loadMemories(journal.getMemories())
 
-// Start dreams, ghost typing, and ripples
+// Dream Visions — fal.ai generates images from dream sentences
+const dreamVisions = new DreamVisions()
+dreams.onDream((text) => dreamVisions.onDream(text))
+
+// Tipping Point — entropy cascade when memories degrade past thresholds
+const tippingPoint = new TippingPoint()
+tippingPoint.setMemorySource(() => journal.getMemories())
+tippingPoint.onChange((state) => {
+  // Modulate visuals based on entropy phase
+  voidRenderer.setGrainIntensity(0.08 * state.grainMultiplier)
+  voidRenderer.setBloomStrength(1.2 * state.bloomMultiplier)
+  voidRenderer.setDriftSpeed(state.speedMultiplier)
+  voidRenderer.setChromaticAberration(0.002 * state.chromaticIntensity)
+  // Modulate sound — dissonance increases with entropy
+  drone.setDissonance(state.droneDissonance)
+})
+
+// Start dreams, ghost typing, ripples, and tipping point
 dreams.start()
 ghostTyping.start()
 ripples.start()
+tippingPoint.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()
@@ -298,6 +318,8 @@ roomManager.onRoomChange((room) => {
   dreams.setVisible(inVoid)
   ghostTyping.setVisible(inVoid)
   ripples.setVisible(inVoid)
+  dreamVisions.setVisible(inVoid)
+  tippingPoint.setVisible(inVoid)
 })
 
 // Show the tab bar after the initial animation settles
