@@ -19,6 +19,7 @@ After context compaction/reset:
 - **New features should interfere as little as possible with existing features**
 - **Prefer creating new rooms or spaces** for completely new features rather than adding complexity to the void/front page
 - New spaces can be accessed from existing spaces (links, doorways, tab bar entries) — not everything has to connect directly to the void
+- **Navigation can be convoluted** — rooms can link to other rooms, hidden passages can exist between non-void rooms, not all navigation has to go through the main room. The tab bar is one path; rooms can contain their own links/portals to other rooms.
 - Avoid adding global keyboard handlers, global DOM overlays, or global event listeners that could conflict with existing rooms
 - If a feature is room-specific, use `setRoomCheck()` to scope it properly
 - When in doubt, make it a new room — rooms are self-contained and low-risk
