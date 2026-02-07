@@ -529,6 +529,41 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - Procedural ocean sound: brown noise + low-pass filter
     - Moon reflection shimmers on water surface
 
+45. **The Between** (`src/rooms/TheBetween.ts`) — ERA 5, HIDDEN
+    - Liminal corridor between all rooms, backrooms aesthetic
+    - Accessible from The Séance by asking about "between", "liminal", "threshold"
+    - Fluorescent flicker, beige walls, doors to every room
+    - Scroll to walk, click doors to enter rooms
+    - Contemplative: the hallway is where you decide who to be next
+
+46. **The Furnace** (`src/rooms/TheFurnace.ts`) — ERA 5
+    - FIRST DESTRUCTIVE ROOM: actively choose to burn memories
+    - Select a memory, watch text burn character by character
+    - Embers rise, fire grows with each burning
+    - Accelerates actual degradation on the memory (0.3 per burn)
+    - Cathartic: intentional forgetting as agency
+
+47. **The Radio** (`src/rooms/TheRadio.ts`) — ERA 5
+    - Memories broadcast on different frequencies (88-108 MHz)
+    - Drag dial or scroll to tune, CRT green phosphor aesthetic
+    - Signal strength depends on memory health (degraded = weak signal)
+    - Static noise drops out characters, static audio via Web Audio
+    - Number station / shortwave DXing aesthetic
+
+48. **The Well** (`src/rooms/TheWell.ts`) — ERA 5
+    - Drop memories into a deep well, watch text fall and shrink
+    - After a pause, distorted echo returns: words rearranged, merged, reversed
+    - Water level rises with each drop, passage to Aquifer opens
+    - Non-destructive: transforms rather than degrades
+    - 5 distortion techniques: reverse, shuffle, echo repetition, dropout, merge
+
+49. **The Aquifer** (`src/rooms/TheAquifer.ts`) — ERA 5, HIDDEN
+    - Underground water beneath The Well
+    - Memory fragments dissolved and drifting in underwater currents
+    - Bioluminescent caustic patterns, bubbles rise
+    - Mouse pushes fragments away (underwater turbulence)
+    - Connects to: Well (up) and Tide Pool (right side)
+
 ### Rooms
 | Tab | Name | Purpose |
 |-----|------|---------|
@@ -542,28 +577,35 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 | the archive | Dig | Search Wayback Machine for dead websites |
 | the loom | Textile | Weave memories into generative patterns |
 | the tide pool | Ocean | Memories wash ashore on waves |
+| the furnace | Fire | Actively burn/destroy memories |
+| the radio | Signal | Tune through frequencies to find memories |
+| the well | Echo | Drop memories, hear distorted echoes return |
 | (hidden) catacombs | Descent | Strata of dead internet history |
 | (hidden) roots | Below | Root systems beneath the garden |
 | (hidden) ossuary | Junction | Where underground paths converge |
+| (hidden) between | Corridor | Liminal hallway with doors to all rooms |
+| (hidden) aquifer | Water | Dissolved memories in underground currents |
 
 ### Navigation Map
 ```
-                    TAB BAR (surface)
-    ┌──────────────────────────────────────────┐
-    │ void · study · instrument · observatory  │
-    │ séance · darkroom · garden · archive     │
-    │ loom · tide pool                         │
-    └──────┬──────────────────────────┬────────┘
-           │                          │
-        garden                     archive
-           │ (click soil)             │ (2+ searches)
-           ▼                          ▼
-        THE ROOTS              THE CATACOMBS
-           │ (bottom-right)           │ (bottom)
-           ▼                          ▼
-           └──────► OSSUARY ◄─────────┘
+                       TAB BAR (surface)
+    ┌────────────────────────────────────────────────────┐
+    │ void · study · instrument · observatory · séance   │
+    │ darkroom · garden · archive · loom · tide pool     │
+    │ furnace · radio · well                             │
+    └──┬──────┬──────────────┬────────────────┬──────────┘
+       │      │              │                │
+    garden  archive        well            séance
+       │      │              │          (ask "between")
+       │ (click soil)  (2+ searches)  (drop enough)    │
+       ▼      ▼              ▼                ▼
+    THE ROOTS  THE CATACOMBS  THE AQUIFER   THE BETWEEN
+       │           │              │        (doors to all)
+       │ (deeper)  │ (bottom)     │ (right)
+       ▼           ▼              ▼
+       └─► OSSUARY ◄─┘        TIDE POOL
 ```
 
 ---
-*Last updated: Era 5, Feature 44 — Loom, Roots, Ossuary, Tide Pool*
-*"the underground paths converge. what decays above becomes architecture below."*
+*Last updated: Era 5, Feature 49 — Between, Furnace, Radio, Well, Aquifer*
+*"some rooms create. some rooms destroy. some rooms just listen."*
