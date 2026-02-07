@@ -46,6 +46,7 @@ import { createBetweenRoom } from './rooms/TheBetween'
 import { createFurnaceRoom } from './rooms/TheFurnace'
 import { createRadioRoom } from './rooms/TheRadio'
 import { createWellRoom } from './rooms/TheWell'
+import { createAquiferRoom } from './rooms/TheAquifer'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -381,6 +382,12 @@ roomManager.addRoom(createRadioRoom({
 }))
 roomManager.addRoom(createWellRoom({
   getMemories: () => journal.getMemories(),
+  onDescend: () => roomManager.switchTo('aquifer'),
+}))
+roomManager.addRoom(createAquiferRoom({
+  getMemories: () => journal.getMemories(),
+  toWell: () => roomManager.switchTo('well'),
+  toTidePool: () => roomManager.switchTo('tidepool'),
 }))
 
 // Wire room checks — features only fire in the right room

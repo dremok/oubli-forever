@@ -24,6 +24,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 
 interface WellDeps {
   getMemories: () => StoredMemory[]
+  onDescend?: () => void
 }
 
 interface DroppedMemory {
@@ -414,6 +415,35 @@ export function createWellRoom(deps: WellDeps): Room {
       panel.appendChild(listEl)
       overlay.appendChild(panel)
 
+      // Descent link — appears when water level is high
+      let descentEl: HTMLElement | null = null
+      if (deps.onDescend) {
+        descentEl = document.createElement('div')
+        descentEl.style.cssText = `
+          position: absolute;
+          bottom: 50px; left: 0; right: 0;
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 11px; font-style: italic;
+          color: rgba(60, 120, 200, 0);
+          text-align: center;
+          cursor: pointer;
+          pointer-events: none;
+          transition: color 2s ease;
+          z-index: 3;
+        `
+        descentEl.textContent = '▼ the water leads somewhere deeper'
+        descentEl.addEventListener('mouseenter', () => {
+          if (waterLevel >= 0.15 && descentEl) descentEl.style.color = 'rgba(60, 120, 200, 0.3)'
+        })
+        descentEl.addEventListener('mouseleave', () => {
+          if (waterLevel >= 0.15 && descentEl) descentEl.style.color = 'rgba(60, 120, 200, 0.1)'
+        })
+        descentEl.addEventListener('click', () => {
+          if (waterLevel >= 0.15 && deps.onDescend) deps.onDescend()
+        })
+        overlay.appendChild(descentEl)
+      }
+
       const onResize = () => {
         if (canvas) {
           canvas.width = window.innerWidth
@@ -421,6 +451,14 @@ export function createWellRoom(deps: WellDeps): Room {
         }
       }
       window.addEventListener('resize', onResize)
+
+      // Check water level periodically and show/hide descent
+      const checkWater = setInterval(() => {
+        if (descentEl && waterLevel >= 0.15) {
+          descentEl.style.color = 'rgba(60, 120, 200, 0.1)'
+          descentEl.style.pointerEvents = 'auto'
+        }
+      }, 1000)
 
       return overlay
     },
