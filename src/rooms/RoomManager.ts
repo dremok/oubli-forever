@@ -186,28 +186,23 @@ export class RoomManager {
     this.tabBar.innerHTML = ''
     this.tabButtons.clear()
 
-    const roomOrder = ['void', 'study', 'instrument']
-    const roomLabels: Record<string, string> = {
-      void: 'the void',
-      study: 'the study',
-      instrument: 'the instrument',
-    }
+    // Dynamically show ALL registered rooms in registration order
+    const roomEntries = [...this.rooms.entries()]
+    let first = true
 
-    for (let i = 0; i < roomOrder.length; i++) {
-      const name = roomOrder[i]
-      if (!this.rooms.has(name)) continue
-
+    for (const [name, room] of roomEntries) {
       // Separator dot
-      if (i > 0) {
+      if (!first) {
         const sep = document.createElement('span')
         sep.style.cssText = `
           color: rgba(255, 215, 0, 0.15);
-          margin: 0 16px;
+          margin: 0 12px;
           pointer-events: none;
         `
         sep.textContent = '·'
         this.tabBar.appendChild(sep)
       }
+      first = false
 
       const btn = document.createElement('span')
       btn.style.cssText = `
@@ -217,7 +212,7 @@ export class RoomManager {
         transition: color 0.4s ease;
         color: rgba(255, 215, 0, 0.3);
       `
-      btn.textContent = roomLabels[name] || name
+      btn.textContent = room.label
 
       btn.addEventListener('click', (e) => {
         e.stopPropagation()

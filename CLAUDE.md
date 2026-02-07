@@ -15,15 +15,25 @@ After context compaction/reset:
 5. Remember: FAL_KEY and ELEVENLABS_API_KEY are available for AI-generated content
 6. Check the backlog in CONTINUITY.md for prioritized ideas
 
+## Feature Isolation — CRITICAL
+- **New features should interfere as little as possible with existing features**
+- **Prefer creating new rooms or spaces** for completely new features rather than adding complexity to the void/front page
+- New spaces can be accessed from existing spaces (links, doorways, tab bar entries) — not everything has to connect directly to the void
+- Avoid adding global keyboard handlers, global DOM overlays, or global event listeners that could conflict with existing rooms
+- If a feature is room-specific, use `setRoomCheck()` to scope it properly
+- When in doubt, make it a new room — rooms are self-contained and low-risk
+- Test that existing features (typing, voice, navigation, sound) still work after adding anything
+
 ## Workflow
 - Commit and push after every major feature
-- Deploy to Railway: `railway up --detach`
+- Deploy to Railway after EACH feature: `railway up --detach`
 - Update CONTINUITY.md after major features
 - Type check before committing: `npx tsc --noEmit`
+- Check for bugs periodically — open the deployed site and verify core features work
 
 ## Architecture Quick Reference
 - Stack: Vite + TypeScript + Three.js (WebGL)
-- Rooms: RoomManager with tab bar (void, study, instrument, observatory)
+- Rooms: RoomManager with tab bar (void, study, instrument, observatory, séance)
 - Sound: Shared AudioContext via `src/sound/AudioBus.ts`
 - Memory: MemoryJournal with localStorage persistence
 - Room awareness: `setRoomCheck(() => roomManager.getActiveRoom())`

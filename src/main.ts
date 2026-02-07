@@ -39,6 +39,7 @@ import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
 import { VoidWhisper } from './voice/VoidWhisper'
 import { AmbientTextures } from './sound/AmbientTextures'
+import { TimeCapsule } from './memory/TimeCapsule'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -189,6 +190,9 @@ dreams.onDream((text) => {
 // Wire whispers to voice
 whispers.onWhisper((text) => voidWhisper.onWhisper(text))
 
+// Ambient Textures — ElevenLabs generates procedural atmosphere per drift state
+const ambientTextures = new AmbientTextures()
+
 // Tipping Point — entropy cascade when memories degrade past thresholds
 const tippingPoint = new TippingPoint()
 tippingPoint.setMemorySource(() => journal.getMemories())
@@ -260,9 +264,6 @@ setInterval(() => {
   voidRenderer.setBloomStrength(circadian.getBloomStrength())
   voidRenderer.setFogDensity(circadian.getFogDensity())
 }, 30000)
-
-// Ambient Textures — ElevenLabs generates procedural atmosphere per drift state
-const ambientTextures = new AmbientTextures()
 
 // Drift Engine — consciousness moves between states (1-5 keys, void room only)
 const driftEngine = new DriftEngine()
@@ -351,6 +352,17 @@ roomManager.onRoomChange((room) => {
   tippingPoint.setVisible(inVoid)
   voidWhisper.setVisible(inVoid)
   ambientTextures.setVisible(inVoid)
+})
+
+// Time Capsule — seal a memory for the future (press 'c' in void room)
+const _timeCapsule = new TimeCapsule({
+  addTimeCapsule: (text, date) => journal.addTimeCapsule(text, date),
+  processNewMemory: (memory) => {
+    constellations.addMemory(memory)
+    ripples.addMemory(memory)
+  },
+  roomCheck: () => roomManager.getActiveRoom(),
+  typingCheck: () => forgettingMachine.hasActiveInput(),
 })
 
 // Show the tab bar after the initial animation settles

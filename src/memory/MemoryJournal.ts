@@ -25,6 +25,7 @@ export interface StoredMemory {
   degradation: number // 0-1, how much has been lost
   position: { x: number; y: number; z: number } // position in the void
   hue: number
+  sealedUntil?: number // timestamp — if set, text hidden until this time
 }
 
 const STORAGE_KEY = 'oubli-memories'
@@ -63,6 +64,19 @@ export class MemoryJournal {
     const now = Date.now()
 
     for (const memory of this.memories) {
+      // Sealed memories don't degrade — they're frozen in time
+      if (memory.sealedUntil) {
+        if (now < memory.sealedUntil) {
+          // Still sealed — hide text
+          memory.currentText = '▓'.repeat(memory.originalText.length)
+          memory.degradation = 0
+          continue
+        } else {
+          // Unsealed! Start degradation from unlock time
+          delete memory.sealedUntil
+        }
+      }
+
       const daysSinceCreation = (now - memory.timestamp) / (1000 * 60 * 60 * 24)
       const targetDegradation = Math.min(daysSinceCreation * DEGRADATION_RATE, 0.95)
 
@@ -132,6 +146,34 @@ export class MemoryJournal {
     this.onMemoryAdded?.(memory)
 
     return memory
+  }
+
+  /** Add a time capsule — sealed memory that reveals itself on a future date */
+  addTimeCapsule(text: string, unlockDate: Date): StoredMemory {
+    const memory: StoredMemory = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      originalText: text,
+      currentText: '▓'.repeat(text.length),
+      timestamp: Date.now(),
+      degradation: 0,
+      position: {
+        x: (Math.random() - 0.5) * 300,
+        y: (Math.random() - 0.5) * 300,
+        z: (Math.random() - 0.5) * 300,
+      },
+      hue: 0.55 + Math.random() * 0.05, // cyan/teal — sealed capsules
+      sealedUntil: unlockDate.getTime(),
+    }
+
+    this.memories.push(memory)
+    this.save()
+    this.onMemoryAdded?.(memory)
+    return memory
+  }
+
+  /** Check if a memory is currently sealed */
+  isSealed(memory: StoredMemory): boolean {
+    return !!memory.sealedUntil && Date.now() < memory.sealedUntil
   }
 
   /** Get all memories */
