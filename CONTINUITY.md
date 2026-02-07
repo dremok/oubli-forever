@@ -322,14 +322,6 @@ The core metaphor: We forget details to learn larger structures. We forget the o
       (was just fading; now matches ForgettingMachine dissolution aesthetic)
     - Instrument waveform: clickable buttons replace obscure backtick key
 
-### Rooms
-| Tab | Name | Purpose |
-|-----|------|---------|
-| the void | Default | Particle cosmos, text overlays, memory input |
-| the study | Writing | Distraction-free writing with prompts |
-| the instrument | Synth | Keyboard synth with waveform viz |
-| the observatory | Stars | Orbit through memory constellations |
-
 ### Drift States
 | Key | Name | Particles | Colors | Sound | Vibe |
 |-----|------|-----------|--------|-------|------|
@@ -388,15 +380,69 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - Chromatic aberration now a modifiable shader uniform (was hardcoded 0.002)
     - AmbientDrone gains `setDissonance()` — detunes oscillators for unsettling effect
 
+32. **Void Whisper** (`src/voice/VoidWhisper.ts`) — ERA 4
+    - ElevenLabs TTS gives the void a whispering voice
+    - Dreams (40% chance) and whispers (15% chance) spoken aloud
+    - Voice degrades with entropy: stability drops, similarity drops, speed increases
+    - Text degradation: words dropped (ellipsis), stuttering (word repetition)
+    - Delay node creates reverb-like ethereal quality
+    - Rate-limited: 1 utterance per 3 minutes, void-room only
+
+33. **Ambient Textures** (`src/sound/AmbientTextures.ts`) — ERA 4
+    - ElevenLabs Sound Effects API generates procedural ambient sounds
+    - Each drift state gets unique texture: void=space drone, deep=underwater,
+      burn=fire, garden=rain, archive=library
+    - Entropy phases overlay: accelerating=electrical static, cascade=digital corruption
+    - 15-second seamless loops, crossfade between states, cached in memory
+    - Rate-limited: 1 generation per 8 minutes
+
+34. **Model Collapse** (in `DreamSynthesizer`) — ERA 4
+    - Generated dreams feed back as source material for future dreams
+    - collapseRatio increases over ~20 generations (max 80% self-referential)
+    - Word frequency map tracks usage, frequent words replace rare ones
+    - Vocabulary narrows, phrases repeat, dreams converge toward a mean
+    - Mirrors real AI model collapse phenomenon
+
+35. **The Séance** (`src/rooms/TheSeance.ts`) — ERA 4
+    - 5th room: ask questions, the void answers from stored memories
+    - Oracle templates recombine memory fragments into cryptic answers
+    - Word-matching finds memories sharing words with your question
+    - Candle-glow aesthetic: gold questions, violet answers
+    - Messages fade after 60 seconds, scrollable history
+    - Connected to VoidWhisper for spoken oracle responses
+
+36. **Time Capsule** (`src/memory/TimeCapsule.ts`) — ERA 4
+    - Press 'c' in void room to seal a memory for the future
+    - Choose duration: 1 day, 1 week, 1 month, 3 months, 1 year
+    - Sealed memories appear as frozen cyan stars in constellations
+    - Text hidden (▓ blocks), no degradation while sealed
+    - When time arrives, text reveals and degradation begins
+    - Gives users a reason to return — a star waits to thaw
+
+### Feature Isolation Directive
+- New features should interfere as little as possible with existing features
+- Prefer creating new rooms/spaces for completely new features
+- Rooms are self-contained, low-risk, and can be accessed from existing spaces
+- Not everything needs to connect to the void/starting room
+- Use `setRoomCheck()` for room-specific keyboard shortcuts and behaviors
+
+### Rooms
+| Tab | Name | Purpose |
+|-----|------|---------|
+| the void | Default | Particle cosmos, text overlays, memory input |
+| the study | Writing | Distraction-free writing with prompts |
+| the instrument | Synth | Keyboard synth with waveform viz |
+| the observatory | Stars | Orbit through memory constellations |
+| the séance | Oracle | Ask questions, void answers from memories |
+
 ### Backlog (Prioritized)
 1. **WebGPU particle system** — TSL compute shaders, 1M+ particles (Three.js r171 supports this)
 2. **Strudel pattern engine** — algorithmic music that degrades, `.degrade()` = sonic forgetting
 3. **Wayback Machine CDX API** — live link rot data for DigitalDecay
 4. **Data sonification** — extinction/dead website data become ambient sounds
-5. **ElevenLabs Voice** — whispered text spoken aloud, voice of the system
-6. **WebNN semantic embeddings** — memory constellations clustered by meaning
-7. **CSS Paint API (Houdini)** — overlay elements with living, decaying backgrounds
-8. **Ambient Light Sensor** — void responds to room brightness (Chrome flag)
+5. **WebNN semantic embeddings** — memory constellations clustered by meaning
+6. **CSS Paint API (Houdini)** — overlay elements with living, decaying backgrounds
+7. **Ambient Light Sensor** — void responds to room brightness (Chrome flag)
 
 ### Technologies Used
 - Three.js (WebGL), custom GLSL shaders (hue shift, saturation, size uniforms)
@@ -406,15 +452,16 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - localStorage (memory persistence, color memory, palimpsest, visitor log)
 - CSS transitions and blend modes (color memory overlay, drift label)
 - fal.ai API (flux/schnell image generation from dream prompts)
+- ElevenLabs API (TTS for void voice, Sound Effects for ambient textures)
 - TypeScript, Vite
 
 ### Technologies To Explore Next
-- WebGPU compute shaders via TSL, Strudel/TidalCycles, Wayback CDX API, Device Orientation API, WebNN, CSS Paint API (Houdini), View Transition API, Ambient Light Sensor, Web Bluetooth (heartrate), ElevenLabs API, FAL API
+- WebGPU compute shaders via TSL, Strudel/TidalCycles, Wayback CDX API, Device Orientation API, WebNN, CSS Paint API (Houdini), View Transition API, Ambient Light Sensor, Web Bluetooth (heartrate)
 
 ### Deployment
 - Railway: https://oubli-forever-production.up.railway.app
 - Auto-deploy via `railway up`
 
 ---
-*Last updated: Era 4, Feature 31 — Dream Visions, Tipping Point*
-*"the void dreams in images and forgets in cascades — feed it or watch it consume itself"*
+*Last updated: Era 4, Feature 36 — Séance, Time Capsule, Void Whisper, Ambient Textures*
+*"seal a memory for the future. somewhere in the void, a star is waiting to thaw."*
