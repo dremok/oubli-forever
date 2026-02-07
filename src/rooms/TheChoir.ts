@@ -11,7 +11,11 @@
  *
  * No memories. Pure generative music and spatial interaction.
  *
- * Inspired by: Gregorian chant, Arvo Pärt's tintinnabuli,
+ * VOICE RESONANCE PORTALS: voices placed near the edges of the room
+ * resonate with adjacent rooms. Sustain a voice at the boundary
+ * to open a passage through sound.
+ *
+ * Inspired by: Gregorian chant, Arvo P\u00e4rt's tintinnabuli,
  * Pauline Oliveros' deep listening, throat singing,
  * the sound of wind through architecture, how voices
  * combine to create something none of them contain alone
@@ -37,6 +41,13 @@ interface Voice {
   alpha: number
 }
 
+interface ResonanceZone {
+  label: string
+  room: string
+  resonance: number
+  test: (x: number, y: number, w: number, h: number) => boolean
+}
+
 export function createChoirRoom(deps?: ChoirDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -50,13 +61,27 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
   let masterGain: GainNode | null = null
   let reverb: ConvolverNode | null = null
   let totalVoices = 0
-  let hoveredNav = -1
 
-  // Voice part labels — choral aesthetic
-  const navPoints = [
-    { label: 'soprano \u266a instrument', room: 'instrument', xFrac: 0.5, yFrac: 0.04 },
-    { label: 'alto \u266a terrarium', room: 'terrarium', xFrac: 0.04, yFrac: 0.5 },
-    { label: 'bass \u266a s\u00e9ance', room: 'seance', xFrac: 0.96, yFrac: 0.5 },
+  // Resonance zones — voices placed near edges create portals to adjacent rooms
+  const resonanceZones: ResonanceZone[] = [
+    {
+      label: 'the instrument',
+      room: 'instrument',
+      resonance: 0,
+      test: (_x, y, _w, h) => y < h * 0.15,
+    },
+    {
+      label: 'the s\u00e9ance',
+      room: 'seance',
+      resonance: 0,
+      test: (_x, y, _w, h) => y > h * 0.85,
+    },
+    {
+      label: 'the terrarium',
+      room: 'terrarium',
+      resonance: 0,
+      test: (x, y, w, h) => x < w * 0.15 && y > h * 0.3 && y < h * 0.7,
+    },
   ]
 
   // Create a simple reverb impulse response
@@ -100,7 +125,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Y → pitch (top = high, bottom = low)
+    // Y -> pitch (top = high, bottom = low)
     // Use a pentatonic-ish scale for harmony
     const pitchRatio = 1 - y / h
     const baseFreq = 110 // A2
@@ -109,7 +134,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     const semitone = scale[Math.min(noteIndex, scale.length - 1)]
     const freq = baseFreq * Math.pow(2, semitone / 12)
 
-    // X → timbre (left = dark/warm, right = bright/nasal)
+    // X -> timbre (left = dark/warm, right = bright/nasal)
     const brightness = x / w
 
     try {
@@ -204,6 +229,98 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     addVoice(w * 0.7, h * 0.6)
   }
 
+  // Draw resonance zone edge effects
+  function drawResonanceEdge(
+    c: CanvasRenderingContext2D,
+    zoneIndex: number,
+    w: number, h: number,
+    r: number, t: number,
+  ) {
+    if (r < 0.01) return
+
+    if (zoneIndex === 0) {
+      // TOP edge — instrument portal
+      for (let i = 0; i < 5; i++) {
+        const spread = w * 0.1 + i * w * 0.18
+        const pulse = Math.sin(t * 2 + i * 1.3) * 0.3 + 0.7
+        const a = r * 0.25 * pulse
+        c.strokeStyle = `rgba(200, 180, 255, ${a})`
+        c.lineWidth = 1
+        c.beginPath()
+        c.arc(w / 2, -10, spread, 0.1 * Math.PI, 0.9 * Math.PI)
+        c.stroke()
+      }
+    } else if (zoneIndex === 1) {
+      // BOTTOM edge — seance portal
+      for (let i = 0; i < 5; i++) {
+        const spread = w * 0.1 + i * w * 0.18
+        const pulse = Math.sin(t * 1.8 + i * 1.1) * 0.3 + 0.7
+        const a = r * 0.25 * pulse
+        c.strokeStyle = `rgba(200, 180, 255, ${a})`
+        c.lineWidth = 1
+        c.beginPath()
+        c.arc(w / 2, h + 10, spread, 1.1 * Math.PI, 1.9 * Math.PI)
+        c.stroke()
+      }
+    } else if (zoneIndex === 2) {
+      // LEFT edge — terrarium portal
+      for (let i = 0; i < 5; i++) {
+        const spread = h * 0.06 + i * h * 0.1
+        const pulse = Math.sin(t * 2.2 + i * 0.9) * 0.3 + 0.7
+        const a = r * 0.25 * pulse
+        c.strokeStyle = `rgba(200, 180, 255, ${a})`
+        c.lineWidth = 1
+        c.beginPath()
+        c.arc(-10, h / 2, spread, -0.4 * Math.PI, 0.4 * Math.PI)
+        c.stroke()
+      }
+    }
+  }
+
+  // Draw connecting wave lines from a voice to the edge of the zone
+  function drawVoiceConnection(
+    c: CanvasRenderingContext2D,
+    v: Voice,
+    zoneIndex: number,
+    w: number, h: number,
+    t: number,
+  ) {
+    // Target point on the edge
+    let tx: number, ty: number
+    if (zoneIndex === 0) {
+      tx = v.x; ty = 0
+    } else if (zoneIndex === 1) {
+      tx = v.x; ty = h
+    } else {
+      tx = 0; ty = v.y
+    }
+
+    const dx = tx - v.x
+    const dy = ty - v.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    if (dist < 1) return
+
+    const steps = 20
+    const perpX = -dy / dist
+    const perpY = dx / dist
+
+    c.beginPath()
+    for (let s = 0; s <= steps; s++) {
+      const frac = s / steps
+      const px = v.x + dx * frac
+      const py = v.y + dy * frac
+      // Sine wave perpendicular to the line
+      const wave = Math.sin(frac * 8 + t * 4) * 6 * (1 - frac) * v.alpha
+      const fx = px + perpX * wave
+      const fy = py + perpY * wave
+      if (s === 0) c.moveTo(fx, fy)
+      else c.lineTo(fx, fy)
+    }
+    c.strokeStyle = `rgba(200, 180, 255, ${v.alpha * 0.06})`
+    c.lineWidth = 1
+    c.stroke()
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -217,6 +334,28 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     // Background — cathedral dark
     ctx.fillStyle = 'rgba(3, 2, 8, 1)'
     ctx.fillRect(0, 0, w, h)
+
+    // --- Update resonance zones ---
+    const livingVoices = voices.filter(v => {
+      const age = time - v.birth
+      return age > 0.5 && age < v.life - 1 // only count stable voices
+    })
+
+    for (let zi = 0; zi < resonanceZones.length; zi++) {
+      const zone = resonanceZones[zi]
+      let hasVoice = false
+      for (const v of livingVoices) {
+        if (zone.test(v.x, v.y, w, h)) {
+          hasVoice = true
+          break
+        }
+      }
+      if (hasVoice) {
+        zone.resonance = Math.min(1.0, zone.resonance + 0.01)
+      } else {
+        zone.resonance = Math.max(0, zone.resonance - 0.005)
+      }
+    }
 
     // Draw voices
     for (const v of voices) {
@@ -268,6 +407,13 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       ctx.fillStyle = `rgba(200, 180, 255, ${v.alpha * 0.06})`
       ctx.textAlign = 'center'
       ctx.fillText(`${v.freq.toFixed(0)}Hz`, v.x, v.y + 22)
+
+      // Draw wave connections from voices to resonance zones they're in
+      for (let zi = 0; zi < resonanceZones.length; zi++) {
+        if (resonanceZones[zi].test(v.x, v.y, w, h)) {
+          drawVoiceConnection(ctx, v, zi, w, h, time)
+        }
+      }
     }
 
     // Auto-add voices occasionally to keep the choir alive
@@ -293,36 +439,55 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
 
     // Pitch guide (very faint)
     ctx.textAlign = 'right'
-    ctx.fillText('high ↑', w - 12, h * 0.15)
-    ctx.fillText('low ↓', w - 12, h * 0.85)
-    ctx.fillText('← warm · bright →', w - 12, h - 18)
+    ctx.fillText('high \u2191', w - 12, h * 0.15)
+    ctx.fillText('low \u2193', w - 12, h * 0.85)
+    ctx.fillText('\u2190 warm \u00b7 bright \u2192', w - 12, h - 18)
 
-    // Navigation portals — voice part labels
+    // --- Draw resonance zone effects ---
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.3 : 0.05
-        ctx.font = '9px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(200, 180, 255, ${a})`
-        ctx.textAlign = np.xFrac < 0.2 ? 'left' : np.xFrac > 0.8 ? 'right' : 'center'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = 'rgba(200, 180, 255, 0.15)'
-          ctx.beginPath()
-          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
-          ctx.fill()
+      for (let zi = 0; zi < resonanceZones.length; zi++) {
+        const zone = resonanceZones[zi]
+
+        // Draw edge arcs when resonance > 0
+        if (zone.resonance > 0.01) {
+          drawResonanceEdge(ctx, zi, w, h, zone.resonance, time)
+        }
+
+        // Show label when resonance > 0.7
+        if (zone.resonance > 0.7) {
+          const labelAlpha = (zone.resonance - 0.7) / 0.3 * 0.25
+          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.fillStyle = `rgba(200, 180, 255, ${labelAlpha})`
+          ctx.textAlign = 'center'
+          if (zi === 0) {
+            // Top edge
+            ctx.fillText(`resonance detected... ${zone.label}`, w / 2, 50)
+          } else if (zi === 1) {
+            // Bottom edge
+            ctx.fillText(`resonance detected... ${zone.label}`, w / 2, h - 45)
+          } else if (zi === 2) {
+            // Left edge
+            ctx.save()
+            ctx.translate(30, h / 2)
+            ctx.rotate(-Math.PI / 2)
+            ctx.fillText(`resonance detected... ${zone.label}`, 0, 0)
+            ctx.restore()
+          }
         }
       }
     }
 
-    // Hint
+    // Hint — show only when no zones are active
+    const anyZoneActive = resonanceZones.some(z => z.resonance > 0.1)
     ctx.font = '9px "Cormorant Garamond", serif'
-    ctx.fillStyle = 'rgba(200, 180, 255, 0.04)'
     ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(200, 180, 255, 0.04)'
     ctx.fillText('click to add a voice \u00b7 position determines pitch and timbre', w / 2, h - 8)
+
+    if (!anyZoneActive) {
+      ctx.fillStyle = 'rgba(200, 180, 255, 0.03)'
+      ctx.fillText('voices placed near the edges create resonance...', w / 2, h - 22)
+    }
   }
 
   return {
@@ -344,34 +509,17 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', (e) => {
-        // Check portal clicks first
+        // Check resonance zone clicks — navigate if resonance > 0.5
         if (deps?.switchTo && canvas) {
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              deps.switchTo(navPoints[i].room)
+          for (let zi = 0; zi < resonanceZones.length; zi++) {
+            const zone = resonanceZones[zi]
+            if (zone.resonance > 0.5 && zone.test(e.clientX, e.clientY, canvas.width, canvas.height)) {
+              deps.switchTo(zone.room)
               return
             }
           }
         }
         addVoice(e.clientX, e.clientY)
-      })
-      canvas.addEventListener('mousemove', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            hoveredNav = i
-            break
-          }
-        }
       })
 
       const onResize = () => {
@@ -388,6 +536,8 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
 
     async activate() {
       active = true
+      // Reset resonance on re-entry
+      for (const z of resonanceZones) z.resonance = 0
       await initAudio()
       seedVoices()
       render()

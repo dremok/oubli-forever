@@ -66,13 +66,24 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let maxGeneration = 0
   let gardenLink: HTMLElement | null = null
   let gardenLinkVisible = false
-  let hoveredPortal = -1
 
-  const terrariumPortals = [
-    { label: 'garden', room: 'garden' },
-    { label: 'automaton', room: 'automaton' },
-    { label: 'choir', room: 'choir' },
+  // Swarm migration zones — creatures discover the exits
+  const migrationZones = [
+    { wall: 'left', room: 'garden', hint: 'they sense the garden beyond...' },
+    { wall: 'top', room: 'automaton', hint: 'mechanical rhythms attract them...' },
+    { wall: 'right', room: 'choir', hint: 'they sing together...' },
   ]
+  let zoneDensity = [0, 0, 0]
+  let hoveredZone = -1
+  // Glass crack lines per zone — generated once when density threshold is first reached
+  let zoneCracks: { x: number; y: number; dx: number; dy: number; len: number }[][] = [[], [], []]
+  let zoneCracksGenerated = [false, false, false]
+  // Escape particles drifting through glass
+  let escapeParticles: { x: number; y: number; vx: number; vy: number; life: number; hue: number }[] = []
+  // Shatter animation state
+  let shatterZone = -1
+  let shatterTime = 0
+  let shatterParticles: { x: number; y: number; vx: number; vy: number; life: number; size: number }[] = []
 
   function init() {
     if (!canvas) return
@@ -199,6 +210,19 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       c.x += c.vx
       c.y += c.vy
 
+      // Subtle drift toward nearest wall — creatures occasionally explore edges
+      if (Math.random() < 0.01) {
+        const distLeft = c.x
+        const distRight = w - c.x
+        const distTop = c.y
+        const distBottom = h - c.y
+        const minDist = Math.min(distLeft, distRight, distTop, distBottom)
+        if (minDist === distLeft) c.vx -= 0.3
+        else if (minDist === distRight) c.vx += 0.3
+        else if (minDist === distTop) c.vy -= 0.3
+        else c.vy += 0.3
+      }
+
       // Bounce off walls (terrarium glass)
       const margin = 20
       if (c.x < margin) { c.x = margin; c.vx *= -0.5 }
@@ -264,6 +288,97 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
           h * 0.3 + Math.random() * h * 0.4,
           0,
         ))
+      }
+    }
+
+    // Compute zone densities — how many creatures are near each wall
+    const zoneThreshold = 40
+    zoneDensity = [0, 0, 0]
+    for (const c of creatures) {
+      if (c.x < zoneThreshold) zoneDensity[0]++ // left wall → garden
+      if (c.y < zoneThreshold) zoneDensity[1]++ // top wall → automaton
+      if (c.x > w - zoneThreshold) zoneDensity[2]++ // right wall → choir
+    }
+
+    // Generate crack patterns when density threshold first reached
+    for (let i = 0; i < 3; i++) {
+      if (zoneDensity[i] >= 5 && !zoneCracksGenerated[i]) {
+        zoneCracksGenerated[i] = true
+        zoneCracks[i] = []
+        const numCracks = 4 + Math.floor(Math.random() * 4)
+        for (let j = 0; j < numCracks; j++) {
+          let cx: number, cy: number, cdx: number, cdy: number
+          if (i === 0) { // left wall
+            cx = 15; cy = h * 0.3 + Math.random() * h * 0.4
+            cdx = -1 - Math.random() * 3; cdy = (Math.random() - 0.5) * 4
+          } else if (i === 1) { // top wall
+            cx = w * 0.3 + Math.random() * w * 0.4; cy = 15
+            cdx = (Math.random() - 0.5) * 4; cdy = -1 - Math.random() * 3
+          } else { // right wall
+            cx = w - 15; cy = h * 0.3 + Math.random() * h * 0.4
+            cdx = 1 + Math.random() * 3; cdy = (Math.random() - 0.5) * 4
+          }
+          zoneCracks[i].push({ x: cx, y: cy, dx: cdx, dy: cdy, len: 8 + Math.random() * 15 })
+        }
+      }
+      // Reset cracks when density drops below threshold
+      if (zoneDensity[i] < 3 && zoneCracksGenerated[i]) {
+        zoneCracksGenerated[i] = false
+        zoneCracks[i] = []
+      }
+    }
+
+    // Spawn escape particles from active zones
+    for (let i = 0; i < 3; i++) {
+      if (zoneDensity[i] >= 5 && Math.random() < 0.15) {
+        let px: number, py: number, pvx: number, pvy: number
+        if (i === 0) { // left
+          px = 10; py = h * 0.3 + Math.random() * h * 0.4
+          pvx = -0.3 - Math.random() * 0.5; pvy = (Math.random() - 0.5) * 0.3
+        } else if (i === 1) { // top
+          px = w * 0.3 + Math.random() * w * 0.4; py = 10
+          pvx = (Math.random() - 0.5) * 0.3; pvy = -0.3 - Math.random() * 0.5
+        } else { // right
+          px = w - 10; py = h * 0.3 + Math.random() * h * 0.4
+          pvx = 0.3 + Math.random() * 0.5; pvy = (Math.random() - 0.5) * 0.3
+        }
+        // Pick hue from a nearby creature
+        const nearbyHue = creatures.length > 0 ? creatures[Math.floor(Math.random() * creatures.length)].hue : 120
+        escapeParticles.push({ x: px, y: py, vx: pvx, vy: pvy, life: 1, hue: nearbyHue })
+      }
+    }
+
+    // Update escape particles
+    escapeParticles = escapeParticles.filter(p => {
+      p.x += p.vx
+      p.y += p.vy
+      p.life -= 0.012
+      return p.life > 0
+    })
+
+    // Update shatter animation
+    if (shatterZone >= 0) {
+      shatterTime += 0.016
+      shatterParticles = shatterParticles.filter(p => {
+        p.x += p.vx
+        p.y += p.vy
+        p.vy += 0.05
+        p.life -= 0.025
+        return p.life > 0
+      })
+      // Accelerate creatures toward the shatter wall
+      for (const c of creatures) {
+        if (shatterZone === 0 && c.x < 60) c.vx -= 0.5
+        if (shatterZone === 1 && c.y < 60) c.vy -= 0.5
+        if (shatterZone === 2 && c.x > w - 60) c.vx += 0.5
+      }
+      // Navigate after brief animation
+      if (shatterTime > 0.5) {
+        const targetRoom = migrationZones[shatterZone].room
+        shatterZone = -1
+        shatterTime = 0
+        shatterParticles = []
+        if (deps.switchTo) deps.switchTo(targetRoom)
       }
     }
   }
@@ -390,20 +505,114 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       gardenLink.style.pointerEvents = 'auto'
     }
 
-    // Portal labels on glass edges
+    // Swarm migration zone visualization
     if (deps.switchTo) {
-      const portalPositions = [
-        { x: 25, y: h / 2, align: 'left' as CanvasTextAlign },
-        { x: w / 2, y: 28, align: 'center' as CanvasTextAlign },
-        { x: w - 25, y: h / 2, align: 'right' as CanvasTextAlign },
-      ]
-      for (let i = 0; i < terrariumPortals.length; i++) {
-        const pp = portalPositions[i]
-        const hovered = hoveredPortal === i
-        ctx.font = '8px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(120, 160, 120, ${hovered ? 0.3 : 0.05})`
-        ctx.textAlign = pp.align
-        ctx.fillText(terrariumPortals[i].label, pp.x, pp.y)
+      for (let i = 0; i < migrationZones.length; i++) {
+        const density = zoneDensity[i]
+        const intensity = Math.min(1, density / 10)
+        const isActive = density >= 5
+        const isHovered = hoveredZone === i
+
+        if (density >= 2) {
+          // Pulsing glow on the glass wall
+          const pulse = 0.5 + 0.5 * Math.sin(time * 2 + i * 2)
+          const glowAlpha = intensity * 0.15 * (0.7 + pulse * 0.3) * (isHovered ? 2 : 1)
+
+          ctx.save()
+          if (i === 0) { // left wall
+            const grad = ctx.createLinearGradient(0, 0, 60, 0)
+            grad.addColorStop(0, `rgba(80, 200, 100, ${glowAlpha})`)
+            grad.addColorStop(1, 'transparent')
+            ctx.fillStyle = grad
+            ctx.fillRect(0, h * 0.15, 60, h * 0.7)
+          } else if (i === 1) { // top wall
+            const grad = ctx.createLinearGradient(0, 0, 0, 60)
+            grad.addColorStop(0, `rgba(120, 180, 220, ${glowAlpha})`)
+            grad.addColorStop(1, 'transparent')
+            ctx.fillStyle = grad
+            ctx.fillRect(w * 0.15, 0, w * 0.7, 60)
+          } else { // right wall
+            const grad = ctx.createLinearGradient(w, 0, w - 60, 0)
+            grad.addColorStop(0, `rgba(180, 140, 200, ${glowAlpha})`)
+            grad.addColorStop(1, 'transparent')
+            ctx.fillStyle = grad
+            ctx.fillRect(w - 60, h * 0.15, 60, h * 0.7)
+          }
+          ctx.restore()
+        }
+
+        // Glass cracks
+        if (isActive && zoneCracks[i].length > 0) {
+          ctx.save()
+          const crackAlpha = intensity * 0.3 * (isHovered ? 1.5 : 1)
+          ctx.strokeStyle = i === 0
+            ? `rgba(80, 200, 100, ${crackAlpha})`
+            : i === 1
+              ? `rgba(120, 180, 220, ${crackAlpha})`
+              : `rgba(180, 140, 200, ${crackAlpha})`
+          ctx.lineWidth = 0.5
+          for (const crack of zoneCracks[i]) {
+            ctx.beginPath()
+            ctx.moveTo(crack.x, crack.y)
+            // Draw a jagged crack line
+            const steps = 3
+            let cx = crack.x, cy = crack.y
+            for (let s = 1; s <= steps; s++) {
+              cx += crack.dx * (crack.len / steps) / Math.abs(crack.dx + 0.01) + (Math.random() - 0.5) * 2
+              cy += crack.dy * (crack.len / steps) / Math.abs(crack.dy + 0.01) + (Math.random() - 0.5) * 2
+              ctx.lineTo(cx, cy)
+            }
+            ctx.stroke()
+          }
+          ctx.restore()
+        }
+
+        // Hint text when active
+        if (isActive) {
+          ctx.save()
+          ctx.font = '9px "Cormorant Garamond", serif'
+          const hintAlpha = intensity * 0.2 * (0.7 + 0.3 * Math.sin(time * 1.5 + i))
+          if (i === 0) {
+            ctx.fillStyle = `rgba(80, 200, 100, ${hintAlpha})`
+            ctx.textAlign = 'left'
+            ctx.save()
+            ctx.translate(12, h / 2)
+            ctx.rotate(-Math.PI / 2)
+            ctx.fillText(migrationZones[i].hint, 0, 0)
+            ctx.restore()
+          } else if (i === 1) {
+            ctx.fillStyle = `rgba(120, 180, 220, ${hintAlpha})`
+            ctx.textAlign = 'center'
+            ctx.fillText(migrationZones[i].hint, w / 2, 42)
+          } else {
+            ctx.fillStyle = `rgba(180, 140, 200, ${hintAlpha})`
+            ctx.textAlign = 'right'
+            ctx.save()
+            ctx.translate(w - 12, h / 2)
+            ctx.rotate(Math.PI / 2)
+            ctx.fillText(migrationZones[i].hint, 0, 0)
+            ctx.restore()
+          }
+          ctx.restore()
+        }
+      }
+    }
+
+    // Escape particles drifting through glass
+    for (const p of escapeParticles) {
+      const alpha = p.life * 0.5
+      ctx.fillStyle = `hsla(${p.hue}, 40%, 65%, ${alpha})`
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, 1.5 + (1 - p.life) * 1, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Shatter animation
+    if (shatterZone >= 0) {
+      for (const p of shatterParticles) {
+        const alpha = p.life * 0.6
+        ctx.fillStyle = `rgba(180, 220, 180, ${alpha})`
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
       }
     }
 
@@ -415,21 +624,37 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   }
 
   function handleClick(e: MouseEvent) {
-    // Check portal clicks first
-    if (deps.switchTo && canvas) {
+    // Check swarm migration zone clicks — follow the creatures through the glass
+    if (deps.switchTo && canvas && shatterZone < 0) {
       const w = canvas.width
-      const h = canvas.height
-      const portalPositions = [
-        { x: 25, y: h / 2 },
-        { x: w / 2, y: 28 },
-        { x: w - 25, y: h / 2 },
-      ]
-      for (let i = 0; i < terrariumPortals.length; i++) {
-        const pp = portalPositions[i]
-        const dx = e.clientX - pp.x
-        const dy = e.clientY - pp.y
-        if (Math.abs(dx) < 40 && Math.abs(dy) < 15) {
-          deps.switchTo(terrariumPortals[i].room)
+      const edgeThreshold = 60
+
+      for (let i = 0; i < migrationZones.length; i++) {
+        if (zoneDensity[i] < 5) continue // not enough creatures clustered
+
+        let inZone = false
+        if (i === 0 && e.clientX < edgeThreshold) inZone = true
+        if (i === 1 && e.clientY < edgeThreshold) inZone = true
+        if (i === 2 && e.clientX > w - edgeThreshold) inZone = true
+
+        if (inZone) {
+          // Trigger shatter animation
+          shatterZone = i
+          shatterTime = 0
+          shatterParticles = []
+          // Burst of glass shards from the click point
+          for (let j = 0; j < 25; j++) {
+            const angle = Math.random() * Math.PI * 2
+            const speed = 1 + Math.random() * 4
+            shatterParticles.push({
+              x: e.clientX,
+              y: e.clientY,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              life: 1,
+              size: 1 + Math.random() * 3,
+            })
+          }
           return
         }
       }
@@ -467,21 +692,25 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
 
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
-        hoveredPortal = -1
+        hoveredZone = -1
         const cw = canvas.width
-        const ch = canvas.height
-        const portalPositions = [
-          { x: 25, y: ch / 2 },
-          { x: cw / 2, y: 28 },
-          { x: cw - 25, y: ch / 2 },
-        ]
-        for (let i = 0; i < terrariumPortals.length; i++) {
-          const pp = portalPositions[i]
-          if (Math.abs(e.clientX - pp.x) < 40 && Math.abs(e.clientY - pp.y) < 15) {
-            hoveredPortal = i
-            break
+        const edgeThreshold = 60
+
+        // Check if hovering over an active migration zone
+        if (deps.switchTo) {
+          for (let i = 0; i < migrationZones.length; i++) {
+            if (zoneDensity[i] < 5) continue
+            let inZone = false
+            if (i === 0 && e.clientX < edgeThreshold) inZone = true
+            if (i === 1 && e.clientY < edgeThreshold) inZone = true
+            if (i === 2 && e.clientX > cw - edgeThreshold) inZone = true
+            if (inZone) {
+              hoveredZone = i
+              break
+            }
           }
         }
+        canvas.style.cursor = hoveredZone >= 0 ? 'pointer' : 'crosshair'
       })
 
       const onResize = () => {

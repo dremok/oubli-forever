@@ -55,32 +55,20 @@ export function createRadioRoom(deps: RadioDeps): Room {
   let toneGain: GainNode | null = null
   let audioInitialized = false
   let staticLines: { y: number; speed: number; alpha: number }[] = []
-  let hoveredPreset = -1
+  let lastFrameTime = 0
 
-  const presets = [
-    { freq: '89.1', label: 'INSTRUMENT', room: 'instrument' },
-    { freq: '94.7', label: 'LIGHTHOUSE', room: 'lighthouse' },
-    { freq: '101.3', label: 'SATELLITE', room: 'satellite' },
-    { freq: '106.5', label: 'WEATHERVANE', room: 'weathervane' },
+  // Hidden signal frequencies — navigation via lock-on tuning
+  const hiddenSignals = [
+    { freq: 89.1, room: 'instrument', sound: 'strings' as const, label: '♪ the instrument', lockTime: 0 },
+    { freq: 94.7, room: 'lighthouse', sound: 'foghorn' as const, label: '◉ the lighthouse', lockTime: 0 },
+    { freq: 101.3, room: 'satellite', sound: 'telemetry' as const, label: '◇ the satellite', lockTime: 0 },
+    { freq: 106.5, room: 'weathervane', sound: 'wind' as const, label: '≋ the weathervane', lockTime: 0 },
   ]
-
-  function getPresetBounds(w: number, h: number) {
-    const panelX = w * 0.15
-    const panelW = w * 0.7
-    const bandY = h * 0.15 + 70
-    const bandH = 60
-    const dialY = bandY + bandH + 40
-    const presetY = dialY + 50
-    const btnW = panelW * 0.2
-    const btnH = 28
-    const gap = (panelW - btnW * 4) / 5
-    return presets.map((_, i) => ({
-      x: panelX + gap + i * (btnW + gap),
-      y: presetY,
-      w: btnW,
-      h: btnH,
-    }))
-  }
+  let lockedSignal: (typeof hiddenSignals)[number] | null = null
+  const LOCK_THRESHOLD = 0.3 // MHz proximity required
+  const LOCK_DURATION = 2.5 // seconds to full lock
+  let lockFlashTime = 0 // flash animation on full lock
+  let navigatingTo: string | null = null
 
   function buildStations() {
     const memories = deps.getMemories()
@@ -177,14 +165,46 @@ export function createRadioRoom(deps: RadioDeps): Room {
       noiseGain.gain.value = 0.03 * (1 - signalStrength * 0.8)
     }
 
-    // Tone when on a station
+    // Tone when on a station (memory station)
     if (toneGain && toneOsc) {
-      if (currentStation && signalStrength > 0.3) {
+      if (currentStation && signalStrength > 0.3 && !lockedSignal) {
         const health = 1 - currentStation.memory.degradation
         toneOsc.frequency.value = 200 + currentStation.memory.hue * 400
         toneGain.gain.value = signalStrength * health * 0.02
-      } else {
+      } else if (!lockedSignal) {
         toneGain.gain.value = 0
+      }
+    }
+  }
+
+  function updateLockAudio() {
+    if (!audioInitialized || !toneOsc || !toneGain) return
+
+    if (lockedSignal) {
+      const lockProgress = Math.min(lockedSignal.lockTime / LOCK_DURATION, 1)
+      const volume = 0.01 + lockProgress * 0.025
+
+      switch (lockedSignal.sound) {
+        case 'strings':
+          // Harmonious chord — oscillates between chord tones
+          toneOsc.frequency.value = 220 + Math.sin(time * 2) * 50 + Math.sin(time * 3.01) * 30
+          toneGain.gain.value = volume
+          break
+        case 'foghorn':
+          // Low foghorn-like drone
+          toneOsc.frequency.value = 55 + Math.sin(time * 0.3) * 10
+          toneGain.gain.value = volume * 1.5
+          break
+        case 'telemetry':
+          // Rapid high-pitched beeping
+          toneOsc.frequency.value = 1200 + Math.sin(time * 15) * 800
+          toneGain.gain.value = volume * (Math.sin(time * 12) > 0 ? 1 : 0.1)
+          break
+        case 'wind':
+          // Wind-like filtered noise — modulate the tone to simulate
+          toneOsc.frequency.value = 300 + Math.sin(time * 0.7) * 200 + Math.sin(time * 2.3) * 100
+          toneGain.gain.value = volume * (0.5 + Math.sin(time * 1.1) * 0.3)
+          break
       }
     }
   }
@@ -192,7 +212,11 @@ export function createRadioRoom(deps: RadioDeps): Room {
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
-    time += 0.016
+
+    const now = performance.now()
+    const deltaTime = lastFrameTime > 0 ? Math.min((now - lastFrameTime) / 1000, 0.1) : 0.016
+    lastFrameTime = now
+    time += deltaTime
 
     const w = canvas.width
     const h = canvas.height
@@ -203,6 +227,60 @@ export function createRadioRoom(deps: RadioDeps): Room {
     currentStation = signal.station
 
     updateAudio()
+
+    // --- LOCK-ON MECHANIC ---
+    if (navigatingTo) {
+      // Already navigating — wait for flash
+      lockFlashTime += deltaTime
+      if (lockFlashTime > 0.6 && deps.switchTo) {
+        const target = navigatingTo
+        navigatingTo = null
+        lockFlashTime = 0
+        // Reset all lock times
+        for (const sig of hiddenSignals) sig.lockTime = 0
+        lockedSignal = null
+        deps.switchTo(target)
+        return
+      }
+    } else {
+      // Check proximity to hidden signals
+      let nearestSignal: (typeof hiddenSignals)[number] | null = null
+      let nearestDist = Infinity
+
+      for (const sig of hiddenSignals) {
+        const dist = Math.abs(frequency - sig.freq)
+        if (dist < LOCK_THRESHOLD && dist < nearestDist) {
+          nearestDist = dist
+          nearestSignal = sig
+        }
+      }
+
+      // Update lock times
+      for (const sig of hiddenSignals) {
+        if (sig === nearestSignal) {
+          // Closer to center = faster lock
+          const proximity = 1 - (nearestDist / LOCK_THRESHOLD)
+          sig.lockTime += deltaTime * (0.5 + proximity * 0.5)
+          lockedSignal = sig
+        } else {
+          // Decay lock time when not tuned in
+          sig.lockTime = Math.max(0, sig.lockTime - deltaTime * 2)
+        }
+      }
+
+      if (!nearestSignal) {
+        lockedSignal = null
+      }
+
+      // Check for full lock
+      if (lockedSignal && lockedSignal.lockTime >= LOCK_DURATION) {
+        navigatingTo = lockedSignal.room
+        lockFlashTime = 0
+      }
+
+      // Update audio for hidden signal lock-on
+      updateLockAudio()
+    }
 
     ctx.clearRect(0, 0, w, h)
 
@@ -330,6 +408,35 @@ export function createRadioRoom(deps: RadioDeps): Room {
       }
     }
 
+    // Hidden signal blips — very faint markers on the band
+    for (const sig of hiddenSignals) {
+      const sx = panelX + ((sig.freq - 88) / 20) * panelW
+      const dist = Math.abs(frequency - sig.freq)
+      const isNear = dist < LOCK_THRESHOLD * 2
+
+      // Base blip — barely visible (like a tiny signal spike among noise)
+      const baseAlpha = 0.025 + Math.sin(time * 1.5 + sig.freq) * 0.01
+      ctx.fillStyle = `rgba(100, 255, 100, ${baseAlpha})`
+      ctx.fillRect(sx - 0.5, bandY + bandH * 0.4, 1.5, bandH * 0.2)
+
+      // When tuning near, the blip pulses and grows
+      if (isNear) {
+        const nearness = 1 - (dist / (LOCK_THRESHOLD * 2))
+        const pulse = 0.05 + nearness * 0.15 + Math.sin(time * 5 + sig.freq) * nearness * 0.08
+        const blipH = bandH * (0.3 + nearness * 0.5)
+        ctx.fillStyle = `rgba(100, 255, 100, ${pulse})`
+        ctx.fillRect(sx - 1, bandY + (bandH - blipH) / 2, 2.5, blipH)
+
+        // Faint glow around the blip when very close
+        if (dist < LOCK_THRESHOLD) {
+          const lockGlow = 0.03 + nearness * 0.08
+          const glowW = LOCK_THRESHOLD / 20 * panelW
+          ctx.fillStyle = `rgba(100, 255, 100, ${lockGlow})`
+          ctx.fillRect(sx - glowW / 2, bandY, glowW, bandH)
+        }
+      }
+    }
+
     // Current frequency needle
     const needleX = panelX + ((frequency - 88) / 20) * panelW
     ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)'
@@ -451,41 +558,100 @@ export function createRadioRoom(deps: RadioDeps): Room {
       }
     }
 
-    // --- PRESET BUTTONS (navigation portals) ---
-    if (deps.switchTo) {
-      const bounds = getPresetBounds(w, h)
-      for (let i = 0; i < presets.length; i++) {
-        const b = bounds[i]
-        const p = presets[i]
-        const hovered = hoveredPreset === i
-        const alpha = hovered ? 0.4 : 0.12
-        const glowAlpha = hovered ? 0.08 : 0
+    // --- LOCK-ON FEEDBACK (below the dial) ---
+    if (lockedSignal) {
+      const lockProgress = Math.min(lockedSignal.lockTime / LOCK_DURATION, 1)
+      const lockCenterX = w / 2
+      const lockY = dialY + 45
 
-        // Button background
-        ctx.fillStyle = `rgba(10, 30, 10, ${alpha})`
-        ctx.fillRect(b.x, b.y, b.w, b.h)
-        ctx.strokeStyle = `rgba(100, 255, 100, ${alpha})`
+      // Pulsing ring around frequency display when near a hidden signal
+      const pulseRadius = 80 + Math.sin(time * 6) * 5
+      const pulseAlpha = 0.05 + lockProgress * 0.15 + Math.sin(time * 4) * 0.03
+      ctx.beginPath()
+      ctx.arc(lockCenterX, panelY + 35, pulseRadius, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(100, 255, 100, ${pulseAlpha})`
+      ctx.lineWidth = 1 + lockProgress * 2
+      ctx.stroke()
+
+      // Second ring, slightly delayed
+      if (lockProgress > 0.2) {
+        const pulseRadius2 = 90 + Math.sin(time * 6 + 1) * 6
+        ctx.beginPath()
+        ctx.arc(lockCenterX, panelY + 35, pulseRadius2, 0, Math.PI * 2)
+        ctx.strokeStyle = `rgba(100, 255, 100, ${pulseAlpha * 0.5})`
         ctx.lineWidth = 0.5
-        ctx.strokeRect(b.x, b.y, b.w, b.h)
+        ctx.stroke()
+      }
 
-        // Glow on hover
-        if (glowAlpha > 0) {
-          ctx.shadowColor = 'rgba(100, 255, 100, 0.3)'
-          ctx.shadowBlur = 8
-          ctx.strokeRect(b.x, b.y, b.w, b.h)
-          ctx.shadowBlur = 0
+      // Lock-on progress bar — retro segmented signal strength indicator
+      const barW = 200
+      const barX = lockCenterX - barW / 2
+      const barH = 10
+      const segments = 20
+
+      // Bar background
+      ctx.fillStyle = 'rgba(10, 20, 10, 0.4)'
+      ctx.fillRect(barX - 2, lockY - 2, barW + 4, barH + 4)
+      ctx.strokeStyle = 'rgba(100, 255, 100, 0.15)'
+      ctx.lineWidth = 0.5
+      ctx.strokeRect(barX - 2, lockY - 2, barW + 4, barH + 4)
+
+      // Filled segments
+      const filledSegments = Math.floor(lockProgress * segments)
+      const segmentW = barW / segments
+      for (let i = 0; i < segments; i++) {
+        const isFilled = i < filledSegments
+        const segX = barX + i * segmentW
+        // Color transitions: green -> bright green -> white at full
+        let r = 50, g = 200, b = 50
+        if (i > segments * 0.6) { r = 80; g = 255; b = 80 }
+        if (i > segments * 0.85) { r = 180; g = 255; b = 180 }
+
+        if (isFilled) {
+          const flicker = 0.6 + Math.sin(time * 10 + i * 0.5) * 0.15
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${flicker})`
+        } else {
+          ctx.fillStyle = 'rgba(100, 255, 100, 0.03)'
         }
+        ctx.fillRect(segX + 0.5, lockY, segmentW - 1, barH)
+      }
 
-        // Frequency label
-        ctx.font = '8px monospace'
-        ctx.fillStyle = `rgba(100, 255, 100, ${hovered ? 0.5 : 0.2})`
-        ctx.textAlign = 'center'
-        ctx.fillText(p.freq, b.x + b.w / 2, b.y + 11)
+      // LOCK label above the bar
+      ctx.font = '8px monospace'
+      ctx.textAlign = 'left'
+      ctx.fillStyle = `rgba(100, 255, 100, ${0.15 + lockProgress * 0.3})`
+      ctx.fillText('LOCK', barX, lockY - 5)
+      ctx.textAlign = 'right'
+      ctx.fillText(`${Math.floor(lockProgress * 100)}%`, barX + barW, lockY - 5)
 
-        // Room label
-        ctx.font = '7px monospace'
-        ctx.fillStyle = `rgba(100, 255, 100, ${hovered ? 0.35 : 0.1})`
-        ctx.fillText(p.label, b.x + b.w / 2, b.y + 22)
+      // Signal label text — phases in as lock progresses
+      const labelY = lockY + barH + 20
+      ctx.textAlign = 'center'
+      if (lockProgress >= 1.0) {
+        // Full lock — LOCKED text with flash
+        ctx.font = '14px monospace'
+        const flashAlpha = 0.5 + Math.sin(time * 8) * 0.3
+        ctx.fillStyle = `rgba(200, 255, 200, ${flashAlpha})`
+        ctx.fillText('⟫ LOCKED ⟫', lockCenterX, labelY)
+
+        // Glow
+        ctx.shadowColor = 'rgba(100, 255, 100, 0.6)'
+        ctx.shadowBlur = 15
+        ctx.fillText('⟫ LOCKED ⟫', lockCenterX, labelY)
+        ctx.shadowBlur = 0
+      } else if (lockProgress >= 0.6) {
+        // Show room label
+        ctx.font = '12px "Cormorant Garamond", serif'
+        const labelAlpha = (lockProgress - 0.6) / 0.4 * 0.5
+        ctx.fillStyle = `rgba(100, 255, 100, ${labelAlpha})`
+        ctx.fillText(lockedSignal.label, lockCenterX, labelY)
+      } else if (lockProgress >= 0.3) {
+        // "signal detected..."
+        ctx.font = '10px monospace'
+        const detectAlpha = (lockProgress - 0.3) / 0.3 * 0.25
+        ctx.fillStyle = `rgba(100, 255, 100, ${detectAlpha})`
+        const dots = '.'.repeat(1 + Math.floor(time * 3) % 3)
+        ctx.fillText(`signal detected${dots}`, lockCenterX, labelY)
       }
     }
 
@@ -498,7 +664,14 @@ export function createRadioRoom(deps: RadioDeps): Room {
     // Hint
     ctx.font = '9px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(100, 255, 100, 0.06)'
-    ctx.fillText('drag the dial to tune · memories broadcast on different frequencies', w / 2, h - 20)
+    ctx.fillText('drag the dial to tune · hold steady on hidden frequencies to lock on', w / 2, h - 20)
+
+    // Navigation flash overlay (rendered last, on top of everything)
+    if (navigatingTo && lockFlashTime > 0) {
+      const flashAlpha = Math.sin(lockFlashTime * Math.PI / 0.6) * 0.6
+      ctx.fillStyle = `rgba(100, 255, 100, ${Math.max(0, flashAlpha)})`
+      ctx.fillRect(0, 0, w, h)
+    }
   }
 
   function wrapText(text: string, maxChars: number): string[] {
@@ -549,42 +722,17 @@ export function createRadioRoom(deps: RadioDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Mouse/touch events for dial and presets
+      // Mouse/touch events for dial tuning
       canvas.addEventListener('mousedown', (e) => {
-        // Check preset buttons first
-        if (deps.switchTo && canvas) {
-          const bounds = getPresetBounds(canvas.width, canvas.height)
-          for (let i = 0; i < bounds.length; i++) {
-            const b = bounds[i]
-            if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
-                e.clientY >= b.y && e.clientY <= b.y + b.h) {
-              deps.switchTo(presets[i].room)
-              return
-            }
-          }
-        }
         isDragging = true
         handleDrag(e.clientX)
         initAudio()
       })
       canvas.addEventListener('mousemove', (e) => {
         if (isDragging) handleDrag(e.clientX)
-        // Hover detection for presets
-        if (canvas) {
-          const bounds = getPresetBounds(canvas.width, canvas.height)
-          hoveredPreset = -1
-          for (let i = 0; i < bounds.length; i++) {
-            const b = bounds[i]
-            if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
-                e.clientY >= b.y && e.clientY <= b.y + b.h) {
-              hoveredPreset = i
-              break
-            }
-          }
-        }
       })
       canvas.addEventListener('mouseup', () => { isDragging = false })
-      canvas.addEventListener('mouseleave', () => { isDragging = false; hoveredPreset = -1 })
+      canvas.addEventListener('mouseleave', () => { isDragging = false })
 
       // Touch support
       canvas.addEventListener('touchstart', (e) => {
@@ -622,6 +770,11 @@ export function createRadioRoom(deps: RadioDeps): Room {
     activate() {
       active = true
       staticLines = []
+      lastFrameTime = 0
+      lockedSignal = null
+      navigatingTo = null
+      lockFlashTime = 0
+      for (const sig of hiddenSignals) sig.lockTime = 0
       buildStations()
       render()
     },
@@ -629,6 +782,9 @@ export function createRadioRoom(deps: RadioDeps): Room {
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      lockedSignal = null
+      navigatingTo = null
+      for (const sig of hiddenSignals) sig.lockTime = 0
       // Fade out audio
       if (noiseGain) noiseGain.gain.value = 0
       if (toneGain) toneGain.gain.value = 0

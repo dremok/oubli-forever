@@ -78,13 +78,15 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
   let transmitCount = 0
   let shoreLink: HTMLElement | null = null
   let shoreLinkVisible = false
-  let hoveredSignal = -1
 
-  const signals = [
-    { label: 'radio', room: 'radio', xFrac: 0.15 },
-    { label: 'tidepool', room: 'tidepool', xFrac: 0.5 },
-    { label: 'satellite', room: 'satellite', xFrac: 0.85 },
+  // Landmark definitions for beam-illumination navigation
+  const landmarks = [
+    { label: 'radio tower', room: 'radio', xFrac: 0.15 },
+    { label: 'the shore', room: 'tidepool', xFrac: 0.5 },
+    { label: 'satellite array', room: 'satellite', xFrac: 0.85 },
   ]
+  // illumination level per landmark (0 = dark, 1 = fully lit)
+  const illuminated: number[] = [0, 0, 0]
 
   // Morse timing (in frames at 60fps)
   const DOT_DURATION = 8
@@ -349,24 +351,196 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       ctx.fillText('type a message, press enter to transmit', w / 2, h * 0.92)
     }
 
-    // Signal navigation on horizon
+    // Landmark silhouettes + beam illumination navigation
     if (deps.switchTo) {
-      for (let i = 0; i < signals.length; i++) {
-        const sg = signals[i]
-        const sx = w * sg.xFrac
-        const sy = horizonY - 5
-        const hovered = hoveredSignal === i
-        // Distant signal blink
-        const blink = Math.sin(time * 3 + i * 2) > 0.5
-        ctx.beginPath()
-        ctx.arc(sx, sy, hovered ? 4 : 2, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(255, 250, 200, ${hovered ? 0.3 : (blink ? 0.08 : 0.02)})`
-        ctx.fill()
-        // Label
-        ctx.font = '7px monospace'
-        ctx.fillStyle = `rgba(255, 250, 200, ${hovered ? 0.25 : 0.03})`
-        ctx.textAlign = 'center'
-        ctx.fillText(sg.label, sx, sy - 10)
+      const towerX_ = w / 2
+      const lightY_ = horizonY - 120 + 7 // same as lightY
+
+      for (let i = 0; i < landmarks.length; i++) {
+        const lm = landmarks[i]
+        const lx = w * lm.xFrac
+        const ly = horizonY
+
+        // Calculate angle from lighthouse light to this landmark
+        const dx = lx - towerX_
+        const dy = ly - lightY_
+        const angleToLandmark = Math.atan2(dy, dx)
+
+        // Check if either beam is near this landmark
+        let minAngleDiff = Infinity
+        for (let b = 0; b < 2; b++) {
+          const bAngle = beamAngle + b * Math.PI
+          // Normalize angle difference to [-PI, PI]
+          let diff = angleToLandmark - bAngle
+          diff = diff - Math.floor((diff + Math.PI) / (2 * Math.PI)) * 2 * Math.PI
+          if (Math.abs(diff) < minAngleDiff) minAngleDiff = Math.abs(diff)
+        }
+
+        // Illuminate when beam is within ~0.15 radians
+        const beamProximity = 0.15
+        if (minAngleDiff < beamProximity) {
+          // Fade in quickly
+          illuminated[i] = Math.min(1, illuminated[i] + 0.06)
+        } else {
+          // Fade out slowly
+          illuminated[i] = Math.max(0, illuminated[i] - 0.015)
+        }
+
+        const il = illuminated[i]
+
+        // Draw landmark silhouettes
+        ctx.save()
+
+        if (i === 0) {
+          // RADIO TOWER — antenna tower with cross bars
+          const baseX = lx
+          const baseY = ly
+          const towerH = 45
+          // Dark silhouette color, brightens when illuminated
+          const r = Math.round(15 + il * 200)
+          const g = Math.round(12 + il * 180)
+          const b_ = Math.round(10 + il * 80)
+          const a = 0.15 + il * 0.7
+
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b_}, ${a})`
+          ctx.lineWidth = 1.5
+          // Main vertical mast
+          ctx.beginPath()
+          ctx.moveTo(baseX, baseY)
+          ctx.lineTo(baseX, baseY - towerH)
+          ctx.stroke()
+          // Cross bars
+          for (let cb = 1; cb <= 3; cb++) {
+            const cbY = baseY - towerH * (cb / 4)
+            const cbW = 6 + (3 - cb) * 3
+            ctx.beginPath()
+            ctx.moveTo(baseX - cbW, cbY)
+            ctx.lineTo(baseX + cbW, cbY)
+            ctx.stroke()
+          }
+          // Small antenna tip
+          ctx.beginPath()
+          ctx.moveTo(baseX - 3, baseY - towerH)
+          ctx.lineTo(baseX, baseY - towerH - 8)
+          ctx.lineTo(baseX + 3, baseY - towerH)
+          ctx.stroke()
+          // Diagonal support wires
+          ctx.lineWidth = 0.5
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b_}, ${a * 0.5})`
+          ctx.beginPath()
+          ctx.moveTo(baseX - 12, baseY)
+          ctx.lineTo(baseX, baseY - towerH * 0.7)
+          ctx.moveTo(baseX + 12, baseY)
+          ctx.lineTo(baseX, baseY - towerH * 0.7)
+          ctx.stroke()
+        } else if (i === 1) {
+          // TIDAL SHORE — jagged rocky shore silhouette
+          const baseX = lx
+          const baseY = ly
+          const r = Math.round(15 + il * 180)
+          const g = Math.round(18 + il * 190)
+          const b_ = Math.round(20 + il * 100)
+          const a = 0.12 + il * 0.65
+
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b_}, ${a})`
+          ctx.beginPath()
+          ctx.moveTo(baseX - 40, baseY)
+          ctx.lineTo(baseX - 35, baseY - 6)
+          ctx.lineTo(baseX - 28, baseY - 3)
+          ctx.lineTo(baseX - 22, baseY - 12)
+          ctx.lineTo(baseX - 15, baseY - 8)
+          ctx.lineTo(baseX - 8, baseY - 15)
+          ctx.lineTo(baseX - 3, baseY - 10)
+          ctx.lineTo(baseX + 2, baseY - 18)
+          ctx.lineTo(baseX + 8, baseY - 11)
+          ctx.lineTo(baseX + 14, baseY - 14)
+          ctx.lineTo(baseX + 20, baseY - 7)
+          ctx.lineTo(baseX + 27, baseY - 10)
+          ctx.lineTo(baseX + 33, baseY - 4)
+          ctx.lineTo(baseX + 40, baseY)
+          ctx.closePath()
+          ctx.fill()
+        } else if (i === 2) {
+          // SATELLITE DISH — parabolic dish shape
+          const baseX = lx
+          const baseY = ly
+          const r = Math.round(15 + il * 190)
+          const g = Math.round(12 + il * 175)
+          const b_ = Math.round(10 + il * 90)
+          const a = 0.13 + il * 0.7
+
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b_}, ${a})`
+          ctx.lineWidth = 1.5
+          // Support pole
+          ctx.beginPath()
+          ctx.moveTo(baseX, baseY)
+          ctx.lineTo(baseX, baseY - 25)
+          ctx.stroke()
+          // Dish (parabolic arc)
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(baseX - 18, baseY - 22)
+          ctx.quadraticCurveTo(baseX - 10, baseY - 40, baseX, baseY - 38)
+          ctx.quadraticCurveTo(baseX + 10, baseY - 40, baseX + 18, baseY - 22)
+          ctx.stroke()
+          // Feed arm
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(baseX, baseY - 30)
+          ctx.lineTo(baseX + 10, baseY - 42)
+          ctx.stroke()
+          // Feed point
+          ctx.beginPath()
+          ctx.arc(baseX + 10, baseY - 42, 2, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b_}, ${a * 0.8})`
+          ctx.fill()
+          // Base support
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b_}, ${a * 0.5})`
+          ctx.lineWidth = 0.8
+          ctx.beginPath()
+          ctx.moveTo(baseX - 10, baseY)
+          ctx.lineTo(baseX, baseY - 15)
+          ctx.lineTo(baseX + 10, baseY)
+          ctx.stroke()
+        }
+
+        // Golden aura when illuminated
+        if (il > 0.1) {
+          const auraRadius = 30 + il * 20
+          const aura = ctx.createRadialGradient(lx, ly - 15, 0, lx, ly - 15, auraRadius)
+          aura.addColorStop(0, `rgba(255, 220, 120, ${il * 0.12})`)
+          aura.addColorStop(0.5, `rgba(255, 200, 100, ${il * 0.05})`)
+          aura.addColorStop(1, 'transparent')
+          ctx.fillStyle = aura
+          ctx.beginPath()
+          ctx.arc(lx, ly - 15, auraRadius, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        // Label — only visible when illuminated
+        if (il > 0.2) {
+          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.fillStyle = `rgba(255, 240, 180, ${il * 0.6})`
+          ctx.textAlign = 'center'
+          ctx.fillText(lm.label, lx, ly - 55)
+        }
+
+        // Click indicator — pulsing circle when clickable
+        if (il > 0.3) {
+          const pulse = 0.5 + Math.sin(time * 5) * 0.3
+          ctx.beginPath()
+          ctx.arc(lx, ly - 25, 4 + pulse * 2, 0, Math.PI * 2)
+          ctx.strokeStyle = `rgba(255, 240, 180, ${il * 0.35 * pulse})`
+          ctx.lineWidth = 1
+          ctx.stroke()
+          // Tiny "click" text
+          ctx.font = '7px monospace'
+          ctx.fillStyle = `rgba(255, 240, 180, ${il * 0.25 * pulse})`
+          ctx.textAlign = 'center'
+          ctx.fillText('click', lx, ly - 35)
+        }
+
+        ctx.restore()
       }
     }
 
@@ -437,36 +611,42 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
 
       window.addEventListener('keydown', handleKey)
 
-      // Signal click + hover
+      // Landmark click — only works when beam illuminates the landmark
       canvas.addEventListener('click', (e) => {
         if (!deps.switchTo || !canvas) return
         const horizonY = canvas.height * 0.65
-        for (let i = 0; i < signals.length; i++) {
-          const sx = canvas.width * signals[i].xFrac
-          const sy = horizonY - 5
-          const dx = e.clientX - sx
-          const dy = e.clientY - sy
-          if (dx * dx + dy * dy < 400) {
-            deps.switchTo(signals[i].room)
+        for (let i = 0; i < landmarks.length; i++) {
+          // Only clickable when sufficiently illuminated
+          if (illuminated[i] < 0.3) continue
+          const lx = canvas.width * landmarks[i].xFrac
+          const ly = horizonY - 15 // center of the silhouette area
+          const dx = e.clientX - lx
+          const dy = e.clientY - ly
+          // Generous click radius around landmark
+          if (dx * dx + dy * dy < 2500) {
+            deps.switchTo(landmarks[i].room)
             return
           }
         }
       })
 
+      // Cursor changes when hovering an illuminated landmark
       canvas.addEventListener('mousemove', (e) => {
-        if (!canvas) return
-        hoveredSignal = -1
+        if (!canvas || !deps.switchTo) return
+        let overLandmark = false
         const horizonY = canvas.height * 0.65
-        for (let i = 0; i < signals.length; i++) {
-          const sx = canvas.width * signals[i].xFrac
-          const sy = horizonY - 5
-          const dx = e.clientX - sx
-          const dy = e.clientY - sy
-          if (dx * dx + dy * dy < 400) {
-            hoveredSignal = i
+        for (let i = 0; i < landmarks.length; i++) {
+          if (illuminated[i] < 0.3) continue
+          const lx = canvas.width * landmarks[i].xFrac
+          const ly = horizonY - 15
+          const dx = e.clientX - lx
+          const dy = e.clientY - ly
+          if (dx * dx + dy * dy < 2500) {
+            overLandmark = true
             break
           }
         }
+        canvas.style.cursor = overLandmark ? 'pointer' : 'default'
       })
 
       const onResize = () => {

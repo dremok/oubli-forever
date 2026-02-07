@@ -121,15 +121,27 @@ export function createCipherRoom(deps?: CipherDeps): Room {
   let currentPuzzle = 0
   let solved = false
   let solvedFlash = 0
-  let hoveredNav = -1
 
-  // Encoded text links — cryptographic aesthetic
-  const navPoints = [
-    { label: '[73:74:75:64:79]', decoded: 'study', room: 'study', xFrac: 0.04, yFrac: 0.06 },
-    { label: '[70:65:6e:64]', decoded: 'pendulum', room: 'pendulum', xFrac: 0.96, yFrac: 0.06 },
-    { label: '[6c:69:62]', decoded: 'library', room: 'library', xFrac: 0.04, yFrac: 0.95 },
-    { label: '[6c:61:62]', decoded: 'labyrinth', room: 'labyrinth', xFrac: 0.96, yFrac: 0.95 },
+  // Typed navigation system — the cipher IS the navigation
+  const navDestinations: Record<string, string> = {
+    study: 'study',
+    pendulum: 'pendulum',
+    library: 'library',
+    labyrinth: 'labyrinth',
+  }
+  // Ghost labels scattered at edges — barely visible encrypted hints
+  const ghostLabels = [
+    { text: 'study', xFrac: 0.08, yFrac: 0.12, angle: -0.05 },
+    { text: 'pendulum', xFrac: 0.92, yFrac: 0.15, angle: 0.04 },
+    { text: 'library', xFrac: 0.06, yFrac: 0.88, angle: 0.03 },
+    { text: 'labyrinth', xFrac: 0.94, yFrac: 0.91, angle: -0.06 },
   ]
+  let navBuffer = ''
+  let navMatchFound = ''
+  let navMatchFlash = 0 // 1 → 0, gold flash on match
+  let navHintTimer = 0 // cycles to show "type a destination..."
+  let solvedRoomFlash = 0 // flash room names after solving
+  let solvedRoomNames: string[] = []
 
   function loadProgress() {
     try {
@@ -157,6 +169,9 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       solvedFlash = 1
       solvedCount = Math.max(solvedCount, currentPuzzle + 1)
       saveProgress()
+      // Flash connected room names as "decoded" hints
+      solvedRoomFlash = 1
+      solvedRoomNames = Object.keys(navDestinations)
     }
   }
 
@@ -313,24 +328,73 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       }
     }
 
-    // Navigation portals — encoded text links
+    // Ghost labels — barely visible room names scattered at edges
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.35 : 0.06
-        ctx.font = '8px monospace'
-        ctx.fillStyle = `rgba(200, 180, 140, ${a})`
-        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.font = '9px "Cormorant Garamond", serif'
-          ctx.fillStyle = 'rgba(255, 215, 0, 0.25)'
-          ctx.fillText(np.decoded, nx, ny + 13)
-        }
+      for (const gl of ghostLabels) {
+        const gx = w * gl.xFrac
+        const gy = h * gl.yFrac
+        ctx.save()
+        ctx.translate(gx, gy)
+        ctx.rotate(gl.angle)
+        // Encrypt the label with a slowly shifting cipher for visual effect
+        const ghostShift = Math.floor(time * 0.3) % 26
+        const encryptedGhost = encrypt(gl.text, ghostShift)
+        ctx.font = '9px monospace'
+        ctx.fillStyle = 'rgba(200, 180, 140, 0.02)'
+        ctx.textAlign = gl.xFrac < 0.5 ? 'left' : 'right'
+        ctx.fillText(encryptedGhost, 0, 0)
+        ctx.restore()
       }
+    }
+
+    // Nav buffer — show typed characters spaced out like decrypted text
+    if (navBuffer.length > 0 && !navMatchFound) {
+      ctx.font = '14px monospace'
+      ctx.textAlign = 'center'
+      const bufferStr = navBuffer.split('').join(' ')
+      const cursorBlink = Math.sin(time * 6) > 0 ? '|' : ' '
+      const displayStr = bufferStr + ' ' + cursorBlink
+      ctx.fillStyle = 'rgba(200, 180, 140, 0.2)'
+      ctx.fillText(displayStr, w / 2, h - 35)
+    }
+
+    // Nav match flash — gold glow when a room name is matched
+    if (navMatchFound && navMatchFlash > 0.01) {
+      // Gold screen flash
+      ctx.fillStyle = `rgba(255, 215, 0, ${navMatchFlash * 0.08})`
+      ctx.fillRect(0, 0, w, h)
+      // Show matched name glowing gold
+      ctx.font = '20px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      const matchStr = navMatchFound.split('').join(' ')
+      ctx.fillStyle = `rgba(255, 215, 0, ${navMatchFlash * 0.7})`
+      ctx.fillText(matchStr, w / 2, h - 30)
+    }
+    if (navMatchFlash > 0) navMatchFlash *= 0.97
+
+    // Solved room name flash — briefly show connected rooms after solving a cipher
+    if (solvedRoomFlash > 0.01 && solvedRoomNames.length > 0) {
+      ctx.font = '10px monospace'
+      ctx.textAlign = 'center'
+      const spacing = w / (solvedRoomNames.length + 1)
+      for (let ri = 0; ri < solvedRoomNames.length; ri++) {
+        const rx = spacing * (ri + 1)
+        const ry = h * 0.92
+        ctx.fillStyle = `rgba(255, 215, 0, ${solvedRoomFlash * 0.2})`
+        ctx.fillText(solvedRoomNames[ri], rx, ry)
+      }
+      solvedRoomFlash *= 0.992
+    }
+
+    // Nav hint — periodically suggest typing a destination
+    navHintTimer += 0.016
+    const hintCycle = navHintTimer % 12 // 12-second cycle
+    if (hintCycle > 8 && hintCycle < 11 && navBuffer.length === 0 && !navMatchFound) {
+      const hintAlpha = Math.sin((hintCycle - 8) / 3 * Math.PI) * 0.06
+      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(200, 180, 140, ${hintAlpha})`
+      ctx.textAlign = 'center'
+      ctx.fillText('type a destination...', w / 2, h - 22)
     }
 
     // Controls hint
@@ -408,6 +472,36 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       nextPuzzle()
       e.preventDefault()
     }
+    // Navigation by typing room names (letter keys only)
+    if (e.key.length === 1 && /[a-z]/i.test(e.key) && !navMatchFound && deps?.switchTo) {
+      navBuffer += e.key.toLowerCase()
+      // Check if buffer matches a destination
+      const matched = Object.keys(navDestinations).find(name => name === navBuffer)
+      if (matched) {
+        navMatchFound = matched
+        navMatchFlash = 1
+        setTimeout(() => {
+          if (deps?.switchTo) deps.switchTo(navDestinations[matched])
+          navBuffer = ''
+          navMatchFound = ''
+          navMatchFlash = 0
+        }, 500)
+      } else {
+        // Check if buffer is a prefix of any destination
+        const isPrefix = Object.keys(navDestinations).some(name => name.startsWith(navBuffer))
+        if (!isPrefix || navBuffer.length > 12) {
+          navBuffer = '' // reset — no match possible
+        }
+      }
+    }
+    // Backspace clears nav buffer
+    if (e.key === 'Backspace' && navBuffer.length > 0 && !navMatchFound) {
+      navBuffer = navBuffer.slice(0, -1)
+    }
+    // Escape clears nav buffer
+    if (e.key === 'Escape' && navBuffer.length > 0) {
+      navBuffer = ''
+    }
   }
 
   return {
@@ -430,35 +524,6 @@ export function createCipherRoom(deps?: CipherDeps): Room {
 
       canvas.addEventListener('click', handleClick)
 
-      // Navigation portal click + hover
-      canvas.addEventListener('click', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            deps.switchTo(navPoints[i].room)
-            return
-          }
-        }
-      })
-      canvas.addEventListener('mousemove', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            hoveredNav = i
-            break
-          }
-        }
-      })
-
       window.addEventListener('keydown', handleKey)
 
       const onResize = () => {
@@ -475,12 +540,18 @@ export function createCipherRoom(deps?: CipherDeps): Room {
 
     activate() {
       active = true
+      navBuffer = ''
+      navMatchFound = ''
+      navMatchFlash = 0
+      navHintTimer = 0
       loadProgress()
       render()
     },
 
     deactivate() {
       active = false
+      navBuffer = ''
+      navMatchFound = ''
       cancelAnimationFrame(frameId)
     },
 

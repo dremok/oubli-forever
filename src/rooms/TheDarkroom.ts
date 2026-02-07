@@ -357,6 +357,22 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
           100% { left: -100%; }
         }
         .darkroom-scroll::-webkit-scrollbar { display: none; }
+        @keyframes trayRipple {
+          0% { border-color: rgba(120, 30, 25, 0.25); }
+          50% { border-color: rgba(180, 50, 40, 0.45); }
+          100% { border-color: rgba(120, 30, 25, 0.25); }
+        }
+        @keyframes trayFlash {
+          0% { background-color: rgba(200, 60, 50, 0.6); }
+          100% { background-color: rgba(15, 2, 2, 0.9); }
+        }
+        .dev-tray { cursor: pointer; position: relative; }
+        .dev-tray:hover { animation: trayRipple 2s ease-in-out infinite; }
+        .dev-tray:hover .tray-silhouette { opacity: 0.4 !important; }
+        .dev-tray .tray-silhouette { transition: opacity 2s ease; }
+        .dev-tray .tray-label { transition: opacity 1.5s ease; }
+        .dev-tray:hover .tray-label { opacity: 0.5 !important; }
+        .dev-tray-flash { animation: trayFlash 200ms ease-out forwards; }
       `
       overlay.appendChild(style)
       overlay.classList.add('darkroom-scroll')
@@ -526,6 +542,126 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       inputArea.appendChild(btnRow)
       overlay.appendChild(inputArea)
 
+      // === DEVELOPING TRAYS — navigation as darkroom process ===
+      if (deps.switchTo) {
+        const traysContainer = document.createElement('div')
+        traysContainer.style.cssText = `
+          display: flex; gap: 20px; justify-content: center;
+          align-items: flex-start;
+          margin-bottom: 28px; margin-top: 4px;
+          padding: 16px 24px 12px;
+          background: rgba(10, 1, 1, 0.6);
+          border-top: 1px solid rgba(120, 30, 25, 0.1);
+          border-bottom: 1px solid rgba(120, 30, 25, 0.1);
+        `
+
+        const trayDefs: { room: string; label: string; silhouette: string }[] = [
+          {
+            room: 'projection',
+            label: 'projection',
+            // Projector body (small rect) + light beam (triangle via borders)
+            silhouette: `
+              <svg viewBox="0 0 60 44" width="60" height="44" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="16" width="12" height="10" rx="1" fill="rgba(200,80,70,0.7)"/>
+                <polygon points="14,18 56,4 56,38 14,28" fill="rgba(200,80,70,0.3)"/>
+                <circle cx="8" cy="21" r="3" fill="rgba(200,80,70,0.5)"/>
+              </svg>
+            `,
+          },
+          {
+            room: 'palimpsestgallery',
+            label: 'gallery',
+            // Two overlapping frames at slight angles
+            silhouette: `
+              <svg viewBox="0 0 60 44" width="60" height="44" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="6" width="28" height="22" rx="1" fill="none" stroke="rgba(200,80,70,0.6)" stroke-width="1.5" transform="rotate(-6 20 17)"/>
+                <rect x="22" y="12" width="28" height="22" rx="1" fill="none" stroke="rgba(200,80,70,0.5)" stroke-width="1.5" transform="rotate(4 36 23)"/>
+                <line x1="12" y1="14" x2="28" y2="14" stroke="rgba(200,80,70,0.2)" stroke-width="0.5" transform="rotate(-6 20 17)"/>
+              </svg>
+            `,
+          },
+          {
+            room: 'sketchpad',
+            label: 'sketchpad',
+            // Diagonal pencil stroke with dot
+            silhouette: `
+              <svg viewBox="0 0 60 44" width="60" height="44" xmlns="http://www.w3.org/2000/svg">
+                <line x1="10" y1="38" x2="50" y2="8" stroke="rgba(200,80,70,0.6)" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="14" y1="32" x2="36" y2="18" stroke="rgba(200,80,70,0.3)" stroke-width="0.8" stroke-linecap="round"/>
+                <circle cx="50" cy="8" r="2.5" fill="rgba(200,80,70,0.5)"/>
+                <circle cx="10" cy="38" r="1.5" fill="rgba(200,80,70,0.3)"/>
+              </svg>
+            `,
+          },
+          {
+            room: 'loom',
+            label: 'thread',
+            // Three horizontal wavy lines (threads)
+            silhouette: `
+              <svg viewBox="0 0 60 44" width="60" height="44" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4,12 Q15,8 22,12 Q30,16 38,12 Q46,8 56,12" fill="none" stroke="rgba(200,80,70,0.6)" stroke-width="1.2"/>
+                <path d="M4,22 Q15,18 22,22 Q30,26 38,22 Q46,18 56,22" fill="none" stroke="rgba(200,80,70,0.5)" stroke-width="1.2"/>
+                <path d="M4,32 Q15,28 22,32 Q30,36 38,32 Q46,28 56,32" fill="none" stroke="rgba(200,80,70,0.4)" stroke-width="1.2"/>
+              </svg>
+            `,
+          },
+        ]
+
+        for (const def of trayDefs) {
+          const trayWrap = document.createElement('div')
+          trayWrap.style.cssText = `
+            display: flex; flex-direction: column;
+            align-items: center; gap: 6px;
+          `
+
+          const trayDiv = document.createElement('div')
+          trayDiv.className = 'dev-tray'
+          trayDiv.style.cssText = `
+            width: 80px; height: 60px;
+            background: rgba(15, 2, 2, 0.9);
+            border: 1px solid rgba(120, 30, 25, 0.25);
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+            border-radius: 1px;
+          `
+
+          const silDiv = document.createElement('div')
+          silDiv.className = 'tray-silhouette'
+          silDiv.style.cssText = `
+            opacity: 0.05;
+            display: flex; align-items: center; justify-content: center;
+            width: 100%; height: 100%;
+          `
+          silDiv.innerHTML = def.silhouette.trim()
+          trayDiv.appendChild(silDiv)
+
+          const labelDiv = document.createElement('div')
+          labelDiv.className = 'tray-label'
+          labelDiv.style.cssText = `
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 9px; font-style: italic;
+            color: rgba(200, 100, 100, 0.15);
+            letter-spacing: 1px;
+            opacity: 0.3;
+          `
+          labelDiv.textContent = def.label
+
+          // Click → flash then navigate
+          trayDiv.addEventListener('click', () => {
+            trayDiv.classList.add('dev-tray-flash')
+            setTimeout(() => {
+              deps.switchTo!(def.room)
+            }, 220)
+          })
+
+          trayWrap.appendChild(trayDiv)
+          trayWrap.appendChild(labelDiv)
+          traysContainer.appendChild(trayWrap)
+        }
+
+        overlay.appendChild(traysContainer)
+      }
+
       // Divider
       const divider = document.createElement('div')
       divider.style.cssText = `
@@ -555,44 +691,6 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       `
       renderGallery(gallery)
       overlay.appendChild(gallery)
-
-      // Navigation — chemical bottles along the shelf
-      if (deps.switchTo) {
-        const shelf = document.createElement('div')
-        shelf.style.cssText = `
-          display: flex; gap: 24px; justify-content: center;
-          margin-bottom: 40px; margin-top: 12px;
-          border-top: 1px solid rgba(200, 100, 100, 0.05);
-          padding-top: 16px;
-        `
-
-        const passages: { name: string; label: string; hint: string }[] = [
-          { name: 'projection', label: 'projector', hint: 'the projection room hums next door' },
-          { name: 'palimpsestgallery', label: 'gallery', hint: 'prints line the hall to the gallery' },
-          { name: 'sketchpad', label: 'sketchpad', hint: 'pencil marks lead somewhere' },
-          { name: 'loom', label: 'thread', hint: 'a thread of silver gelatin' },
-        ]
-
-        for (const p of passages) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 10px; font-style: italic;
-            color: rgba(200, 100, 100, 0.12);
-            cursor: pointer; text-align: center;
-            transition: color 0.4s ease;
-            max-width: 80px;
-          `
-          el.textContent = p.hint
-          el.title = p.label
-          el.addEventListener('mouseenter', () => { el.style.color = 'rgba(200, 100, 100, 0.5)' })
-          el.addEventListener('mouseleave', () => { el.style.color = 'rgba(200, 100, 100, 0.12)' })
-          el.addEventListener('click', () => deps.switchTo!(p.name))
-          shelf.appendChild(el)
-        }
-
-        overlay.appendChild(shelf)
-      }
 
       return overlay
     },
