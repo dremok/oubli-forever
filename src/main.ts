@@ -53,6 +53,7 @@ import { createMirrorRoom } from './rooms/TheMirror'
 import { createAutomatonRoom } from './rooms/TheAutomaton'
 import { createSeismographRoom } from './rooms/TheSeismograph'
 import { createPendulumRoom } from './rooms/ThePendulum'
+import { createCipherRoom } from './rooms/TheCipher'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -408,6 +409,7 @@ roomManager.addRoom(createMirrorRoom({
 roomManager.addRoom(createAutomatonRoom())
 roomManager.addRoom(createSeismographRoom())
 roomManager.addRoom(createPendulumRoom())
+roomManager.addRoom(createCipherRoom())
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
