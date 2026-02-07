@@ -111,6 +111,10 @@ export class ForgettingMachine {
 
       // Only accept printable characters
       if (e.key.length === 1 && this.inputText.length < 120) {
+        // Space doesn't initiate text input — only letters/numbers do
+        // Once typing has started, space adds a space between words
+        if (e.key === ' ' && this.inputText.length === 0) return
+
         this.inputText += e.key
         this.showPlaceholder = false
         if (!this.animating) {

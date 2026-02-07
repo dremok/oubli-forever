@@ -215,12 +215,9 @@ export function createInstrumentRoom(onNote?: (freq: number, velocity: number) =
       e.stopPropagation()
       noteOn(key)
     }
-    // Wave type toggle with backtick
+    // Right-click to cycle wave type
     if (key === '`') {
-      const types: OscillatorType[] = ['sawtooth', 'square', 'triangle', 'sine']
-      const idx = types.indexOf(waveType)
-      waveType = types[(idx + 1) % types.length]
-      updateWaveLabel()
+      cycleWaveType()
     }
   }
 
@@ -246,10 +243,21 @@ export function createInstrumentRoom(onNote?: (freq: number, velocity: number) =
     feedbackGain.gain.linearRampToValueAtTime(delayFeedback, audioCtx.currentTime + 0.1)
   }
 
-  let waveLabelEl: HTMLElement | null = null
+  let waveButtons: HTMLElement[] = []
+  const WAVE_TYPES: OscillatorType[] = ['sawtooth', 'square', 'triangle', 'sine']
 
-  function updateWaveLabel() {
-    if (waveLabelEl) waveLabelEl.textContent = waveType
+  function cycleWaveType() {
+    const idx = WAVE_TYPES.indexOf(waveType)
+    waveType = WAVE_TYPES[(idx + 1) % WAVE_TYPES.length]
+    updateWaveButtons()
+  }
+
+  function updateWaveButtons() {
+    for (const btn of waveButtons) {
+      const isActive = btn.dataset.wave === waveType
+      btn.style.color = isActive ? 'rgba(255, 20, 147, 0.8)' : 'rgba(255, 255, 255, 0.15)'
+      btn.style.borderColor = isActive ? 'rgba(255, 20, 147, 0.4)' : 'rgba(255, 255, 255, 0.08)'
+    }
   }
 
   function renderWaveform() {
@@ -362,34 +370,56 @@ export function createInstrumentRoom(onNote?: (freq: number, velocity: number) =
       `
       overlay.appendChild(hint)
 
-      // Wave type indicator
+      // Wave type selector — clickable buttons
       const waveRow = document.createElement('div')
       waveRow.style.cssText = `
-        display: flex; align-items: center; gap: 12px;
-        margin-top: 12px;
+        display: flex; align-items: center; gap: 8px;
+        margin-top: 16px;
         font-family: 'Cormorant Garamond', serif;
         font-weight: 300; font-size: 11px;
         color: rgba(255, 255, 255, 0.15);
         letter-spacing: 1px;
       `
       const waveLabel = document.createElement('span')
-      waveLabel.textContent = 'wave:'
+      waveLabel.textContent = 'wave'
+      waveLabel.style.cssText = 'margin-right: 4px;'
       waveRow.appendChild(waveLabel)
 
-      waveLabelEl = document.createElement('span')
-      waveLabelEl.style.cssText = `
-        color: rgba(255, 20, 147, 0.4);
-        font-family: monospace; font-size: 11px;
-      `
-      waveLabelEl.textContent = waveType
-      waveRow.appendChild(waveLabelEl)
-
-      const toggleHint = document.createElement('span')
-      toggleHint.style.cssText = `color: rgba(255,255,255,0.1); font-size: 10px;`
-      toggleHint.textContent = '( ` to cycle )'
-      waveRow.appendChild(toggleHint)
+      waveButtons = []
+      for (const type of WAVE_TYPES) {
+        const btn = document.createElement('button')
+        btn.dataset.wave = type
+        btn.textContent = type
+        btn.style.cssText = `
+          background: transparent;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 2px;
+          color: rgba(255, 255, 255, 0.15);
+          font-family: monospace;
+          font-size: 11px;
+          padding: 4px 10px;
+          cursor: pointer;
+          transition: color 0.3s ease, border-color 0.3s ease;
+          letter-spacing: 1px;
+        `
+        btn.addEventListener('click', () => {
+          waveType = type as OscillatorType
+          updateWaveButtons()
+        })
+        btn.addEventListener('mouseenter', () => {
+          if (btn.dataset.wave !== waveType) {
+            btn.style.color = 'rgba(255, 215, 0, 0.4)'
+          }
+        })
+        btn.addEventListener('mouseleave', () => {
+          updateWaveButtons()
+        })
+        waveRow.appendChild(btn)
+        waveButtons.push(btn)
+      }
 
       overlay.appendChild(waveRow)
+      updateWaveButtons()
 
       return overlay
     },

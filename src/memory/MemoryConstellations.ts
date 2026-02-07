@@ -108,6 +108,7 @@ export class MemoryConstellations {
     const baseScale = animate ? 0.01 : this.getScaleForMemory(memory)
     sprite.scale.set(baseScale, baseScale, 1)
 
+    sprite.userData.memoryId = memory.id
     this.scene.add(sprite)
 
     const wordSet = new Set(
@@ -354,6 +355,17 @@ export class MemoryConstellations {
       ctx.lineWidth = 0.5
       ctx.stroke()
     }
+  }
+
+  /** Get all star sprites for raycasting */
+  getSprites(): THREE.Sprite[] {
+    return this.nodes.map(n => n.mesh)
+  }
+
+  /** Look up a memory by its ID */
+  getMemoryById(id: string): StoredMemory | null {
+    const node = this.nodes.find(n => n.memory.id === id)
+    return node ? node.memory : null
   }
 
   /** Update a memory's degraded state */

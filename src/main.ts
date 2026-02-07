@@ -32,6 +32,7 @@ import { RoomManager } from './rooms/RoomManager'
 import { createVoidRoom } from './rooms/TheVoid'
 import { createStudyRoom } from './rooms/TheStudy'
 import { createInstrumentRoom } from './rooms/TheInstrument'
+import { createObservatoryRoom } from './rooms/TheObservatory'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -89,6 +90,7 @@ function processNewMemory(text: string) {
 // Voice of Absence — speak memories into the void (hold spacebar)
 const voice = new VoiceOfAbsence()
 voice.onSpoken((text) => processNewMemory(text))
+voice.setTypingCheck(() => forgettingMachine.hasActiveInput())
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
 const forgettingMachine = new ForgettingMachine(
@@ -256,6 +258,15 @@ roomManager.addRoom(createInstrumentRoom((freq, velocity) => {
   // Instrument notes cause subtle particle pulses and color shifts
   voidRenderer.setBeatIntensity(velocity * 0.5)
   voidRenderer.setDriftHueShift((freq % 440) / 440)
+}))
+roomManager.addRoom(createObservatoryRoom({
+  getMemories: () => journal.getMemories(),
+  getConstellationSprites: () => constellations.getSprites(),
+  getMemoryById: (id) => constellations.getMemoryById(id),
+  getCamera: () => voidRenderer.getCamera(),
+  getCanvas: () => voidRenderer.getCanvas(),
+  pauseCamera: () => voidRenderer.pauseCameraDrift(),
+  resumeCamera: () => voidRenderer.resumeCameraDrift(),
 }))
 
 // Wire room checks — features only fire in the right room

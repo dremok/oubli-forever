@@ -40,6 +40,22 @@ interface SpeechRecognitionAlternative {
   confidence: number
 }
 
+interface DissolveParticle {
+  char: string
+  x: number
+  y: number
+  vx: number
+  vy: number
+  alpha: number
+  size: number
+  hue: number
+  rotation: number
+  rotationSpeed: number
+  dissolveDelay: number
+  dissolveSpeed: number
+  active: boolean
+}
+
 export class VoiceOfAbsence {
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
@@ -62,6 +78,9 @@ export class VoiceOfAbsence {
   private indicatorPulse = 0
   private shimmerPhase = 0
   private roomCheck: (() => string) | null = null
+  private typingCheck: (() => boolean) | null = null
+  private dissolveParticles: DissolveParticle[] = []
+  private dissolving = false
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -159,6 +178,9 @@ export class VoiceOfAbsence {
       // Only in void room
       if (this.roomCheck && this.roomCheck() !== 'void') return
 
+      // Don't activate voice if user is typing in the forgetting machine
+      if (this.typingCheck && this.typingCheck()) return
+
       // Only activate with spacebar held (not just pressed)
       // The forgetting machine uses regular typing, this uses hold-space
       this.spaceHeld = true
@@ -216,10 +238,8 @@ export class VoiceOfAbsence {
         if (text && this.onMemorySpoken) {
           this.onMemorySpoken(text)
         }
-        this.targetAlpha = 0
-        this.displayText = ''
-        this.currentText = ''
-        this.finalText = ''
+        // Start letter dissolution instead of simple fade
+        this.startDissolve()
       }, 2000) // 2 seconds to read your words one last time
     } else {
       this.targetAlpha = 0
@@ -247,8 +267,8 @@ export class VoiceOfAbsence {
     this.shimmerPhase += 0.03
     this.indicatorPulse += 0.05
 
-    // Stop animation when fully faded
-    if (this.textAlpha < 0.01 && !this.listening && !this.displayText) {
+    // Stop animation when fully faded and not dissolving
+    if (this.textAlpha < 0.01 && !this.listening && !this.displayText && !this.dissolving) {
       cancelAnimationFrame(this.frameId)
       this.animating = false
       return
@@ -256,6 +276,12 @@ export class VoiceOfAbsence {
 
     const centerX = this.width / 2
     const centerY = this.height * 0.4 // Above center — speech rises
+
+    // Dissolving letter particles
+    if (this.dissolving) {
+      this.renderDissolving(ctx)
+      return
+    }
 
     // Listening indicator
     if (this.listening) {
@@ -365,6 +391,122 @@ export class VoiceOfAbsence {
     }
     if (currentLine) lines.push(currentLine)
     return lines
+  }
+
+  /** Start letter-by-letter dissolution — each character drifts and fades */
+  private startDissolve() {
+    const ctx = this.ctx
+    const text = this.displayText
+    if (!text) return
+
+    const fontSize = Math.min(this.width * 0.04, 36)
+    ctx.font = `300 ${fontSize}px 'Cormorant Garamond', serif`
+
+    const centerX = this.width / 2
+    const centerY = this.height * 0.4
+
+    // Compute character positions from the wrapped text
+    const maxWidth = this.width * 0.6
+    const lines = this.wrapText(ctx, text, maxWidth)
+    const lineHeight = fontSize * 1.4
+    const totalHeight = lines.length * lineHeight
+    const startY = centerY - totalHeight / 2
+
+    this.dissolveParticles = []
+    let charIdx = 0
+
+    for (let l = 0; l < lines.length; l++) {
+      const lineText = lines[l]
+      const lineY = startY + l * lineHeight
+      const lineWidth = ctx.measureText(lineText).width
+      let x = centerX - lineWidth / 2
+
+      for (let i = 0; i < lineText.length; i++) {
+        const char = lineText[i]
+        const charWidth = ctx.measureText(char).width
+
+        const hue = 40 + (charIdx / text.length) * (-10)
+
+        this.dissolveParticles.push({
+          char,
+          x: x + charWidth / 2,
+          y: lineY,
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2 - 0.8,
+          alpha: this.textAlpha,
+          size: fontSize,
+          hue,
+          rotation: 0,
+          rotationSpeed: (Math.random() - 0.5) * 0.03,
+          dissolveDelay: charIdx * 50 + Math.random() * 150,
+          dissolveSpeed: 0.006 + Math.random() * 0.008,
+          active: true,
+        })
+
+        x += charWidth
+        charIdx++
+      }
+    }
+
+    this.dissolving = true
+    this.displayText = ''
+    this.currentText = ''
+    this.finalText = ''
+    this.targetAlpha = 0
+  }
+
+  private renderDissolving(ctx: CanvasRenderingContext2D) {
+    let allDone = true
+
+    for (const p of this.dissolveParticles) {
+      if (!p.active) continue
+
+      p.dissolveDelay -= 16
+
+      if (p.dissolveDelay <= 0) {
+        p.vx += (Math.random() - 0.5) * 0.2
+        p.vy += (Math.random() - 0.5) * 0.2 - 0.01
+        p.x += p.vx
+        p.y += p.vy
+        p.alpha -= p.dissolveSpeed
+        p.rotation += p.rotationSpeed
+        p.size *= 0.998
+
+        if (p.alpha <= 0) {
+          p.active = false
+          continue
+        }
+      }
+
+      allDone = false
+
+      ctx.save()
+      ctx.translate(p.x, p.y)
+      ctx.rotate(p.rotation)
+      ctx.font = `300 ${p.size}px 'Cormorant Garamond', serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+
+      // Glow as it dissolves
+      if (p.alpha < 0.6) {
+        ctx.shadowColor = `hsla(${p.hue}, 70%, 60%, ${p.alpha * 0.5})`
+        ctx.shadowBlur = 15
+      }
+
+      ctx.fillStyle = `hsla(${p.hue}, 70%, 75%, ${Math.max(p.alpha, 0)})`
+      ctx.fillText(p.char, 0, 0)
+      ctx.restore()
+    }
+
+    if (allDone) {
+      this.dissolveParticles = []
+      this.dissolving = false
+    }
+  }
+
+  /** Set a function that checks if the user is typing */
+  setTypingCheck(check: () => boolean) {
+    this.typingCheck = check
   }
 
   /** Set a function that returns the current room name */

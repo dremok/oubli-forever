@@ -191,6 +191,7 @@ export class VoidRenderer {
   private driftGravityMul = 1.0
   private driftHueShift = 0
   private driftSaturation = 0.7
+  private cameraPaused = false
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -381,15 +382,17 @@ export class VoidRenderer {
       lifeAttr.needsUpdate = true
 
       // Camera drifts slowly — like consciousness floating
-      this.cameraAngle += 0.0003
-      const targetX = Math.sin(this.cameraAngle) * 80 + this.mouseX * 30
-      const targetY = Math.cos(this.cameraAngle * 0.7) * 40 - this.mouseY * 20
-      this.cameraDrift.x += (targetX - this.cameraDrift.x) * 0.01
-      this.cameraDrift.y += (targetY - this.cameraDrift.y) * 0.01
+      if (!this.cameraPaused) {
+        this.cameraAngle += 0.0003
+        const targetX = Math.sin(this.cameraAngle) * 80 + this.mouseX * 30
+        const targetY = Math.cos(this.cameraAngle * 0.7) * 40 - this.mouseY * 20
+        this.cameraDrift.x += (targetX - this.cameraDrift.x) * 0.01
+        this.cameraDrift.y += (targetY - this.cameraDrift.y) * 0.01
 
-      this.camera.position.x = this.cameraDrift.x
-      this.camera.position.y = this.cameraDrift.y
-      this.camera.lookAt(0, 0, 0)
+        this.camera.position.x = this.cameraDrift.x
+        this.camera.position.y = this.cameraDrift.y
+        this.camera.lookAt(0, 0, 0)
+      }
 
       // Update time uniforms
       this.material.uniforms.uTime.value = this.time
@@ -492,6 +495,23 @@ export class VoidRenderer {
   /** Expose camera for 3D-to-2D projection */
   getCamera(): THREE.PerspectiveCamera {
     return this.camera
+  }
+
+  /** Expose canvas for orbit controls */
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas
+  }
+
+  /** Pause automatic camera drift (for orbit controls) */
+  pauseCameraDrift() {
+    this.cameraPaused = true
+  }
+
+  /** Resume automatic camera drift, smoothly from current position */
+  resumeCameraDrift() {
+    this.cameraDrift.x = this.camera.position.x
+    this.cameraDrift.y = this.camera.position.y
+    this.cameraPaused = false
   }
 
   destroy() {
