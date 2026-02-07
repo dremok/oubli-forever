@@ -37,6 +37,7 @@ import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
 import { VoidWhisper } from './voice/VoidWhisper'
+import { AmbientTextures } from './sound/AmbientTextures'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -200,6 +201,8 @@ tippingPoint.onChange((state) => {
   drone.setDissonance(state.droneDissonance)
   // Feed entropy to void whisper — voice degrades with entropy
   voidWhisper.setEntropy(state.entropy)
+  // Feed entropy phase to ambient textures
+  ambientTextures.setEntropyPhase(state.phase)
 })
 
 // Start dreams, ghost typing, ripples, and tipping point
@@ -257,6 +260,9 @@ setInterval(() => {
   voidRenderer.setFogDensity(circadian.getFogDensity())
 }, 30000)
 
+// Ambient Textures — ElevenLabs generates procedural atmosphere per drift state
+const ambientTextures = new AmbientTextures()
+
 // Drift Engine — consciousness moves between states (1-5 keys, void room only)
 const driftEngine = new DriftEngine()
 driftEngine.setTypingCheck(() => forgettingMachine.hasActiveInput())
@@ -275,6 +281,8 @@ driftEngine.onChange((state) => {
   // Sound modulation
   drone.setFrequencyMultiplier(state.droneFreqMultiplier)
   drone.setVolumeMultiplier(state.droneVolume)
+  // Ambient texture changes with drift state
+  ambientTextures.setDriftState(state.name)
 })
 
 // Interaction Cues — subtle hints about what's possible
@@ -335,6 +343,7 @@ roomManager.onRoomChange((room) => {
   dreamVisions.setVisible(inVoid)
   tippingPoint.setVisible(inVoid)
   voidWhisper.setVisible(inVoid)
+  ambientTextures.setVisible(inVoid)
 })
 
 // Show the tab bar after the initial animation settles
