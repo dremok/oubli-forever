@@ -389,6 +389,7 @@ roomManager.addRoom(createArchiveRoom({
 roomManager.addRoom(createCatacombsRoom({
   onReturn: () => roomManager.switchTo('archive'),
   onOssuary: () => roomManager.switchTo('ossuary'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createLoomRoom({
   getMemories: () => journal.getMemories(),
@@ -398,11 +399,13 @@ roomManager.addRoom(createRootsRoom({
   getMemories: () => journal.getMemories(),
   onAscend: () => roomManager.switchTo('garden'),
   onDeeper: () => roomManager.switchTo('ossuary'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createOssuaryRoom({
   getMemories: () => journal.getMemories(),
   toRoots: () => roomManager.switchTo('roots'),
   toCatacombs: () => roomManager.switchTo('catacombs'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createTidePoolRoom({
   getMemories: () => journal.getMemories(),
@@ -424,21 +427,26 @@ roomManager.addRoom(createRadioRoom({
 roomManager.addRoom(createWellRoom({
   getMemories: () => journal.getMemories(),
   onDescend: () => roomManager.switchTo('aquifer'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createAquiferRoom({
   getMemories: () => journal.getMemories(),
   toWell: () => roomManager.switchTo('well'),
   toTidePool: () => roomManager.switchTo('tidepool'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createClockTowerRoom({
   getMemories: () => journal.getMemories(),
   onMidnight: () => roomManager.switchTo('midnight'),
   switchTo: (name) => roomManager.switchTo(name),
 }))
-roomManager.addRoom(createMidnightRoom())
+roomManager.addRoom(createMidnightRoom({
+  switchTo: (name) => roomManager.switchTo(name),
+}))
 roomManager.addRoom(createMirrorRoom({
   getMemories: () => journal.getMemories(),
   getRoomVisits: () => roomManager.getRoomVisits(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createAutomatonRoom({ switchTo: (name) => roomManager.switchTo(name) }))
 roomManager.addRoom(createSeismographRoom({ switchTo: (name) => roomManager.switchTo(name) }))

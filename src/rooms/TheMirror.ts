@@ -27,6 +27,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 interface MirrorDeps {
   getMemories: () => StoredMemory[]
   getRoomVisits: () => Map<string, number>
+  switchTo?: (name: string) => void
 }
 
 interface DataPoint {
@@ -55,6 +56,13 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
   let time = 0
   let portraitData: DataPoint[] = []
   let mirrorData: MirrorData
+  let hoveredNav = -1
+
+  // Navigation portals — reflections in the mirror's surface
+  const navPoints = [
+    { label: '◐ the darkroom', room: 'darkroom', xFrac: 0.08, yFrac: 0.94 },
+    { label: '◑ the date paintings', room: 'datepaintings', xFrac: 0.92, yFrac: 0.94 },
+  ]
 
   function loadData(): MirrorData {
     try {
@@ -244,6 +252,27 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     ctx.fillStyle = `rgba(120, 120, 160, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the mirror', w / 2, 30)
+
+    // Navigation portals — dim reflections at mirror's base
+    if (deps.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.35 : 0.06
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(120, 120, 160, ${a})`
+        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = 'rgba(120, 120, 160, 0.1)'
+          ctx.beginPath()
+          ctx.arc(nx + (np.xFrac < 0.5 ? -6 : 6), ny - 3, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
   }
 
   mirrorData = loadData()
@@ -264,8 +293,38 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       canvas = document.createElement('canvas')
       canvas.width = window.innerWidth
       canvas.height = window.innerHeight
-      canvas.style.cssText = 'width: 100%; height: 100%;'
+      canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
       ctx = canvas.getContext('2d')
+
+      // Portal navigation click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps.switchTo || !canvas) return
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            deps.switchTo(navPoints[i].room)
+            return
+          }
+        }
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
+      })
+
       overlay.appendChild(canvas)
 
       const onResize = () => {

@@ -95,13 +95,23 @@ const HOURLY_POEMS: string[] = [
   'eleven is midnight\'s shadow.\nthe anticipation of ending.\neverything winds down.\nthe clock begins to lean forward.',
 ]
 
-export function createMidnightRoom(): Room {
+interface MidnightDeps {
+  switchTo?: (name: string) => void
+}
+
+export function createMidnightRoom(deps?: MidnightDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
   let active = false
   let frameId = 0
   let time = 0
+  let hoveredNav = -1
+
+  // Navigation portal — faint moonlit passage back to the clock tower
+  const navPoints = [
+    { label: '☾ the clock tower', room: 'clocktower', xFrac: 0.5, yFrac: 0.95 },
+  ]
 
   function getHourVividness(hour: number): number {
     // Midnight (0) = 1.0, Noon (12) = 0.1, scales sinusoidally
@@ -227,6 +237,27 @@ export function createMidnightRoom(): Room {
       `this room is ${Math.floor(vividness * 100)}% materialized at ${hourStr}`,
       w / 2, h - 15
     )
+
+    // Navigation portals — moonlit passage
+    if (deps?.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.3 * vividness + 0.1 : 0.05 * vividness + 0.02
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 190, 220, ${a})`
+        ctx.textAlign = 'center'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = `rgba(200, 190, 220, ${0.08 * vividness})`
+          ctx.beginPath()
+          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
   }
 
   return {
@@ -245,8 +276,38 @@ export function createMidnightRoom(): Room {
       canvas = document.createElement('canvas')
       canvas.width = window.innerWidth
       canvas.height = window.innerHeight
-      canvas.style.cssText = 'width: 100%; height: 100%;'
+      canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
       ctx = canvas.getContext('2d')
+
+      // Portal navigation click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            deps.switchTo(navPoints[i].room)
+            return
+          }
+        }
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
+      })
+
       overlay.appendChild(canvas)
 
       const onResize = () => {

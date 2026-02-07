@@ -25,6 +25,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 interface WellDeps {
   getMemories: () => StoredMemory[]
   onDescend?: () => void
+  switchTo?: (name: string) => void
 }
 
 interface DroppedMemory {
@@ -414,6 +415,41 @@ export function createWellRoom(deps: WellDeps): Room {
       listEl = document.createElement('div')
       panel.appendChild(listEl)
       overlay.appendChild(panel)
+
+      // Navigation portals — faint whispered links to connected rooms
+      if (deps.switchTo) {
+        const portalData = [
+          { label: '◇ the tide pool', room: 'tidepool', bottom: '90px', left: '20px', right: '' },
+          { label: '◇ the séance', room: 'seance', bottom: '90px', left: '', right: '20px' },
+          { label: '◇ the furnace', room: 'furnace', bottom: '110px', left: '20px', right: '' },
+        ]
+        for (const portal of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute;
+            bottom: ${portal.bottom};
+            ${portal.left ? `left: ${portal.left};` : ''}
+            ${portal.right ? `right: ${portal.right};` : ''}
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300; font-size: 9px;
+            color: rgba(120, 160, 220, 0.06);
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: color 0.5s ease;
+            pointer-events: auto;
+            z-index: 3;
+          `
+          el.textContent = portal.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = 'rgba(120, 160, 220, 0.35)'
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = 'rgba(120, 160, 220, 0.06)'
+          })
+          el.addEventListener('click', () => deps.switchTo!(portal.room))
+          overlay.appendChild(el)
+        }
+      }
 
       // Descent link — appears when water level is high
       let descentEl: HTMLElement | null = null

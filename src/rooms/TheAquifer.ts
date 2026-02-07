@@ -25,6 +25,7 @@ interface AquiferDeps {
   getMemories: () => StoredMemory[]
   toWell: () => void
   toTidePool: () => void
+  switchTo?: (name: string) => void
 }
 
 interface FloatingFragment {
@@ -57,6 +58,13 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
   let bubbles: Bubble[] = []
   let mouseX = 0
   let mouseY = 0
+  let hoveredNav = -1
+
+  // Navigation portals — bioluminescent markers in the dark water
+  const navPoints = [
+    { label: '◈ the well', room: 'well', xFrac: 0.5, yFrac: 0.04 },
+    { label: '◈ the tide pool', room: 'tidepool', xFrac: 0.94, yFrac: 0.5 },
+  ]
 
   function shatterMemories() {
     fragments = []
@@ -237,6 +245,28 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     ctx.fillStyle = 'rgba(80, 140, 200, 0.06)'
     ctx.textAlign = 'right'
     ctx.fillText(`${fragments.length} fragments dissolved`, w - 15, h - 15)
+
+    // Navigation portals — bioluminescent markers
+    if (deps.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.4 : 0.07
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(100, 180, 220, ${a})`
+        ctx.textAlign = np.xFrac < 0.5 ? 'left' : np.xFrac > 0.6 ? 'right' : 'center'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          const glow = ctx.createRadialGradient(nx, ny, 0, nx, ny, 15)
+          glow.addColorStop(0, `rgba(60, 160, 220, 0.12)`)
+          glow.addColorStop(1, 'rgba(60, 160, 220, 0)')
+          ctx.fillStyle = glow
+          ctx.fillRect(nx - 15, ny - 15, 30, 30)
+        }
+      }
+    }
   }
 
   return {
@@ -262,9 +292,36 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
       canvas.addEventListener('mousemove', (e) => {
         mouseX = e.clientX
         mouseY = e.clientY
+        // Portal hover detection
+        if (deps.switchTo && canvas) {
+          hoveredNav = -1
+          for (let i = 0; i < navPoints.length; i++) {
+            const nx = canvas.width * navPoints[i].xFrac
+            const ny = canvas.height * navPoints[i].yFrac
+            const dx = e.clientX - nx
+            const dy = e.clientY - ny
+            if (dx * dx + dy * dy < 600) {
+              hoveredNav = i
+              break
+            }
+          }
+        }
       })
 
       canvas.addEventListener('click', (e) => {
+        // Check portals first
+        if (deps.switchTo && canvas) {
+          for (let i = 0; i < navPoints.length; i++) {
+            const nx = canvas.width * navPoints[i].xFrac
+            const ny = canvas.height * navPoints[i].yFrac
+            const dx = e.clientX - nx
+            const dy = e.clientY - ny
+            if (dx * dx + dy * dy < 600) {
+              deps.switchTo(navPoints[i].room)
+              return
+            }
+          }
+        }
         // Top area → ascend to well
         if (e.clientY < 50) {
           deps.toWell()

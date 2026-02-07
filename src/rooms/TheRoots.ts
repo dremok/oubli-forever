@@ -27,6 +27,7 @@ interface RootsDeps {
   getMemories: () => StoredMemory[]
   onAscend: () => void
   onDeeper?: () => void
+  switchTo?: (name: string) => void
 }
 
 interface RootNode {
@@ -112,6 +113,13 @@ export function createRootsRoom(deps: RootsDeps): Room {
   let mouseX = 0
   let mouseY = 0
   let clickRipples: { x: number; y: number; radius: number; alpha: number }[] = []
+  let hoveredNav = -1
+
+  // Navigation portals — root-like tendrils leading to connected rooms
+  const navPoints = [
+    { label: '⌁ the garden', room: 'garden', xFrac: 0.5, yFrac: 0.04 },
+    { label: '⌁ the ossuary', room: 'ossuary', xFrac: 0.92, yFrac: 0.96 },
+  ]
 
   function drawRoot(node: RootNode, parentX: number, parentY: number) {
     if (!ctx) return
@@ -311,6 +319,27 @@ export function createRootsRoom(deps: RootsDeps): Room {
       `${memories.length} root systems · ${decomposing} decomposing`,
       12, h - 12
     )
+
+    // Navigation portals
+    if (deps.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.35 : 0.07
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(120, 90, 50, ${a})`
+        ctx.textAlign = np.xFrac < 0.5 ? 'left' : np.xFrac > 0.6 ? 'right' : 'center'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = 'rgba(80, 120, 60, 0.15)'
+          ctx.beginPath()
+          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
   }
 
   return {
@@ -336,10 +365,37 @@ export function createRootsRoom(deps: RootsDeps): Room {
       canvas.addEventListener('mousemove', (e) => {
         mouseX = e.clientX
         mouseY = e.clientY
+        // Portal hover detection
+        if (deps.switchTo && canvas) {
+          hoveredNav = -1
+          for (let i = 0; i < navPoints.length; i++) {
+            const nx = canvas.width * navPoints[i].xFrac
+            const ny = canvas.height * navPoints[i].yFrac
+            const dx = e.clientX - nx
+            const dy = e.clientY - ny
+            if (dx * dx + dy * dy < 600) {
+              hoveredNav = i
+              break
+            }
+          }
+        }
       })
 
-      // Click: ascend, descend, or create tremor ripple
+      // Click: portal nav, ascend, descend, or create tremor ripple
       canvas.addEventListener('click', (e) => {
+        // Check portals first
+        if (deps.switchTo && canvas) {
+          for (let i = 0; i < navPoints.length; i++) {
+            const nx = canvas.width * navPoints[i].xFrac
+            const ny = canvas.height * navPoints[i].yFrac
+            const dx = e.clientX - nx
+            const dy = e.clientY - ny
+            if (dx * dx + dy * dy < 600) {
+              deps.switchTo(navPoints[i].room)
+              return
+            }
+          }
+        }
         if (e.clientY < 50) {
           deps.onAscend()
         } else if (e.clientX > window.innerWidth * 0.7 && e.clientY > window.innerHeight * 0.85 && deps.onDeeper) {

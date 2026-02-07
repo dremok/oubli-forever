@@ -119,6 +119,7 @@ const LAYERS: CatacombLayer[] = [
 interface CatacombsDeps {
   onReturn: () => void
   onOssuary?: () => void
+  switchTo?: (name: string) => void
 }
 
 export function createCatacombsRoom(deps: CatacombsDeps): Room {
@@ -322,6 +323,39 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
         })
         ossuaryLink.addEventListener('click', deps.onOssuary)
         bottom.appendChild(ossuaryLink)
+      }
+
+      // Navigation portals — carved stone inscriptions to connected rooms
+      if (deps.switchTo) {
+        const portalData = [
+          { label: '↑ the archive', room: 'archive' },
+          { label: '→ the ossuary', room: 'ossuary' },
+        ]
+        const portalRow = document.createElement('div')
+        portalRow.style.cssText = `
+          display: flex; gap: 40px; margin-top: 30px;
+        `
+        for (const portal of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300; font-size: 10px;
+            color: rgba(180, 160, 120, 0.06);
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: color 0.5s ease;
+          `
+          el.textContent = portal.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = 'rgba(180, 160, 120, 0.35)'
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = 'rgba(180, 160, 120, 0.06)'
+          })
+          el.addEventListener('click', () => deps.switchTo!(portal.room))
+          portalRow.appendChild(el)
+        }
+        bottom.appendChild(portalRow)
       }
 
       overlay.appendChild(bottom)

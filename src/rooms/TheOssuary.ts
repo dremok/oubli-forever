@@ -28,6 +28,7 @@ interface OssuaryDeps {
   getMemories: () => StoredMemory[]
   toRoots: () => void
   toCatacombs: () => void
+  switchTo?: (name: string) => void
 }
 
 export function createOssuaryRoom(deps: OssuaryDeps): Room {
@@ -37,6 +38,13 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
   let active = false
   let frameId = 0
   let time = 0
+  let hoveredNav = -1
+
+  // Navigation portals — bone-fragment markers leading to connected rooms
+  const navPoints = [
+    { label: '☽ the roots', room: 'roots', xFrac: 0.08, yFrac: 0.92 },
+    { label: '☽ the catacombs', room: 'catacombs', xFrac: 0.92, yFrac: 0.92 },
+  ]
 
   // Glyph shapes for dead memories — abstract bone-like forms
   function drawGlyph(x: number, y: number, seed: number, size: number, alpha: number) {
@@ -185,6 +193,27 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
     ctx.fillStyle = `rgba(180, 160, 120, ${0.08 + Math.sin(time * 0.4 + 1) * 0.03})`
     ctx.textAlign = 'right'
     ctx.fillText('the catacombs →', w - 20, h / 2)
+
+    // Navigation portals
+    if (deps.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.35 : 0.06
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(220, 210, 190, ${a})`
+        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = 'rgba(220, 210, 190, 0.12)'
+          ctx.beginPath()
+          ctx.arc(nx + (np.xFrac < 0.5 ? -6 : 6), ny - 3, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
   }
 
   return {
@@ -206,14 +235,41 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
       ctx = canvas.getContext('2d')
 
-      // Click left half → roots, right half → catacombs
+      // Portal navigation click + hover
       canvas.addEventListener('click', (e) => {
+        if (deps.switchTo && canvas) {
+          for (let i = 0; i < navPoints.length; i++) {
+            const nx = canvas.width * navPoints[i].xFrac
+            const ny = canvas.height * navPoints[i].yFrac
+            const dx = e.clientX - nx
+            const dy = e.clientY - ny
+            if (dx * dx + dy * dy < 600) {
+              deps.switchTo(navPoints[i].room)
+              return
+            }
+          }
+        }
+        // Click left half → roots, right half → catacombs
         const x = e.clientX
         const mid = window.innerWidth / 2
         if (x < mid * 0.3) {
           deps.toRoots()
         } else if (x > mid * 1.7) {
           deps.toCatacombs()
+        }
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
         }
       })
 
