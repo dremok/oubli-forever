@@ -131,14 +131,17 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
   let drawing = false
   let totalDraws = 0
   let deckIndex = 0
-  let hoveredNav = -1
-
-  // Tarot/divination arcana labels
-  const navPoints = [
-    { label: '\u2660 the s\u00e9ance', room: 'seance', xFrac: 0.5, yFrac: 0.04 },
-    { label: '\u2666 the madeleine', room: 'madeleine', xFrac: 0.04, yFrac: 0.5 },
-    { label: '\u2663 the library', room: 'library', xFrac: 0.96, yFrac: 0.5 },
+  // Portal cards for navigation — face-down tarot cards as doorways
+  const portalCards = [
+    { label: 'the s\u00e9ance', room: 'seance', hue: 275, pattern: 'spiral' as const },
+    { label: 'the madeleine', room: 'madeleine', hue: 35, pattern: 'flower' as const },
+    { label: 'the library', room: 'library', hue: 170, pattern: 'book' as const },
   ]
+  const portalHover = [0, 0, 0]  // hover interpolation 0-1
+  const portalFlip = [0, 0, 0]   // flip interpolation 0-1
+  let portalClicked = -1          // index of clicked card (-1 = none)
+  let portalClickTime = 0         // timestamp of click for delayed nav
+  let hoveredPortal = -1          // which portal card is hovered
 
   function loadProgress() {
     try {
@@ -382,24 +385,146 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     ctx.textAlign = 'center'
     ctx.fillText(`${78 - deckIndex} cards remaining`, w / 2, h * 0.92)
 
-    // Navigation portals — card suit symbols
+    // Navigation portal cards — face-down tarot spread at bottom
     if (deps?.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.3 : 0.06
-        ctx.font = '9px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(200, 180, 220, ${a})`
-        ctx.textAlign = np.xFrac < 0.2 ? 'left' : np.xFrac > 0.8 ? 'right' : 'center'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = 'rgba(200, 180, 220, 0.15)'
-          ctx.beginPath()
-          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
-          ctx.fill()
+      const cardW = 50
+      const cardH = 75
+      const gap = 24
+      const totalW = portalCards.length * cardW + (portalCards.length - 1) * gap
+      const startX = w / 2 - totalW / 2
+
+      // Handle delayed navigation after click animation
+      if (portalClicked >= 0 && time - portalClickTime > 0.5) {
+        const room = portalCards[portalClicked].room
+        portalClicked = -1
+        deps.switchTo(room)
+      }
+
+      for (let i = 0; i < portalCards.length; i++) {
+        const pc = portalCards[i]
+        const isHovered = hoveredPortal === i
+        const isClicked = portalClicked === i
+
+        // Animate hover interpolation
+        const hoverTarget = isHovered || isClicked ? 1 : 0
+        portalHover[i] += (hoverTarget - portalHover[i]) * 0.12
+
+        // Animate flip interpolation
+        const flipTarget = isClicked ? 1 : (isHovered ? 0.35 : 0)
+        portalFlip[i] += (flipTarget - portalFlip[i]) * (isClicked ? 0.15 : 0.08)
+
+        // Bob animation — gentle sine wave
+        const bob = Math.sin(time * 1.2 + i * 2.1) * 3
+
+        // Lift on hover/click
+        const lift = portalHover[i] * 8
+
+        const cx = startX + i * (cardW + gap) + cardW / 2
+        const cy = h - 60 + bob - lift
+
+        // Glow on hover
+        if (portalHover[i] > 0.01) {
+          const glowAlpha = portalHover[i] * 0.15
+          const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cardW * 0.9)
+          grad.addColorStop(0, `hsla(${pc.hue}, 50%, 60%, ${glowAlpha})`)
+          grad.addColorStop(1, `hsla(${pc.hue}, 50%, 60%, 0)`)
+          ctx.fillStyle = grad
+          ctx.fillRect(cx - cardW, cy - cardH / 2 - 10, cardW * 2, cardH + 20)
         }
+
+        // Flip via scaleX
+        const flipAmt = portalFlip[i]
+        const scaleX = Math.cos(flipAmt * Math.PI)
+        const showFace = flipAmt > 0.5
+
+        ctx.save()
+        ctx.translate(cx, cy)
+        ctx.scale(Math.abs(scaleX) || 0.01, 1)
+
+        const x0 = -cardW / 2
+        const y0 = -cardH / 2
+
+        if (!showFace) {
+          // --- CARD BACK ---
+          // Background fill
+          ctx.fillStyle = `hsla(${pc.hue}, 30%, 10%, 0.95)`
+          ctx.fillRect(x0, y0, cardW, cardH)
+
+          // Border
+          ctx.strokeStyle = `hsla(${pc.hue}, 40%, 35%, ${0.25 + portalHover[i] * 0.2})`
+          ctx.lineWidth = 1.2
+          ctx.strokeRect(x0 + 2, y0 + 2, cardW - 4, cardH - 4)
+
+          // Inner border
+          ctx.strokeStyle = `hsla(${pc.hue}, 30%, 30%, 0.12)`
+          ctx.lineWidth = 0.5
+          ctx.strokeRect(x0 + 5, y0 + 5, cardW - 10, cardH - 10)
+
+          // Unique back pattern per card
+          ctx.strokeStyle = `hsla(${pc.hue}, 35%, 45%, ${0.1 + portalHover[i] * 0.1})`
+          ctx.lineWidth = 0.8
+
+          if (pc.pattern === 'spiral') {
+            // Séance: spiral pattern
+            ctx.beginPath()
+            for (let t = 0; t < Math.PI * 5; t += 0.15) {
+              const r = (t / (Math.PI * 5)) * 16
+              const px = Math.cos(t) * r
+              const py = Math.sin(t) * r
+              if (t === 0) ctx.moveTo(px, py)
+              else ctx.lineTo(px, py)
+            }
+            ctx.stroke()
+          } else if (pc.pattern === 'flower') {
+            // Madeleine: flower/petal pattern
+            for (let p = 0; p < 6; p++) {
+              const angle = (p / 6) * Math.PI * 2
+              ctx.beginPath()
+              ctx.ellipse(
+                Math.cos(angle) * 7, Math.sin(angle) * 7,
+                6, 3, angle, 0, Math.PI * 2,
+              )
+              ctx.stroke()
+            }
+            // Center dot
+            ctx.beginPath()
+            ctx.arc(0, 0, 2, 0, Math.PI * 2)
+            ctx.stroke()
+          } else if (pc.pattern === 'book') {
+            // Library: book/page lines
+            const lineCount = 5
+            for (let l = 0; l < lineCount; l++) {
+              const ly = -12 + l * 6
+              ctx.beginPath()
+              ctx.moveTo(-10, ly)
+              ctx.lineTo(10, ly)
+              ctx.stroke()
+            }
+            // Spine
+            ctx.beginPath()
+            ctx.moveTo(0, -16)
+            ctx.lineTo(0, 16)
+            ctx.stroke()
+          }
+        } else {
+          // --- CARD FACE (revealed during flip) ---
+          ctx.fillStyle = `hsla(${pc.hue}, 20%, 8%, 0.95)`
+          ctx.fillRect(x0, y0, cardW, cardH)
+
+          ctx.strokeStyle = `hsla(${pc.hue}, 40%, 40%, 0.3)`
+          ctx.lineWidth = 1
+          ctx.strokeRect(x0 + 2, y0 + 2, cardW - 4, cardH - 4)
+
+          // Destination label
+          ctx.font = '9px "Cormorant Garamond", serif'
+          ctx.fillStyle = `hsla(${pc.hue}, 30%, 65%, 0.7)`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(pc.label, 0, 0)
+          ctx.textBaseline = 'alphabetic'
+        }
+
+        ctx.restore()
       }
     }
 
@@ -443,15 +568,26 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', (e) => {
-        // Check portal clicks first
+        // Check portal card clicks first
         if (deps?.switchTo && canvas) {
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              deps.switchTo(navPoints[i].room)
+          const cw = 50, ch = 75, gap = 24
+          const totalW = portalCards.length * cw + (portalCards.length - 1) * gap
+          const startX = canvas.width / 2 - totalW / 2
+          const baseY = canvas.height - 60
+
+          for (let i = 0; i < portalCards.length; i++) {
+            const cx = startX + i * (cw + gap) + cw / 2
+            const bob = Math.sin(time * 1.2 + i * 2.1) * 3
+            const lift = portalHover[i] * 8
+            const cy = baseY + bob - lift
+
+            const dx = e.clientX - cx
+            const dy = e.clientY - cy
+            if (Math.abs(dx) < cw / 2 + 4 && Math.abs(dy) < ch / 2 + 4) {
+              if (portalClicked < 0) {
+                portalClicked = i
+                portalClickTime = time
+              }
               return
             }
           }
@@ -459,15 +595,25 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
         drawCard()
       })
       canvas.addEventListener('mousemove', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            hoveredNav = i
+        if (!canvas) return
+        hoveredPortal = -1
+        if (!deps?.switchTo) return
+
+        const cw = 50, ch = 75, gap = 24
+        const totalW = portalCards.length * cw + (portalCards.length - 1) * gap
+        const startX = canvas.width / 2 - totalW / 2
+        const baseY = canvas.height - 60
+
+        for (let i = 0; i < portalCards.length; i++) {
+          const cx = startX + i * (cw + gap) + cw / 2
+          const bob = Math.sin(time * 1.2 + i * 2.1) * 3
+          const lift = portalHover[i] * 8
+          const cy = baseY + bob - lift
+
+          const dx = e.clientX - cx
+          const dy = e.clientY - cy
+          if (Math.abs(dx) < cw / 2 + 4 && Math.abs(dy) < ch / 2 + 4) {
+            hoveredPortal = i
             break
           }
         }

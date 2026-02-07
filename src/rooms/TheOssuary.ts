@@ -67,7 +67,10 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
   let active = false
   let frameId = 0
   let time = 0
-  let hoveredNav = -1
+  // Bone archway portal state
+  let hoveredArchway: 'left' | 'right' | null = null
+  let archwayTransition: { side: 'left' | 'right', progress: number } | null = null
+  let archwayDust: DustParticle[] = []
 
   // Glyph interaction state
   let glyphHits: GlyphHit[] = []
@@ -95,11 +98,172 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
   let dripTimeout: ReturnType<typeof setTimeout> | null = null
   let audioCtxRef: AudioContext | null = null
 
-  // Navigation portals — bone-fragment markers leading to connected rooms
-  const navPoints = [
-    { label: '☽ the roots', room: 'roots', xFrac: 0.08, yFrac: 0.92 },
-    { label: '☽ the catacombs', room: 'catacombs', xFrac: 0.92, yFrac: 0.92 },
-  ]
+  // --- Bone archway portal rendering ---
+  function drawBoneArchway(cx: number, cy: number, archW: number, archH: number, side: 'left' | 'right', hovered: boolean) {
+    if (!ctx) return
+    const isLeft = side === 'left'
+
+    // Inner glow — the passage beyond
+    const glowIntensity = hovered ? 0.12 : 0.04
+    const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, archW * 0.6)
+    if (isLeft) {
+      glowGrad.addColorStop(0, `rgba(140, 100, 50, ${glowIntensity})`)
+      glowGrad.addColorStop(0.6, `rgba(100, 70, 30, ${glowIntensity * 0.4})`)
+      glowGrad.addColorStop(1, 'rgba(80, 60, 20, 0)')
+    } else {
+      glowGrad.addColorStop(0, `rgba(200, 190, 170, ${glowIntensity})`)
+      glowGrad.addColorStop(0.6, `rgba(180, 170, 150, ${glowIntensity * 0.4})`)
+      glowGrad.addColorStop(1, 'rgba(160, 150, 130, 0)')
+    }
+    ctx.fillStyle = glowGrad
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, archW * 0.5, archH * 0.45, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Draw bone fragments forming the archway
+    const boneCount = 14
+    const boneColor = isLeft ? 'rgba(120, 85, 40,' : 'rgba(210, 200, 180,'
+    const boneColorHover = isLeft ? 'rgba(160, 115, 60,' : 'rgba(230, 220, 200,'
+
+    for (let i = 0; i < boneCount; i++) {
+      const t = i / (boneCount - 1) // 0 to 1 around the arch
+      const angle = Math.PI * 0.15 + t * Math.PI * 0.7 // arc from ~27deg to ~153deg (top arc)
+      const rx = archW * 0.45
+      const ry = archH * 0.48
+      const bx = cx + Math.cos(angle + Math.PI) * rx
+      const by = cy - Math.sin(angle) * ry
+
+      // Slight hover shift
+      const shiftX = hovered ? Math.sin(time * 2 + i * 1.3) * 1.5 : 0
+      const shiftY = hovered ? Math.cos(time * 1.7 + i * 0.9) * 1 : 0
+
+      const alpha = hovered ? 0.25 : 0.1
+      const col = hovered ? boneColorHover : boneColor
+
+      ctx.save()
+      ctx.translate(bx + shiftX, by + shiftY)
+      ctx.rotate(angle - Math.PI / 2 + Math.sin(i * 7.3) * 0.3)
+
+      // Draw bone-like shapes — mix of types
+      ctx.strokeStyle = `${col} ${alpha})`
+      ctx.fillStyle = `${col} ${alpha * 0.3})`
+      ctx.lineWidth = 0.8
+
+      const boneType = i % 4
+      const boneSize = 8 + (i * 3.7 % 6)
+
+      if (boneType === 0) {
+        // Long bone fragment
+        ctx.beginPath()
+        ctx.ellipse(0, 0, boneSize * 0.12, boneSize * 0.4, 0, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(0, -boneSize * 0.35, boneSize * 0.1, 0, Math.PI * 2)
+        ctx.arc(0, boneSize * 0.35, boneSize * 0.1, 0, Math.PI * 2)
+        ctx.stroke()
+      } else if (boneType === 1 && !isLeft) {
+        // Skull fragment (catacombs side)
+        ctx.beginPath()
+        ctx.arc(0, 0, boneSize * 0.25, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(-boneSize * 0.08, -boneSize * 0.04, boneSize * 0.05, 0, Math.PI * 2)
+        ctx.arc(boneSize * 0.08, -boneSize * 0.04, boneSize * 0.05, 0, Math.PI * 2)
+        ctx.fill()
+      } else if (boneType === 1 && isLeft) {
+        // Root-like curve (roots side)
+        ctx.beginPath()
+        ctx.moveTo(0, -boneSize * 0.3)
+        ctx.quadraticCurveTo(boneSize * 0.2, 0, -boneSize * 0.1, boneSize * 0.3)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(-boneSize * 0.1, boneSize * 0.3)
+        ctx.quadraticCurveTo(-boneSize * 0.25, boneSize * 0.4, -boneSize * 0.15, boneSize * 0.5)
+        ctx.stroke()
+      } else if (boneType === 2) {
+        // Cross / vertebra
+        ctx.beginPath()
+        ctx.moveTo(-boneSize * 0.2, 0)
+        ctx.lineTo(boneSize * 0.2, 0)
+        ctx.moveTo(0, -boneSize * 0.15)
+        ctx.lineTo(0, boneSize * 0.15)
+        ctx.stroke()
+      } else {
+        // Shard fragment
+        ctx.beginPath()
+        ctx.moveTo(0, -boneSize * 0.25)
+        ctx.lineTo(boneSize * 0.15, boneSize * 0.1)
+        ctx.lineTo(-boneSize * 0.12, boneSize * 0.2)
+        ctx.closePath()
+        ctx.stroke()
+      }
+
+      ctx.restore()
+    }
+
+    // Threshold stones at the base
+    const baseY = cy + archH * 0.42
+    const baseAlpha = hovered ? 0.2 : 0.07
+    const baseCol = hovered ? boneColorHover : boneColor
+    ctx.strokeStyle = `${baseCol} ${baseAlpha})`
+    ctx.lineWidth = 0.6
+    ctx.beginPath()
+    ctx.moveTo(cx - archW * 0.4, baseY)
+    ctx.lineTo(cx + archW * 0.4, baseY)
+    ctx.stroke()
+
+    // Room label inside the archway glow
+    const labelAlpha = hovered ? 0.3 : 0.08
+    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.fillStyle = isLeft
+      ? `rgba(140, 100, 50, ${labelAlpha})`
+      : `rgba(200, 190, 170, ${labelAlpha})`
+    ctx.textAlign = 'center'
+    ctx.fillText(isLeft ? 'the roots' : 'the catacombs', cx, cy + 4)
+  }
+
+  function spawnArchwayDust(cx: number, cy: number, archH: number) {
+    for (let i = 0; i < 12; i++) {
+      archwayDust.push({
+        x: cx + (Math.random() - 0.5) * 40,
+        y: cy + (Math.random() - 0.5) * archH * 0.6,
+        vy: -(0.5 + Math.random() * 1.2),
+        alpha: 0.08 + Math.random() * 0.08,
+        size: 0.5 + Math.random() * 1.5,
+        life: 0,
+        maxLife: 30 + Math.random() * 40,
+      })
+    }
+  }
+
+  function updateArchwayDust() {
+    for (let i = archwayDust.length - 1; i >= 0; i--) {
+      const p = archwayDust[i]
+      p.y += p.vy
+      p.x += Math.sin(p.life * 0.15 + p.x * 0.05) * 0.4
+      p.life++
+      if (p.life > p.maxLife) {
+        archwayDust.splice(i, 1)
+      }
+    }
+  }
+
+  function renderArchwayDust() {
+    if (!ctx) return
+    for (const p of archwayDust) {
+      const fadeIn = Math.min(1, p.life / 8)
+      const fadeOut = Math.max(0, 1 - p.life / p.maxLife)
+      const a = p.alpha * fadeIn * fadeOut
+      ctx.fillStyle = `rgba(220, 210, 190, ${a})`
+      ctx.fillRect(p.x, p.y, p.size, p.size)
+    }
+  }
+
+  function isInsideArchway(mx: number, my: number, cx: number, cy: number, archW: number, archH: number): boolean {
+    const dx = (mx - cx) / (archW * 0.5)
+    const dy = (my - cy) / (archH * 0.5)
+    return dx * dx + dy * dy < 1
+  }
 
   // --- localStorage for honored memories ---
   function loadHonored() {
@@ -614,36 +778,58 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
     ctx.letterSpacing = '3px'
     ctx.fillText('THE OSSUARY', w / 2, 40)
 
-    // Navigation links
-    ctx.font = '10px "Cormorant Garamond", serif'
+    // Bone archway portals
+    const archW = 80
+    const archH = 200
+    const leftCx = archW * 0.55
+    const leftCy = h / 2
+    const rightCx = w - archW * 0.55
+    const rightCy = h / 2
 
-    // Left: to roots
-    ctx.fillStyle = `rgba(120, 90, 50, ${0.08 + Math.sin(time * 0.4) * 0.03})`
-    ctx.textAlign = 'left'
-    ctx.fillText('← the roots', 20, h / 2)
+    // Hover breeze dust on hovered archway
+    if (hoveredArchway === 'left' && Math.random() < 0.4) {
+      archwayDust.push({
+        x: leftCx + (Math.random() - 0.5) * 30,
+        y: leftCy + (Math.random() - 0.5) * archH * 0.4,
+        vy: -(0.2 + Math.random() * 0.5),
+        alpha: 0.04 + Math.random() * 0.04,
+        size: 0.5 + Math.random() * 1,
+        life: 0,
+        maxLife: 40 + Math.random() * 30,
+      })
+    }
+    if (hoveredArchway === 'right' && Math.random() < 0.4) {
+      archwayDust.push({
+        x: rightCx + (Math.random() - 0.5) * 30,
+        y: rightCy + (Math.random() - 0.5) * archH * 0.4,
+        vy: -(0.2 + Math.random() * 0.5),
+        alpha: 0.04 + Math.random() * 0.04,
+        size: 0.5 + Math.random() * 1,
+        life: 0,
+        maxLife: 40 + Math.random() * 30,
+      })
+    }
+    updateArchwayDust()
 
-    // Right: to catacombs
-    ctx.fillStyle = `rgba(180, 160, 120, ${0.08 + Math.sin(time * 0.4 + 1) * 0.03})`
-    ctx.textAlign = 'right'
-    ctx.fillText('the catacombs →', w - 20, h / 2)
+    drawBoneArchway(leftCx, leftCy, archW, archH, 'left', hoveredArchway === 'left')
+    drawBoneArchway(rightCx, rightCy, archW, archH, 'right', hoveredArchway === 'right')
+    renderArchwayDust()
 
-    // Navigation portals
-    if (deps.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.35 : 0.06
-        ctx.font = '9px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(220, 210, 190, ${a})`
-        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = 'rgba(220, 210, 190, 0.12)'
-          ctx.beginPath()
-          ctx.arc(nx + (np.xFrac < 0.5 ? -6 : 6), ny - 3, 3, 0, Math.PI * 2)
-          ctx.fill()
+    // Transition blackout overlay
+    if (archwayTransition) {
+      archwayTransition.progress += dt / 0.4 // 0.4s total
+      const p = Math.min(1, archwayTransition.progress)
+      ctx.fillStyle = `rgba(0, 0, 0, ${p})`
+      ctx.fillRect(0, 0, w, h)
+      if (p >= 1) {
+        const side = archwayTransition.side
+        archwayTransition = null
+        if (side === 'left') {
+          if (deps.switchTo) deps.switchTo('roots')
+          else deps.toRoots()
+        } else {
+          if (deps.switchTo) deps.switchTo('catacombs')
+          else deps.toCatacombs()
         }
       }
     }
@@ -670,19 +856,29 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
       ctx = canvas.getContext('2d')
 
-      // Portal navigation click + glyph honoring
+      // Bone archway click + glyph honoring
       canvas.addEventListener('click', (e) => {
-        if (deps.switchTo && canvas) {
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              deps.switchTo(navPoints[i].room)
-              return
-            }
-          }
+        if (archwayTransition) return // already transitioning
+
+        const cw = canvas!.width
+        const ch = canvas!.height
+        const aW = 80
+        const aH = 200
+        const lCx = aW * 0.55
+        const lCy = ch / 2
+        const rCx = cw - aW * 0.55
+        const rCy = ch / 2
+
+        // Check archway clicks
+        if (isInsideArchway(e.clientX, e.clientY, lCx, lCy, aW, aH)) {
+          spawnArchwayDust(lCx, lCy, aH)
+          archwayTransition = { side: 'left', progress: 0 }
+          return
+        }
+        if (isInsideArchway(e.clientX, e.clientY, rCx, rCy, aW, aH)) {
+          spawnArchwayDust(rCx, rCy, aH)
+          archwayTransition = { side: 'right', progress: 0 }
+          return
         }
 
         // Check if clicking a glyph to honor it
@@ -695,15 +891,6 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
           playBoneResonance()
           return
         }
-
-        // Click left half → roots, right half → catacombs
-        const x = e.clientX
-        const mid = window.innerWidth / 2
-        if (x < mid * 0.3) {
-          deps.toRoots()
-        } else if (x > mid * 1.7) {
-          deps.toCatacombs()
-        }
       })
 
       // Mouse move for hover detection
@@ -711,18 +898,23 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
         mouseX = e.clientX
         mouseY = e.clientY
 
-        // Check nav portal hover
-        if (deps.switchTo && canvas) {
-          hoveredNav = -1
-          for (let i = 0; i < navPoints.length; i++) {
-            const nx = canvas.width * navPoints[i].xFrac
-            const ny = canvas.height * navPoints[i].yFrac
-            const dx = e.clientX - nx
-            const dy = e.clientY - ny
-            if (dx * dx + dy * dy < 600) {
-              hoveredNav = i
-              break
-            }
+        // Check archway hover
+        if (canvas) {
+          const cw = canvas.width
+          const ch = canvas.height
+          const aW = 80
+          const aH = 200
+          const lCx = aW * 0.55
+          const lCy = ch / 2
+          const rCx = cw - aW * 0.55
+          const rCy = ch / 2
+
+          if (isInsideArchway(e.clientX, e.clientY, lCx, lCy, aW, aH)) {
+            hoveredArchway = 'left'
+          } else if (isInsideArchway(e.clientX, e.clientY, rCx, rCy, aW, aH)) {
+            hoveredArchway = 'right'
+          } else {
+            hoveredArchway = null
           }
         }
 
@@ -761,6 +953,9 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       active = true
       loadHonored()
       dustParticles = []
+      archwayDust = []
+      archwayTransition = null
+      hoveredArchway = null
       initAudio().then(() => fadeAudioIn())
       render()
     },

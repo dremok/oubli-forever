@@ -176,6 +176,14 @@ interface PlantTooltip {
   alpha: number
 }
 
+interface GardenPortal {
+  name: string
+  label: string
+  corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  hovered: boolean
+  clickFlash: number // 0-1, decays after click
+}
+
 export function createGardenRoom(deps: GardenDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -188,6 +196,241 @@ export function createGardenRoom(deps: GardenDeps): Room {
   let tooltip: PlantTooltip | null = null
   let mouseX = 0
   let mouseY = 0
+
+  const gardenPortals: GardenPortal[] = [
+    { name: 'terrarium', label: 'the terrarium', corner: 'top-right', hovered: false, clickFlash: 0 },
+    { name: 'tidepool', label: 'the tide pool', corner: 'top-left', hovered: false, clickFlash: 0 },
+    { name: 'madeleine', label: 'the madeleine', corner: 'bottom-right', hovered: false, clickFlash: 0 },
+    { name: 'void', label: 'the void', corner: 'bottom-left', hovered: false, clickFlash: 0 },
+  ]
+
+  function getPortalPosition(portal: GardenPortal, w: number, h: number): { x: number; y: number } {
+    const margin = 50
+    switch (portal.corner) {
+      case 'top-right': return { x: w - margin, y: margin }
+      case 'top-left': return { x: margin, y: margin }
+      case 'bottom-right': return { x: w - margin, y: h - 70 }
+      case 'bottom-left': return { x: margin, y: h - 70 }
+    }
+  }
+
+  function isInsidePortal(px: number, py: number, portal: GardenPortal, w: number, h: number): boolean {
+    const pos = getPortalPosition(portal, w, h)
+    const dx = px - pos.x
+    const dy = py - pos.y
+    return dx * dx + dy * dy < 30 * 30
+  }
+
+  function renderPortals(ctx: CanvasRenderingContext2D, w: number, h: number) {
+    if (!deps.switchTo) return
+
+    for (const portal of gardenPortals) {
+      const pos = getPortalPosition(portal, w, h)
+      const hover = portal.hovered
+      const flash = portal.clickFlash
+      const glowBase = hover ? 0.6 : 0.15
+      const glowPulse = Math.sin(time * (hover ? 3 : 1.2)) * 0.05
+
+      // Decay click flash
+      if (portal.clickFlash > 0) {
+        portal.clickFlash = Math.max(0, portal.clickFlash - 0.03)
+      }
+
+      ctx.save()
+      ctx.translate(pos.x, pos.y)
+
+      if (portal.name === 'terrarium') {
+        // Glass dome / bell jar with tiny plant
+        const domeH = hover ? 26 : 22
+        const domeW = hover ? 16 : 14
+        const glow = glowBase + glowPulse + flash * 0.5
+
+        // Glow aura
+        const auraR = 30 + flash * 20
+        const aura = ctx.createRadialGradient(0, -4, 2, 0, -4, auraR)
+        aura.addColorStop(0, `rgba(80, 180, 60, ${glow * 0.25})`)
+        aura.addColorStop(1, `rgba(80, 180, 60, 0)`)
+        ctx.fillStyle = aura
+        ctx.beginPath()
+        ctx.arc(0, -4, auraR, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Bell jar outline
+        ctx.strokeStyle = `rgba(140, 200, 120, ${glow * 0.7})`
+        ctx.lineWidth = 1.2
+        ctx.beginPath()
+        ctx.moveTo(-domeW / 2, 6)
+        ctx.lineTo(-domeW / 2, -domeH * 0.3)
+        ctx.quadraticCurveTo(-domeW / 2, -domeH, 0, -domeH)
+        ctx.quadraticCurveTo(domeW / 2, -domeH, domeW / 2, -domeH * 0.3)
+        ctx.lineTo(domeW / 2, 6)
+        ctx.stroke()
+
+        // Base
+        ctx.fillStyle = `rgba(100, 160, 80, ${glow * 0.4})`
+        ctx.fillRect(-domeW / 2 - 2, 5, domeW + 4, 3)
+
+        // Tiny plant inside
+        const plantSway = Math.sin(time * (hover ? 2.5 : 1.5)) * 1.5
+        ctx.strokeStyle = `rgba(80, 180, 50, ${glow})`
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(0, 4)
+        ctx.quadraticCurveTo(plantSway, -6, plantSway * 0.6, -12)
+        ctx.stroke()
+
+        // Tiny leaves
+        ctx.fillStyle = `rgba(100, 200, 60, ${glow * 0.8})`
+        ctx.beginPath()
+        ctx.ellipse(plantSway * 0.3 + 3, -8, 3, 1.5, 0.4, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.beginPath()
+        ctx.ellipse(plantSway * 0.5 - 2, -5, 2.5, 1.2, -0.5, 0, Math.PI * 2)
+        ctx.fill()
+
+      } else if (portal.name === 'tidepool') {
+        // Puddle with rippling concentric circles
+        const glow = glowBase + glowPulse + flash * 0.5
+        const rippleSpeed = hover ? 2.5 : 1.2
+
+        // Glow aura
+        const auraR = 28 + flash * 18
+        const aura = ctx.createRadialGradient(0, 0, 2, 0, 0, auraR)
+        aura.addColorStop(0, `rgba(60, 130, 200, ${glow * 0.3})`)
+        aura.addColorStop(1, `rgba(60, 130, 200, 0)`)
+        ctx.fillStyle = aura
+        ctx.beginPath()
+        ctx.arc(0, 0, auraR, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Puddle base ellipse
+        ctx.fillStyle = `rgba(30, 70, 120, ${glow * 0.4})`
+        ctx.beginPath()
+        ctx.ellipse(0, 2, 20, 10, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Concentric ripples
+        for (let r = 0; r < 3; r++) {
+          const phase = (time * rippleSpeed + r * 1.2) % 3
+          const radius = 4 + phase * 7
+          const alpha = (1 - phase / 3) * glow * 0.5
+          ctx.strokeStyle = `rgba(100, 170, 220, ${alpha})`
+          ctx.lineWidth = 0.8
+          ctx.beginPath()
+          ctx.ellipse(0, 2, radius, radius * 0.5, 0, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+
+        // Sparkle
+        const sparklePhase = Math.sin(time * 3.7) * 0.5 + 0.5
+        ctx.fillStyle = `rgba(180, 220, 255, ${sparklePhase * glow * 0.4})`
+        ctx.beginPath()
+        ctx.arc(-5 + Math.sin(time * 1.3) * 3, -1, 1, 0, Math.PI * 2)
+        ctx.fill()
+
+      } else if (portal.name === 'madeleine') {
+        // Flower with slowly opening petals
+        const glow = glowBase + glowPulse + flash * 0.5
+        const openAmount = hover ? 0.9 : 0.5 + Math.sin(time * 0.4) * 0.15
+        const petalCount = 6
+
+        // Glow aura
+        const auraR = 28 + flash * 18
+        const aura = ctx.createRadialGradient(0, -2, 2, 0, -2, auraR)
+        aura.addColorStop(0, `rgba(220, 120, 160, ${glow * 0.25})`)
+        aura.addColorStop(1, `rgba(220, 120, 160, 0)`)
+        ctx.fillStyle = aura
+        ctx.beginPath()
+        ctx.arc(0, -2, auraR, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Stem
+        ctx.strokeStyle = `rgba(80, 140, 60, ${glow * 0.5})`
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(0, 14)
+        ctx.quadraticCurveTo(Math.sin(time * 0.8) * 2, 6, 0, -2)
+        ctx.stroke()
+
+        // Petals
+        for (let i = 0; i < petalCount; i++) {
+          const angle = (i / petalCount) * Math.PI * 2 + time * (hover ? 0.15 : 0.05)
+          const petalLen = 8 + openAmount * 6
+          const px = Math.cos(angle) * petalLen
+          const py = Math.sin(angle) * petalLen * 0.6 - 2
+          const hue = 330 + i * 8
+          ctx.fillStyle = `hsla(${hue}, 60%, ${50 + glow * 20}%, ${glow * 0.7})`
+          ctx.beginPath()
+          ctx.ellipse(px * 0.5, py * 0.5 - 2, petalLen * 0.45, petalLen * 0.2,
+            angle, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        // Center
+        ctx.fillStyle = `rgba(255, 220, 140, ${glow * 0.6})`
+        ctx.beginPath()
+        ctx.arc(0, -2, 2.5, 0, Math.PI * 2)
+        ctx.fill()
+
+      } else if (portal.name === 'void') {
+        // Dark hole in the ground with magenta glow at edges
+        const glow = glowBase + glowPulse + flash * 0.5
+        const pulseSize = hover ? 3 : 1.5
+        const holeRadius = 14 + Math.sin(time * (hover ? 2 : 0.8)) * pulseSize
+
+        // Magenta edge glow
+        const auraR = holeRadius + 16 + flash * 15
+        const aura = ctx.createRadialGradient(0, 0, holeRadius * 0.5, 0, 0, auraR)
+        aura.addColorStop(0, `rgba(0, 0, 0, 0)`)
+        aura.addColorStop(0.5, `rgba(180, 20, 120, ${glow * 0.3})`)
+        aura.addColorStop(1, `rgba(180, 20, 120, 0)`)
+        ctx.fillStyle = aura
+        ctx.beginPath()
+        ctx.arc(0, 0, auraR, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Dark hole
+        const hole = ctx.createRadialGradient(0, 0, 0, 0, 0, holeRadius)
+        hole.addColorStop(0, `rgba(0, 0, 0, ${0.8 + glow * 0.2})`)
+        hole.addColorStop(0.7, `rgba(5, 0, 10, ${0.6 + glow * 0.2})`)
+        hole.addColorStop(1, `rgba(80, 10, 60, ${glow * 0.4})`)
+        ctx.fillStyle = hole
+        ctx.beginPath()
+        ctx.ellipse(0, 0, holeRadius, holeRadius * 0.55, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Rim highlight
+        ctx.strokeStyle = `rgba(200, 30, 140, ${glow * 0.4})`
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.ellipse(0, 0, holeRadius, holeRadius * 0.55, 0, 0, Math.PI * 2)
+        ctx.stroke()
+
+        // Tiny swirling particles inside
+        for (let i = 0; i < 3; i++) {
+          const a = time * (1.5 + i * 0.3) + i * 2.1
+          const pr = (holeRadius * 0.4) * (0.3 + (Math.sin(time + i) * 0.5 + 0.5) * 0.7)
+          const ppx = Math.cos(a) * pr
+          const ppy = Math.sin(a) * pr * 0.5
+          ctx.fillStyle = `rgba(200, 50, 150, ${glow * 0.5})`
+          ctx.beginPath()
+          ctx.arc(ppx, ppy, 0.8, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+
+      // Label on hover
+      if (hover) {
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.textAlign = 'center'
+        ctx.fillStyle = `rgba(200, 180, 140, 0.5)`
+        const labelY = portal.corner.startsWith('top') ? 28 : -22
+        ctx.fillText(portal.label, 0, labelY)
+      }
+
+      ctx.restore()
+    }
+  }
 
   function buildGarden() {
     const memories = deps.getMemories()
@@ -406,6 +649,9 @@ export function createGardenRoom(deps: GardenDeps): Room {
     ctx.fillStyle = 'rgba(200, 180, 140, 0.12)'
     ctx.textAlign = 'left'
     ctx.fillText(`${memCount} memories growing · ${Math.floor(avgHealth * 100)}% average vitality`, 16, h - 16)
+
+    // Garden portals — organic exits at the edges
+    renderPortals(ctx, w, h)
   }
 
   return {
@@ -433,7 +679,21 @@ export function createGardenRoom(deps: GardenDeps): Room {
         const rect = canvas!.getBoundingClientRect()
         const clickX = e.clientX - rect.left
         const clickY = e.clientY - rect.top
-        const groundY = canvas!.height * 0.82
+        const cw = canvas!.width
+        const ch = canvas!.height
+        const groundY = ch * 0.82
+
+        // Check portal clicks first
+        if (deps.switchTo) {
+          for (const portal of gardenPortals) {
+            if (isInsidePortal(clickX, clickY, portal, cw, ch)) {
+              portal.clickFlash = 1
+              const targetName = portal.name
+              setTimeout(() => deps.switchTo!(targetName), 300)
+              return
+            }
+          }
+        }
 
         if (clickY > groundY && deps.onDescend) {
           deps.onDescend()
@@ -477,6 +737,18 @@ export function createGardenRoom(deps: GardenDeps): Room {
         const rect = canvas!.getBoundingClientRect()
         mouseX = e.clientX - rect.left
         mouseY = e.clientY - rect.top
+
+        // Update portal hover states
+        let anyPortalHovered = false
+        if (deps.switchTo) {
+          const cw = canvas!.width
+          const ch = canvas!.height
+          for (const portal of gardenPortals) {
+            portal.hovered = isInsidePortal(mouseX, mouseY, portal, cw, ch)
+            if (portal.hovered) anyPortalHovered = true
+          }
+        }
+        canvas!.style.cursor = anyPortalHovered ? 'pointer' : 'default'
       })
 
       overlay.appendChild(canvas)
@@ -490,43 +762,6 @@ export function createGardenRoom(deps: GardenDeps): Room {
         }
       }
       window.addEventListener('resize', onResize)
-
-      // In-room navigation: organic elements at edges
-      if (deps.switchTo) {
-        const portalData = [
-          { name: 'terrarium', symbol: '\uD83E\uDD8E', hint: 'the terrarium', color: '120, 180, 60', pos: 'top: 30px; right: 24px;' },
-          { name: 'tidepool', symbol: '\uD83C\uDF0A', hint: 'the tide pool', color: '100, 160, 200', pos: 'top: 30px; left: 24px;' },
-          { name: 'madeleine', symbol: '\uD83C\uDF3A', hint: 'the madeleine', color: '220, 180, 200', pos: 'bottom: 60px; right: 24px;' },
-          { name: 'void', symbol: '\u2726', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
-        ]
-        for (const p of portalData) {
-          const el = document.createElement('div')
-          el.style.cssText = `
-            position: absolute; ${p.pos}
-            pointer-events: auto; cursor: pointer;
-            font-family: 'Cormorant Garamond', serif;
-            font-weight: 300; font-size: 10px;
-            letter-spacing: 2px; text-transform: lowercase;
-            color: rgba(${p.color}, 0.06);
-            transition: color 0.5s ease, text-shadow 0.5s ease;
-            padding: 8px; z-index: 10;
-          `
-          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
-          el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.5)`
-            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
-          })
-          el.addEventListener('mouseleave', () => {
-            el.style.color = `rgba(${p.color}, 0.06)`
-            el.style.textShadow = 'none'
-          })
-          el.addEventListener('click', (e) => {
-            e.stopPropagation()
-            deps.switchTo!(p.name)
-          })
-          overlay.appendChild(el)
-        }
-      }
 
       return overlay
     },

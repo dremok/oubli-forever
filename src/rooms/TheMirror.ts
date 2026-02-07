@@ -56,12 +56,14 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
   let time = 0
   let portraitData: DataPoint[] = []
   let mirrorData: MirrorData
-  let hoveredNav = -1
 
-  // Navigation portals — reflections in the mirror's surface
-  const navPoints = [
-    { label: '◐ the darkroom', room: 'darkroom', xFrac: 0.08, yFrac: 0.94 },
-    { label: '◑ the date paintings', room: 'datepaintings', xFrac: 0.92, yFrac: 0.94 },
+  // Reflection distortion navigation zones
+  let hoveredZone = -1
+  let shatterTime = -1  // when a shatter animation started (-1 = none)
+  let shatterTarget = ''  // room to navigate to after shatter
+  const navZones = [
+    { room: 'darkroom', side: 'left' as const },
+    { room: 'datepaintings', side: 'right' as const },
   ]
 
   function loadData(): MirrorData {
@@ -253,24 +255,146 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     ctx.textAlign = 'center'
     ctx.fillText('the mirror', w / 2, 30)
 
-    // Navigation portals — dim reflections at mirror's base
+    // Reflection distortion navigation zones within the mirror frame
     if (deps.switchTo) {
-      for (let i = 0; i < navPoints.length; i++) {
-        const np = navPoints[i]
-        const nx = w * np.xFrac
-        const ny = h * np.yFrac
-        const hovered = hoveredNav === i
-        const a = hovered ? 0.35 : 0.06
-        ctx.font = '9px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(120, 120, 160, ${a})`
-        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
-        ctx.fillText(np.label, nx, ny)
-        if (hovered) {
-          ctx.fillStyle = 'rgba(120, 120, 160, 0.1)'
-          ctx.beginPath()
-          ctx.arc(nx + (np.xFrac < 0.5 ? -6 : 6), ny - 3, 3, 0, Math.PI * 2)
-          ctx.fill()
+      const mirrorLeft = frameX + 10
+      const mirrorRight = frameX + frameW - 10
+      const mirrorCenterY = frameY + frameH * 0.5
+      const zoneRadius = Math.min(frameW * 0.1, 50)
+
+      for (let i = 0; i < navZones.length; i++) {
+        const zone = navZones[i]
+        const zx = zone.side === 'left'
+          ? mirrorLeft + frameW * 0.18
+          : mirrorRight - frameW * 0.18
+        const zy = mirrorCenterY
+        const hovered = hoveredZone === i
+        const isShatteringThis = shatterTime > 0 && shatterTarget === zone.room
+        const shatterElapsed = isShatteringThis ? time - shatterTime : 0
+
+        ctx.save()
+
+        // Clipping — keep reflections inside mirror frame
+        ctx.beginPath()
+        ctx.rect(frameX + 10, frameY + 10, frameW - 20, frameH - 20)
+        ctx.clip()
+
+        if (isShatteringThis && shatterElapsed < 0.5) {
+          // --- Shatter animation: crack pattern radiating outward ---
+          const progress = shatterElapsed / 0.4
+          const crackAlpha = 1.0 - progress
+          const numCracks = 8
+          for (let c = 0; c < numCracks; c++) {
+            const angle = (c / numCracks) * Math.PI * 2 + 0.3
+            const len = progress * zoneRadius * 2.5
+            ctx.beginPath()
+            ctx.moveTo(zx, zy)
+            // Jagged crack lines
+            const segments = 4
+            for (let s = 1; s <= segments; s++) {
+              const frac = s / segments
+              const jitterX = (Math.sin(c * 13.7 + s * 7.3) * 6) * frac
+              const jitterY = (Math.cos(c * 9.1 + s * 11.2) * 6) * frac
+              ctx.lineTo(
+                zx + Math.cos(angle) * len * frac + jitterX,
+                zy + Math.sin(angle) * len * frac + jitterY
+              )
+            }
+            ctx.strokeStyle = `rgba(200, 200, 240, ${crackAlpha * 0.6})`
+            ctx.lineWidth = 1.5 - progress
+            ctx.stroke()
+          }
+          // Flash at center
+          const flashAlpha = Math.max(0, 0.5 - progress * 1.2)
+          const flashGrad = ctx.createRadialGradient(zx, zy, 0, zx, zy, zoneRadius * progress * 2)
+          flashGrad.addColorStop(0, `rgba(200, 200, 255, ${flashAlpha})`)
+          flashGrad.addColorStop(1, 'rgba(200, 200, 255, 0)')
+          ctx.fillStyle = flashGrad
+          ctx.fillRect(zx - zoneRadius * 3, zy - zoneRadius * 3, zoneRadius * 6, zoneRadius * 6)
+        } else if (!isShatteringThis) {
+          // --- Normal reflection distortion zone ---
+          const baseAlpha = hovered ? 0.18 : 0.05
+          const shimmer = Math.sin(time * 2.0 + i * 3.0) * 0.02
+
+          if (zone.room === 'darkroom') {
+            // Darkroom: faint red safe-light glow with developing tray shapes
+            const redGrad = ctx.createRadialGradient(zx, zy, 0, zx, zy, zoneRadius * 1.3)
+            redGrad.addColorStop(0, `rgba(180, 30, 20, ${(baseAlpha + shimmer) * 1.5})`)
+            redGrad.addColorStop(0.6, `rgba(120, 15, 10, ${(baseAlpha + shimmer) * 0.8})`)
+            redGrad.addColorStop(1, 'rgba(80, 10, 5, 0)')
+            ctx.fillStyle = redGrad
+            ctx.fillRect(zx - zoneRadius * 1.5, zy - zoneRadius * 1.5, zoneRadius * 3, zoneRadius * 3)
+
+            // Developing tray shapes — faint rectangles
+            ctx.strokeStyle = `rgba(160, 40, 30, ${baseAlpha * 1.8 + shimmer})`
+            ctx.lineWidth = 0.6
+            const trayW = zoneRadius * 0.7
+            const trayH = zoneRadius * 0.45
+            for (let t = 0; t < 3; t++) {
+              const trayOffsetX = (t - 1) * trayW * 0.9
+              const trayOffsetY = Math.sin(time * 0.8 + t * 1.5) * 3
+              ctx.strokeRect(
+                zx + trayOffsetX - trayW / 2,
+                zy + trayOffsetY - trayH / 2 + 8,
+                trayW, trayH
+              )
+            }
+          } else {
+            // Date paintings: faint rectangular shapes with date-like text
+            const paintGrad = ctx.createRadialGradient(zx, zy, 0, zx, zy, zoneRadius * 1.3)
+            paintGrad.addColorStop(0, `rgba(140, 130, 100, ${(baseAlpha + shimmer) * 1.2})`)
+            paintGrad.addColorStop(0.6, `rgba(100, 90, 70, ${(baseAlpha + shimmer) * 0.6})`)
+            paintGrad.addColorStop(1, 'rgba(60, 55, 40, 0)')
+            ctx.fillStyle = paintGrad
+            ctx.fillRect(zx - zoneRadius * 1.5, zy - zoneRadius * 1.5, zoneRadius * 3, zoneRadius * 3)
+
+            // Small painting frames with tiny dates
+            const pW = zoneRadius * 0.5
+            const pH = zoneRadius * 0.65
+            const dates = ['FEB.8', 'JAN.3', 'DEC.1', 'OCT.19']
+            for (let p = 0; p < 4; p++) {
+              const col = p % 2
+              const row = Math.floor(p / 2)
+              const px = zx + (col - 0.5) * pW * 1.4
+              const py = zy + (row - 0.5) * pH * 1.2
+              const drift = Math.sin(time * 0.6 + p * 2.1) * 2
+              ctx.strokeStyle = `rgba(130, 120, 90, ${baseAlpha * 1.5 + shimmer})`
+              ctx.lineWidth = 0.5
+              ctx.strokeRect(px - pW / 2 + drift, py - pH / 2, pW, pH)
+              // Tiny date text inside
+              ctx.font = '6px monospace'
+              ctx.fillStyle = `rgba(140, 130, 100, ${baseAlpha * 2.0 + shimmer})`
+              ctx.textAlign = 'center'
+              ctx.fillText(dates[p], px + drift, py + 2)
+            }
+          }
+
+          // Hover effect: ripple (concentric circles expanding outward)
+          if (hovered) {
+            const rippleCount = 3
+            for (let r = 0; r < rippleCount; r++) {
+              const phase = (time * 1.5 + r * 0.7) % 2.0
+              const rippleRadius = phase * zoneRadius * 1.5
+              const rippleAlpha = Math.max(0, 0.15 * (1.0 - phase / 2.0))
+              ctx.beginPath()
+              ctx.arc(zx, zy, rippleRadius, 0, Math.PI * 2)
+              ctx.strokeStyle = zone.room === 'darkroom'
+                ? `rgba(180, 50, 40, ${rippleAlpha})`
+                : `rgba(150, 140, 110, ${rippleAlpha})`
+              ctx.lineWidth = 1.0
+              ctx.stroke()
+            }
+            // Cursor hint
+            canvas!.style.cursor = 'pointer'
+          }
         }
+
+        ctx.restore()
+      }
+
+      // Reset cursor when not hovering any zone
+      if (hoveredZone === -1 && canvas) {
+        canvas.style.cursor = 'default'
       }
     }
   }
@@ -296,30 +420,55 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
       ctx = canvas.getContext('2d')
 
-      // Portal navigation click + hover
+      // Reflection distortion zone click + hover
+      const getZonePositions = () => {
+        if (!canvas) return []
+        const cw = canvas.width
+        const ch = canvas.height
+        const fX = cw * 0.2 + 10
+        const fW = cw * 0.6 - 20
+        const fY = ch * 0.08
+        const fH = ch * 0.75
+        const centerY = fY + fH * 0.5
+        const radius = Math.min(fW * 0.1, 50)
+        return navZones.map(zone => ({
+          x: zone.side === 'left' ? fX + fW * 0.18 : fX + fW - fW * 0.18,
+          y: centerY,
+          radius: radius * 1.3,
+          room: zone.room,
+        }))
+      }
+
       canvas.addEventListener('click', (e) => {
-        if (!deps.switchTo || !canvas) return
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            deps.switchTo(navPoints[i].room)
+        if (!deps.switchTo || !canvas || shatterTime > 0) return
+        const zones = getZonePositions()
+        for (let i = 0; i < zones.length; i++) {
+          const z = zones[i]
+          const dx = e.clientX - z.x
+          const dy = e.clientY - z.y
+          if (dx * dx + dy * dy < z.radius * z.radius) {
+            // Start shatter animation, navigate after delay
+            shatterTime = time
+            shatterTarget = z.room
+            setTimeout(() => {
+              if (deps.switchTo) deps.switchTo(z.room)
+              shatterTime = -1
+              shatterTarget = ''
+            }, 400)
             return
           }
         }
       })
       canvas.addEventListener('mousemove', (e) => {
         if (!deps.switchTo || !canvas) return
-        hoveredNav = -1
-        for (let i = 0; i < navPoints.length; i++) {
-          const nx = canvas.width * navPoints[i].xFrac
-          const ny = canvas.height * navPoints[i].yFrac
-          const dx = e.clientX - nx
-          const dy = e.clientY - ny
-          if (dx * dx + dy * dy < 600) {
-            hoveredNav = i
+        hoveredZone = -1
+        const zones = getZonePositions()
+        for (let i = 0; i < zones.length; i++) {
+          const z = zones[i]
+          const dx = e.clientX - z.x
+          const dy = e.clientY - z.y
+          if (dx * dx + dy * dy < z.radius * z.radius) {
+            hoveredZone = i
             break
           }
         }
