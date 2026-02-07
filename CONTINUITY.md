@@ -773,10 +773,68 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     - Stats: rooms visited count, secrets found count
     - Oubli becomes self-aware: mapping its own body. ZERO MEMORY DEPENDENCY.
 
-### Cross-Room Passages Added
+63. **The Choir** (`src/rooms/TheChoir.ts`) — ERA 6
+    - Generative spatial choral music via Web Audio
+    - Click to place singing voices: Y=pitch (pentatonic), X=timbre
+    - Vibrato, bandpass formant filters, cathedral reverb
+    - Voices fade over 15-35s, auto-replenish when choir thins
+    - Concentric ring visualization per voice. ZERO MEMORY DEPENDENCY.
+
+64. **The Oracle Deck** (`src/rooms/TheOracleDeck.ts`) — ERA 6
+    - 78-card procedural divination system
+    - 5 suits: Void, Flame, Current, Stone, Breath
+    - Geometric symbols, card flip animation
+    - Cryptic readings. Progress in localStorage. ZERO MEMORY DEPENDENCY.
+
+65. **The Labyrinth** (`src/rooms/TheLabyrinth.ts`) — ERA 6
+    - First-person raycasting maze exploration
+    - Procedurally generated 21x21 maze via recursive backtracker
+    - WASD/arrow movement, golden exit marker
+    - Finding the exit teleports to a random HIDDEN room
+    - Dark corridor aesthetics, fisheye-corrected rendering. ZERO MEMORY DEPENDENCY.
+
+### Cross-Room Passages Added (Era 6)
 - Lighthouse → Tide Pool (after 3+ manual transmissions)
 - Terrarium → Garden (when creatures reach generation 10)
+- Labyrinth exit → random hidden room (catacombs, roots, ossuary, aquifer, midnight, mirror, between)
+
+### Updated Navigation Map
+```
+                       TAB BAR (surface — 25 rooms)
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ void · study · instrument · observatory · séance                  │
+    │ darkroom · garden · archive · loom · tide pool                    │
+    │ furnace · radio · well · clock tower · automaton                  │
+    │ seismograph · pendulum · cipher · terrarium · lighthouse          │
+    │ sketchpad · weathervane · cartographer · choir · oracle deck      │
+    │ labyrinth                                                         │
+    └──┬──────┬──────────────┬──────────────┬──────────────────────────┘
+       │      │              │              │
+    garden  archive        well       clock tower  lighthouse terrarium
+       │      │              │         (hour)    (3 sends) (gen 10)
+       │(soil) │(2+ search)  │(drops)     │         │         │
+       ▼      ▼              ▼            ▼         ▼         ▼
+    ROOTS  CATACOMBS     AQUIFER      MIDNIGHT  TIDE POOL  GARDEN
+       │       │              │        (time)
+       │(deep) │(bottom)      │(right)
+       ▼       ▼              ▼
+       └─► OSSUARY ◄─┘    TIDE POOL
+
+    séance → (ask "between") → BETWEEN (doors to all rooms)
+    labyrinth exit → RANDOM HIDDEN ROOM
+```
+
+### Era 6 Summary
+Era 6 focused on FEATURE DIVERSITY. 12 new rooms, of which 12 have ZERO memory dependency:
+- **Real-time data**: Seismograph (USGS), Weathervane (Open-Meteo)
+- **Physics simulations**: Pendulum (harmonograph), Automaton (Game of Life), Terrarium (artificial life)
+- **Sound**: Choir (spatial generative choral music)
+- **Games/puzzles**: Cipher (Caesar cipher), Labyrinth (raycasting maze)
+- **Tools**: Sketchpad (impermanent drawing)
+- **Divination**: Oracle Deck (procedural card system)
+- **Narrative**: Lighthouse (Morse code)
+- **Meta**: Cartographer (map of the house), Mirror (behavior portrait)
 
 ---
-*Last updated: Era 6, Feature 62 — Sketchpad, Weathervane, Cartographer*
-*"some rooms draw. some rooms feel the weather. one room maps all the others. 29 rooms and counting."*
+*Last updated: Era 6, Feature 65 — Choir, Oracle Deck, Labyrinth*
+*"32 rooms. some rooms sing. some rooms tell fortunes. one room is a maze that leads to places you haven't found yet."*
