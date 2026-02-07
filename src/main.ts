@@ -45,6 +45,7 @@ import { createTidePoolRoom } from './rooms/TheTidePool'
 import { createBetweenRoom } from './rooms/TheBetween'
 import { createFurnaceRoom } from './rooms/TheFurnace'
 import { createRadioRoom } from './rooms/TheRadio'
+import { createWellRoom } from './rooms/TheWell'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -376,6 +377,9 @@ roomManager.addRoom(createFurnaceRoom({
   accelerateDegradation: (id, amount) => journal.accelerateDegradation(id, amount),
 }))
 roomManager.addRoom(createRadioRoom({
+  getMemories: () => journal.getMemories(),
+}))
+roomManager.addRoom(createWellRoom({
   getMemories: () => journal.getMemories(),
 }))
 
