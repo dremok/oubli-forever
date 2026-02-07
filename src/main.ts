@@ -44,6 +44,7 @@ import { createOssuaryRoom } from './rooms/TheOssuary'
 import { createTidePoolRoom } from './rooms/TheTidePool'
 import { createBetweenRoom } from './rooms/TheBetween'
 import { createFurnaceRoom } from './rooms/TheFurnace'
+import { createRadioRoom } from './rooms/TheRadio'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -373,6 +374,9 @@ roomManager.addRoom(createBetweenRoom({
 roomManager.addRoom(createFurnaceRoom({
   getMemories: () => journal.getMemories(),
   accelerateDegradation: (id, amount) => journal.accelerateDegradation(id, amount),
+}))
+roomManager.addRoom(createRadioRoom({
+  getMemories: () => journal.getMemories(),
 }))
 
 // Wire room checks — features only fire in the right room
