@@ -89,6 +89,11 @@ export class DreamSynthesizer {
   private hidden = false
   private dreamCallback: ((text: string) => void) | null = null
 
+  // Model collapse tracking
+  private generatedDreams: string[] = [] // dreams feed back as source material
+  private generation = 0 // how many dreams have been generated this session
+  private wordFrequency = new Map<string, number>() // tracks word usage
+
   constructor() {
     this.canvas = document.createElement('canvas')
     this.canvas.style.cssText = `
@@ -204,41 +209,107 @@ export class DreamSynthesizer {
   }
 
   private generateDream(): string {
-    // Combine user memories with built-in seeds
-    const sources = [...DREAM_SEEDS]
-    if (this.userMemories.length > 0) {
-      sources.push(...this.userMemories)
+    this.generation++
+
+    // MODEL COLLAPSE: as generations increase, previous dreams increasingly
+    // replace original sources. The system feeds on its own output.
+    const collapseRatio = Math.min(this.generation / 20, 0.8) // max 80% self-referential
+
+    // Build source pool with collapse weighting
+    const sources: string[] = []
+
+    // Original material (decreases with collapse)
+    const origCount = Math.max(2, Math.round((1 - collapseRatio) * 10))
+    for (let i = 0; i < origCount; i++) {
+      sources.push(DREAM_SEEDS[Math.floor(Math.random() * DREAM_SEEDS.length)])
     }
+    if (this.userMemories.length > 0) {
+      for (let i = 0; i < origCount; i++) {
+        sources.push(this.userMemories[Math.floor(Math.random() * this.userMemories.length)])
+      }
+    }
+
+    // Generated dreams feed back (increases with collapse)
+    if (this.generatedDreams.length > 0) {
+      const genCount = Math.round(collapseRatio * 12)
+      for (let i = 0; i < genCount; i++) {
+        sources.push(this.generatedDreams[Math.floor(Math.random() * this.generatedDreams.length)])
+      }
+    }
+
+    let dream: string
 
     // Method 1: Template-based combination (60% chance)
     if (Math.random() < 0.6) {
       const template = TEMPLATES[Math.floor(Math.random() * TEMPLATES.length)]
       const a = this.extractFragment(sources)
       const b = this.extractFragment(sources)
-      return template.replace('{a}', a).replace('{b}', b)
+      dream = template.replace('{a}', a).replace('{b}', b)
+    } else {
+      // Method 2: Word-level recombination
+      const src1 = sources[Math.floor(Math.random() * sources.length)]
+      const src2 = sources[Math.floor(Math.random() * sources.length)]
+
+      const words1 = src1.toLowerCase().split(/\s+/)
+      const words2 = src2.toLowerCase().split(/\s+/)
+
+      const result: string[] = []
+      const maxLen = Math.max(words1.length, words2.length)
+
+      for (let i = 0; i < maxLen; i++) {
+        if (Math.random() < 0.5 && i < words1.length) {
+          result.push(words1[i])
+        } else if (i < words2.length) {
+          result.push(words2[i])
+        }
+      }
+
+      dream = result.slice(0, 8 + Math.floor(Math.random() * 6)).join(' ')
     }
 
-    // Method 2: Word-level recombination (40% chance)
-    const src1 = sources[Math.floor(Math.random() * sources.length)]
-    const src2 = sources[Math.floor(Math.random() * sources.length)]
+    // MODEL COLLAPSE: bias toward already-frequent words
+    if (collapseRatio > 0.3) {
+      dream = this.applyFrequencyBias(dream, collapseRatio)
+    }
 
-    const words1 = src1.toLowerCase().split(/\s+/)
-    const words2 = src2.toLowerCase().split(/\s+/)
+    // Track this dream for future collapse
+    this.generatedDreams.push(dream)
+    // Keep only last 30 generated dreams
+    if (this.generatedDreams.length > 30) {
+      this.generatedDreams.shift()
+    }
 
-    // Interleave words from both sources
+    // Update word frequency
+    for (const word of dream.toLowerCase().split(/\s+/)) {
+      this.wordFrequency.set(word, (this.wordFrequency.get(word) || 0) + 1)
+    }
+
+    return dream
+  }
+
+  /** Bias toward frequently-used words — vocabulary narrows over generations */
+  private applyFrequencyBias(text: string, collapse: number): string {
+    if (this.wordFrequency.size === 0) return text
+
+    const words = text.split(/\s+/)
     const result: string[] = []
-    const maxLen = Math.max(words1.length, words2.length)
 
-    for (let i = 0; i < maxLen; i++) {
-      if (Math.random() < 0.5 && i < words1.length) {
-        result.push(words1[i])
-      } else if (i < words2.length) {
-        result.push(words2[i])
+    // Get most frequent words
+    const sorted = [...this.wordFrequency.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([w]) => w)
+
+    for (const word of words) {
+      // Chance to replace with a more "collapsed" (frequent) word
+      if (Math.random() < collapse * 0.25 && sorted.length > 0) {
+        result.push(sorted[Math.floor(Math.random() * Math.min(sorted.length, 5))])
+      } else {
+        result.push(word)
       }
     }
 
-    // Trim to reasonable length
-    return result.slice(0, 8 + Math.floor(Math.random() * 6)).join(' ')
+    return result.join(' ')
   }
 
   private extractFragment(sources: string[]): string {
@@ -249,6 +320,11 @@ export class DreamSynthesizer {
     const start = Math.floor(Math.random() * Math.max(1, words.length - 3))
     const len = 2 + Math.floor(Math.random() * 3)
     return words.slice(start, start + len).join(' ')
+  }
+
+  /** Get current collapse generation count */
+  getGeneration(): number {
+    return this.generation
   }
 
   /** Register callback for when a new dream is synthesized */
