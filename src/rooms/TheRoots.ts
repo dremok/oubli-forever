@@ -26,6 +26,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 interface RootsDeps {
   getMemories: () => StoredMemory[]
   onAscend: () => void
+  onDeeper?: () => void
 }
 
 interface RootNode {
@@ -270,6 +271,14 @@ export function createRootsRoom(deps: RootsDeps): Room {
     ctx.textAlign = 'center'
     ctx.fillText('▲ ascend to the garden', w / 2, 24)
 
+    // Ossuary link — bottom right
+    if (deps.onDeeper && memories.some(m => m.degradation > 0.4)) {
+      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(220, 210, 190, ${0.06 + Math.sin(time * 0.3 + 2) * 0.02})`
+      ctx.textAlign = 'right'
+      ctx.fillText('the ossuary →', w - 12, h - 12)
+    }
+
     // Info
     ctx.font = '9px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(120, 90, 50, 0.1)'
@@ -301,10 +310,12 @@ export function createRootsRoom(deps: RootsDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click top area to ascend
+      // Click top area to ascend, bottom-right to go deeper
       canvas.addEventListener('click', (e) => {
         if (e.clientY < 50) {
           deps.onAscend()
+        } else if (e.clientX > window.innerWidth * 0.7 && e.clientY > window.innerHeight * 0.85 && deps.onDeeper) {
+          deps.onDeeper()
         }
       })
 

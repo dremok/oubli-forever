@@ -40,6 +40,7 @@ import { createArchiveRoom } from './rooms/TheArchive'
 import { createCatacombsRoom } from './rooms/TheCatacombs'
 import { createLoomRoom } from './rooms/TheLoom'
 import { createRootsRoom } from './rooms/TheRoots'
+import { createOssuaryRoom } from './rooms/TheOssuary'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -341,13 +342,22 @@ roomManager.addRoom(createGardenRoom({
 roomManager.addRoom(createArchiveRoom({
   onDescend: () => roomManager.switchTo('catacombs'),
 }))
-roomManager.addRoom(createCatacombsRoom(() => roomManager.switchTo('archive')))
+roomManager.addRoom(createCatacombsRoom({
+  onReturn: () => roomManager.switchTo('archive'),
+  onOssuary: () => roomManager.switchTo('ossuary'),
+}))
 roomManager.addRoom(createLoomRoom({
   getMemories: () => journal.getMemories(),
 }))
 roomManager.addRoom(createRootsRoom({
   getMemories: () => journal.getMemories(),
   onAscend: () => roomManager.switchTo('garden'),
+  onDeeper: () => roomManager.switchTo('ossuary'),
+}))
+roomManager.addRoom(createOssuaryRoom({
+  getMemories: () => journal.getMemories(),
+  toRoots: () => roomManager.switchTo('roots'),
+  toCatacombs: () => roomManager.switchTo('catacombs'),
 }))
 
 // Wire room checks — features only fire in the right room

@@ -116,7 +116,12 @@ const LAYERS: CatacombLayer[] = [
   },
 ]
 
-export function createCatacombsRoom(onReturn: () => void): Room {
+interface CatacombsDeps {
+  onReturn: () => void
+  onOssuary?: () => void
+}
+
+export function createCatacombsRoom(deps: CatacombsDeps): Room {
   let overlay: HTMLElement | null = null
   let active = false
   let autoScrollId: number | null = null
@@ -294,8 +299,30 @@ export function createCatacombsRoom(onReturn: () => void): Room {
       returnLink.addEventListener('mouseleave', () => {
         returnLink.style.color = 'rgba(180, 160, 120, 0.15)'
       })
-      returnLink.addEventListener('click', onReturn)
+      returnLink.addEventListener('click', deps.onReturn)
       bottom.appendChild(returnLink)
+
+      // Ossuary link
+      if (deps.onOssuary) {
+        const ossuaryLink = document.createElement('div')
+        ossuaryLink.style.cssText = `
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 11px;
+          color: rgba(220, 210, 190, 0.08);
+          letter-spacing: 2px;
+          cursor: pointer;
+          transition: color 0.5s ease;
+        `
+        ossuaryLink.textContent = '→ the ossuary'
+        ossuaryLink.addEventListener('mouseenter', () => {
+          ossuaryLink.style.color = 'rgba(220, 210, 190, 0.3)'
+        })
+        ossuaryLink.addEventListener('mouseleave', () => {
+          ossuaryLink.style.color = 'rgba(220, 210, 190, 0.08)'
+        })
+        ossuaryLink.addEventListener('click', deps.onOssuary)
+        bottom.appendChild(ossuaryLink)
+      }
 
       overlay.appendChild(bottom)
 
