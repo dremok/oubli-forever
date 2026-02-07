@@ -39,6 +39,7 @@ interface Memory {
 
 interface DatePaintingsDeps {
   getMemories: () => Memory[]
+  switchTo?: (name: string) => void
 }
 
 const STORAGE_KEY = 'oubli-date-paintings'
@@ -296,6 +297,46 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
+
+      // Navigation portals — On Kawara minimalist date-like labels at bottom
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'clocktower', label: 'JAN.1,∞ — clocktower', color: '200, 190, 170' },
+          { name: 'library', label: 'FEB.29,— — library', color: '180, 180, 200' },
+          { name: 'archive', label: 'DEC.31,0 — archive', color: '160, 150, 140' },
+        ]
+        const totalW = portalData.length
+        for (let i = 0; i < portalData.length; i++) {
+          const p = portalData[i]
+          const el = document.createElement('div')
+          const leftPct = ((i + 0.5) / totalW) * 100
+          el.style.cssText = `
+            position: absolute; bottom: 22px; left: ${leftPct}%;
+            transform: translateX(-50%);
+            pointer-events: auto; cursor: pointer;
+            font-family: monospace;
+            font-size: 7px; letter-spacing: 2px;
+            color: rgba(${p.color}, 0.05);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 6px 10px; z-index: 10;
+          `
+          el.textContent = p.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.4)`
+            el.style.textShadow = `0 0 8px rgba(${p.color}, 0.12)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.05)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
+
       return overlay
     },
 

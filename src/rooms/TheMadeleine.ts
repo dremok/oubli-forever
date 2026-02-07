@@ -37,6 +37,7 @@ interface Memory {
 
 interface MadeleineDeps {
   getMemories: () => Memory[]
+  switchTo?: (name: string) => void
 }
 
 interface Trigger {
@@ -439,6 +440,44 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
+
+      // Navigation portals — floating sensory words at edges (Proustian)
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'seance', label: 'a voice in the dark', color: '180, 160, 220', pos: 'top: 60px; left: 16px;' },
+          { name: 'oracle', label: 'the taste of fate', color: '220, 190, 130', pos: 'top: 60px; right: 16px;' },
+          { name: 'projection', label: 'flickering light', color: '200, 180, 140', pos: 'bottom: 50px; left: 16px;' },
+          { name: 'garden', label: 'wet earth and bloom', color: '130, 180, 130', pos: 'bottom: 50px; right: 16px;' },
+          { name: 'rememory', label: 'something half-remembered', color: '180, 160, 180', pos: 'bottom: 50px; left: 50%; transform: translateX(-50%);' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-style: italic; font-size: 9px;
+            color: rgba(${p.color}, 0.05);
+            transition: color 0.6s ease, text-shadow 0.6s ease;
+            padding: 6px 10px; z-index: 10;
+          `
+          el.textContent = p.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.45)`
+            el.style.textShadow = `0 0 14px rgba(${p.color}, 0.18)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.05)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
+
       return overlay
     },
 

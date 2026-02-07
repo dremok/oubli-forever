@@ -20,6 +20,10 @@
 
 import type { Room } from './RoomManager'
 
+interface CipherDeps {
+  switchTo?: (name: string) => void
+}
+
 const STORAGE_KEY = 'oubli-cipher-progress'
 
 interface CipherPuzzle {
@@ -104,7 +108,7 @@ function decrypt(text: string, shift: number): string {
   return encrypt(text, 26 - shift)
 }
 
-export function createCipherRoom(): Room {
+export function createCipherRoom(deps?: CipherDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -117,6 +121,15 @@ export function createCipherRoom(): Room {
   let currentPuzzle = 0
   let solved = false
   let solvedFlash = 0
+  let hoveredNav = -1
+
+  // Encoded text links — cryptographic aesthetic
+  const navPoints = [
+    { label: '[73:74:75:64:79]', decoded: 'study', room: 'study', xFrac: 0.04, yFrac: 0.06 },
+    { label: '[70:65:6e:64]', decoded: 'pendulum', room: 'pendulum', xFrac: 0.96, yFrac: 0.06 },
+    { label: '[6c:69:62]', decoded: 'library', room: 'library', xFrac: 0.04, yFrac: 0.95 },
+    { label: '[6c:61:62]', decoded: 'labyrinth', room: 'labyrinth', xFrac: 0.96, yFrac: 0.95 },
+  ]
 
   function loadProgress() {
     try {
@@ -300,11 +313,31 @@ export function createCipherRoom(): Room {
       }
     }
 
+    // Navigation portals — encoded text links
+    if (deps?.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.35 : 0.06
+        ctx.font = '8px monospace'
+        ctx.fillStyle = `rgba(200, 180, 140, ${a})`
+        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.font = '9px "Cormorant Garamond", serif'
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.25)'
+          ctx.fillText(np.decoded, nx, ny + 13)
+        }
+      }
+    }
+
     // Controls hint
     ctx.font = '9px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.04)'
     ctx.textAlign = 'center'
-    ctx.fillText('← → or click arrows to shift · each cipher hides a fragment of the creation myth', w / 2, h - 8)
+    ctx.fillText('\u2190 \u2192 or click arrows to shift \u00b7 each cipher hides a fragment of the creation myth', w / 2, h - 8)
 
     // Stats
     ctx.font = '9px monospace'
@@ -396,6 +429,36 @@ export function createCipherRoom(): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', handleClick)
+
+      // Navigation portal click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            deps.switchTo(navPoints[i].room)
+            return
+          }
+        }
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
+      })
+
       window.addEventListener('keydown', handleKey)
 
       const onResize = () => {

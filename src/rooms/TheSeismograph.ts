@@ -18,6 +18,10 @@
 
 import type { Room } from './RoomManager'
 
+interface SeismographDeps {
+  switchTo?: (name: string) => void
+}
+
 interface Quake {
   lat: number
   lon: number
@@ -34,7 +38,7 @@ interface Quake {
 
 const FEED_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'
 
-export function createSeismographRoom(): Room {
+export function createSeismographRoom(deps?: SeismographDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -48,6 +52,13 @@ export function createSeismographRoom(): Room {
   let selectedQuake: Quake | null = null
   let fetchError = false
   let loading = true
+  let hoveredNav = -1
+
+  const navPoints = [
+    { label: 'STN:AUT', room: 'automaton', xFrac: 0.03, yFrac: 0.97 },
+    { label: 'STN:AST', room: 'asteroids', xFrac: 0.5, yFrac: 0.97 },
+    { label: 'STN:WVN', room: 'weathervane', xFrac: 0.97, yFrac: 0.97 },
+  ]
 
   // Simple equirectangular projection
   function latLonToScreen(lat: number, lon: number, w: number, h: number): [number, number] {
@@ -342,6 +353,26 @@ export function createSeismographRoom(): Room {
       ctx.fillText('the earth is silent. (connection failed)', w / 2, h / 2)
     }
 
+    // Navigation portals — station codes on readout
+    if (deps?.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.4 : 0.08
+        ctx.font = '8px monospace'
+        ctx.fillStyle = `rgba(40, 255, 80, ${a})`
+        ctx.textAlign = np.xFrac < 0.3 ? 'left' : np.xFrac > 0.7 ? 'right' : 'center'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.strokeStyle = `rgba(40, 255, 80, 0.2)`
+          ctx.lineWidth = 0.5
+          ctx.strokeRect(nx - (np.xFrac < 0.3 ? 3 : np.xFrac > 0.7 ? 52 : 24), ny - 10, 55, 14)
+        }
+      }
+    }
+
     // Depth legend
     ctx.font = '8px monospace'
     ctx.textAlign = 'right'
@@ -415,6 +446,35 @@ export function createSeismographRoom(): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', handleClick)
+
+      // Navigation portal click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            deps.switchTo(navPoints[i].room)
+            return
+          }
+        }
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
+      })
 
       const onResize = () => {
         if (canvas) {

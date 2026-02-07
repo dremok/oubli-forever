@@ -40,6 +40,7 @@ interface Memory {
 interface DisintegrationDeps {
   getMemories: () => Memory[]
   accelerateDegradation: (id: string, amount: number) => void
+  switchTo?: (name: string) => void
 }
 
 interface TapeLoop {
@@ -422,6 +423,42 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
+
+      // Navigation portals — styled as tape transport buttons
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'furnace', label: '⏪ FURNACE', color: '200, 140, 80', pos: 'bottom: 60px; left: 24px;' },
+          { name: 'radio', label: '⏩ RADIO', color: '160, 180, 200', pos: 'bottom: 60px; right: 24px;' },
+          { name: 'projection', label: '⏏ PROJECTION', color: '200, 180, 140', pos: 'bottom: 60px; left: 50%; transform: translateX(-50%);' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: monospace;
+            font-size: 8px; letter-spacing: 3px;
+            color: rgba(${p.color}, 0.06);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 6px 10px; z-index: 10;
+          `
+          el.textContent = p.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.45)`
+            el.style.textShadow = `0 0 12px rgba(${p.color}, 0.15)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.06)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
+
       return overlay
     },
 

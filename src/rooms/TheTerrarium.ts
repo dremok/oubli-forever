@@ -46,6 +46,7 @@ interface Food {
 
 interface TerrariumDeps {
   onGarden?: () => void // passage to the garden
+  switchTo?: (name: string) => void
 }
 
 export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
@@ -65,6 +66,13 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let maxGeneration = 0
   let gardenLink: HTMLElement | null = null
   let gardenLinkVisible = false
+  let hoveredPortal = -1
+
+  const terrariumPortals = [
+    { label: 'garden', room: 'garden' },
+    { label: 'automaton', room: 'automaton' },
+    { label: 'choir', room: 'choir' },
+  ]
 
   function init() {
     if (!canvas) return
@@ -382,6 +390,23 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       gardenLink.style.pointerEvents = 'auto'
     }
 
+    // Portal labels on glass edges
+    if (deps.switchTo) {
+      const portalPositions = [
+        { x: 25, y: h / 2, align: 'left' as CanvasTextAlign },
+        { x: w / 2, y: 28, align: 'center' as CanvasTextAlign },
+        { x: w - 25, y: h / 2, align: 'right' as CanvasTextAlign },
+      ]
+      for (let i = 0; i < terrariumPortals.length; i++) {
+        const pp = portalPositions[i]
+        const hovered = hoveredPortal === i
+        ctx.font = '8px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(120, 160, 120, ${hovered ? 0.3 : 0.05})`
+        ctx.textAlign = pp.align
+        ctx.fillText(terrariumPortals[i].label, pp.x, pp.y)
+      }
+    }
+
     // Hint
     ctx.font = '9px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(120, 160, 120, 0.04)'
@@ -390,6 +415,26 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   }
 
   function handleClick(e: MouseEvent) {
+    // Check portal clicks first
+    if (deps.switchTo && canvas) {
+      const w = canvas.width
+      const h = canvas.height
+      const portalPositions = [
+        { x: 25, y: h / 2 },
+        { x: w / 2, y: 28 },
+        { x: w - 25, y: h / 2 },
+      ]
+      for (let i = 0; i < terrariumPortals.length; i++) {
+        const pp = portalPositions[i]
+        const dx = e.clientX - pp.x
+        const dy = e.clientY - pp.y
+        if (Math.abs(dx) < 40 && Math.abs(dy) < 15) {
+          deps.switchTo(terrariumPortals[i].room)
+          return
+        }
+      }
+    }
+
     // Click to drop food
     food.push({
       x: e.clientX,
@@ -419,6 +464,25 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', handleClick)
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredPortal = -1
+        const cw = canvas.width
+        const ch = canvas.height
+        const portalPositions = [
+          { x: 25, y: ch / 2 },
+          { x: cw / 2, y: 28 },
+          { x: cw - 25, y: ch / 2 },
+        ]
+        for (let i = 0; i < terrariumPortals.length; i++) {
+          const pp = portalPositions[i]
+          if (Math.abs(e.clientX - pp.x) < 40 && Math.abs(e.clientY - pp.y) < 15) {
+            hoveredPortal = i
+            break
+          }
+        }
+      })
 
       const onResize = () => {
         if (canvas) {

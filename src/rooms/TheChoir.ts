@@ -20,6 +20,10 @@
 import type { Room } from './RoomManager'
 import { getAudioContext } from '../sound/AudioBus'
 
+interface ChoirDeps {
+  switchTo?: (name: string) => void
+}
+
 interface Voice {
   x: number
   y: number
@@ -33,7 +37,7 @@ interface Voice {
   alpha: number
 }
 
-export function createChoirRoom(): Room {
+export function createChoirRoom(deps?: ChoirDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -46,6 +50,14 @@ export function createChoirRoom(): Room {
   let masterGain: GainNode | null = null
   let reverb: ConvolverNode | null = null
   let totalVoices = 0
+  let hoveredNav = -1
+
+  // Voice part labels — choral aesthetic
+  const navPoints = [
+    { label: 'soprano \u266a instrument', room: 'instrument', xFrac: 0.5, yFrac: 0.04 },
+    { label: 'alto \u266a terrarium', room: 'terrarium', xFrac: 0.04, yFrac: 0.5 },
+    { label: 'bass \u266a s\u00e9ance', room: 'seance', xFrac: 0.96, yFrac: 0.5 },
+  ]
 
   // Create a simple reverb impulse response
   function createReverbIR(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
@@ -285,11 +297,32 @@ export function createChoirRoom(): Room {
     ctx.fillText('low ↓', w - 12, h * 0.85)
     ctx.fillText('← warm · bright →', w - 12, h - 18)
 
+    // Navigation portals — voice part labels
+    if (deps?.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.3 : 0.05
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 180, 255, ${a})`
+        ctx.textAlign = np.xFrac < 0.2 ? 'left' : np.xFrac > 0.8 ? 'right' : 'center'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = 'rgba(200, 180, 255, 0.15)'
+          ctx.beginPath()
+          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
+
     // Hint
     ctx.font = '9px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(200, 180, 255, 0.04)'
     ctx.textAlign = 'center'
-    ctx.fillText('click to add a voice · position determines pitch and timbre', w / 2, h - 8)
+    ctx.fillText('click to add a voice \u00b7 position determines pitch and timbre', w / 2, h - 8)
   }
 
   return {
@@ -311,7 +344,34 @@ export function createChoirRoom(): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', (e) => {
+        // Check portal clicks first
+        if (deps?.switchTo && canvas) {
+          for (let i = 0; i < navPoints.length; i++) {
+            const nx = canvas.width * navPoints[i].xFrac
+            const ny = canvas.height * navPoints[i].yFrac
+            const dx = e.clientX - nx
+            const dy = e.clientY - ny
+            if (dx * dx + dy * dy < 600) {
+              deps.switchTo(navPoints[i].room)
+              return
+            }
+          }
+        }
         addVoice(e.clientX, e.clientY)
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
       })
 
       const onResize = () => {

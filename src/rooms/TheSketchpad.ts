@@ -26,7 +26,11 @@ interface Stroke {
   birth: number
 }
 
-export function createSketchpadRoom(): Room {
+interface SketchpadDeps {
+  switchTo?: (name: string) => void
+}
+
+export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -40,6 +44,13 @@ export function createSketchpadRoom(): Room {
   let brushWidth = 2
   let drawing = false
   let totalStrokes = 0
+  let hoveredLink = -1
+
+  const sketchLinks = [
+    { label: 'darkroom', room: 'darkroom' },
+    { label: 'pendulum', room: 'pendulum' },
+    { label: 'loom', room: 'loom' },
+  ]
 
   const FADE_TIME = 60 // seconds before stroke fully fades
 
@@ -144,6 +155,20 @@ export function createSketchpadRoom(): Room {
     c.fillText(`hue: ${drawHue}`, w - 12, h - 30)
     c.fillText(`width: ${brushWidth}`, w - 12, h - 18)
 
+    // Navigation links (bottom corners)
+    if (deps.switchTo) {
+      const linkY = h - 50
+      const positions = [20, w / 2, w - 20]
+      const aligns: CanvasTextAlign[] = ['left', 'center', 'right']
+      for (let i = 0; i < sketchLinks.length; i++) {
+        const hovered = hoveredLink === i
+        c.font = '8px "Cormorant Garamond", serif'
+        c.fillStyle = `rgba(180, 160, 200, ${hovered ? 0.25 : 0.04})`
+        c.textAlign = aligns[i]
+        c.fillText(sketchLinks[i].label, positions[i], linkY)
+      }
+    }
+
     // Hint
     c.font = '9px "Cormorant Garamond", serif'
     c.fillStyle = 'rgba(180, 160, 200, 0.04)'
@@ -201,10 +226,33 @@ export function createSketchpadRoom(): Room {
 
       // Mouse events
       canvas.addEventListener('mousedown', (e) => {
+        // Check navigation links
+        if (deps.switchTo && canvas) {
+          const linkY = canvas.height - 50
+          const positions = [20, canvas.width / 2, canvas.width - 20]
+          for (let i = 0; i < sketchLinks.length; i++) {
+            if (Math.abs(e.clientY - linkY) < 12 && Math.abs(e.clientX - positions[i]) < 40) {
+              deps.switchTo(sketchLinks[i].room)
+              return
+            }
+          }
+        }
         startStroke(e.clientX, e.clientY)
       })
       canvas.addEventListener('mousemove', (e) => {
         if (drawing) addPoint(e.clientX, e.clientY)
+        // Hover for links
+        if (canvas) {
+          hoveredLink = -1
+          const linkY = canvas.height - 50
+          const positions = [20, canvas.width / 2, canvas.width - 20]
+          for (let i = 0; i < sketchLinks.length; i++) {
+            if (Math.abs(e.clientY - linkY) < 12 && Math.abs(e.clientX - positions[i]) < 40) {
+              hoveredLink = i
+              break
+            }
+          }
+        }
       })
       canvas.addEventListener('mouseup', () => endStroke())
       canvas.addEventListener('mouseleave', () => endStroke())

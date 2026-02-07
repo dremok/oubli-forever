@@ -19,6 +19,10 @@
 
 import type { Room } from './RoomManager'
 
+interface PendulumDeps {
+  switchTo?: (name: string) => void
+}
+
 interface PendulumState {
   freq: number
   phase: number
@@ -26,7 +30,7 @@ interface PendulumState {
   decay: number
 }
 
-export function createPendulumRoom(): Room {
+export function createPendulumRoom(deps?: PendulumDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -34,6 +38,15 @@ export function createPendulumRoom(): Room {
   let frameId = 0
   let time = 0
   let traceTime = 0
+  let hoveredNav = -1
+
+  // Directional markers on the floor — N/S/E/W compass-style
+  const navPoints = [
+    { label: 'N \u2191 instrument', room: 'instrument', xFrac: 0.5, yFrac: 0.04 },
+    { label: 'S \u2193 clocktower', room: 'clocktower', xFrac: 0.5, yFrac: 0.97 },
+    { label: 'W \u2190 automaton', room: 'automaton', xFrac: 0.03, yFrac: 0.5 },
+    { label: 'E \u2192 cipher', room: 'cipher', xFrac: 0.97, yFrac: 0.5 },
+  ]
 
   // Two pendulums for X, two for Y (full harmonograph has 4)
   let pendulums: PendulumState[] = []
@@ -181,6 +194,27 @@ export function createPendulumRoom(): Room {
       ctx.fillText('scroll to adjust decay', w - 12, h - 18)
     }
 
+    // Navigation portals — directional markers on the floor
+    if (deps?.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.3 : 0.05
+        ctx.font = '8px monospace'
+        ctx.fillStyle = `rgba(180, 160, 200, ${a})`
+        ctx.textAlign = np.xFrac < 0.2 ? 'left' : np.xFrac > 0.8 ? 'right' : 'center'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = 'rgba(180, 160, 200, 0.12)'
+          ctx.beginPath()
+          ctx.arc(nx, ny - 3, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
+
     // Hint
     ctx.font = '9px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 160, 200, 0.04)'
@@ -209,6 +243,35 @@ export function createPendulumRoom(): Room {
       // Click to randomize
       canvas.addEventListener('click', () => {
         randomize()
+      })
+
+      // Navigation portal click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            deps.switchTo(navPoints[i].room)
+            return
+          }
+        }
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
       })
 
       // Scroll to adjust fade speed (decay visibility)

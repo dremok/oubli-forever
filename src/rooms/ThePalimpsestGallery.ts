@@ -36,6 +36,7 @@ interface Memory {
 
 interface PalimpsestGalleryDeps {
   getMemories: () => Memory[]
+  switchTo?: (name: string) => void
 }
 
 interface Artwork {
@@ -349,6 +350,46 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
+
+      // Navigation portals — small gallery placard text
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'darkroom', label: 'Gallery A — The Darkroom', color: '200, 180, 140', pos: 'bottom: 40px; left: 20px;' },
+          { name: 'loom', label: 'Gallery B — The Loom', color: '180, 170, 160', pos: 'bottom: 40px; left: 50%; transform: translateX(-50%);' },
+          { name: 'archive', label: 'Gallery C — The Archive', color: '160, 160, 180', pos: 'bottom: 40px; right: 20px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 8px; letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: rgba(${p.color}, 0.05);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 5px 10px; z-index: 10;
+            border-bottom: 1px solid rgba(${p.color}, 0.03);
+          `
+          el.textContent = p.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.4)`
+            el.style.textShadow = `0 0 8px rgba(${p.color}, 0.1)`
+            el.style.borderBottomColor = `rgba(${p.color}, 0.15)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.05)`
+            el.style.textShadow = 'none'
+            el.style.borderBottomColor = `rgba(${p.color}, 0.03)`
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
+
       return overlay
     },
 

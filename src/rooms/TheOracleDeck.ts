@@ -19,6 +19,10 @@
 
 import type { Room } from './RoomManager'
 
+interface OracleDeckDeps {
+  switchTo?: (name: string) => void
+}
+
 const STORAGE_KEY = 'oubli-oracle-draws'
 
 interface Card {
@@ -113,7 +117,7 @@ function generateDeck(): Card[] {
   return deck
 }
 
-export function createOracleDeckRoom(): Room {
+export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -127,6 +131,14 @@ export function createOracleDeckRoom(): Room {
   let drawing = false
   let totalDraws = 0
   let deckIndex = 0
+  let hoveredNav = -1
+
+  // Tarot/divination arcana labels
+  const navPoints = [
+    { label: '\u2660 the s\u00e9ance', room: 'seance', xFrac: 0.5, yFrac: 0.04 },
+    { label: '\u2666 the madeleine', room: 'madeleine', xFrac: 0.04, yFrac: 0.5 },
+    { label: '\u2663 the library', room: 'library', xFrac: 0.96, yFrac: 0.5 },
+  ]
 
   function loadProgress() {
     try {
@@ -370,6 +382,27 @@ export function createOracleDeckRoom(): Room {
     ctx.textAlign = 'center'
     ctx.fillText(`${78 - deckIndex} cards remaining`, w / 2, h * 0.92)
 
+    // Navigation portals — card suit symbols
+    if (deps?.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.3 : 0.06
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 180, 220, ${a})`
+        ctx.textAlign = np.xFrac < 0.2 ? 'left' : np.xFrac > 0.8 ? 'right' : 'center'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = 'rgba(200, 180, 220, 0.15)'
+          ctx.beginPath()
+          ctx.arc(nx, ny + 6, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
+
     // Draw prompt
     if (!drawing) {
       ctx.font = '12px "Cormorant Garamond", serif'
@@ -409,7 +442,36 @@ export function createOracleDeckRoom(): Room {
       canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
       ctx = canvas.getContext('2d')
 
-      canvas.addEventListener('click', () => drawCard())
+      canvas.addEventListener('click', (e) => {
+        // Check portal clicks first
+        if (deps?.switchTo && canvas) {
+          for (let i = 0; i < navPoints.length; i++) {
+            const nx = canvas.width * navPoints[i].xFrac
+            const ny = canvas.height * navPoints[i].yFrac
+            const dx = e.clientX - nx
+            const dy = e.clientY - ny
+            if (dx * dx + dy * dy < 600) {
+              deps.switchTo(navPoints[i].room)
+              return
+            }
+          }
+        }
+        drawCard()
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
+      })
 
       const onResize = () => {
         if (canvas) {

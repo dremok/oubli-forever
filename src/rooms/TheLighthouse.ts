@@ -53,6 +53,7 @@ const AUTO_MESSAGES = [
 
 interface LighthouseDeps {
   onDescend?: () => void // navigate to tide pool
+  switchTo?: (name: string) => void
 }
 
 export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
@@ -77,6 +78,13 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
   let transmitCount = 0
   let shoreLink: HTMLElement | null = null
   let shoreLinkVisible = false
+  let hoveredSignal = -1
+
+  const signals = [
+    { label: 'radio', room: 'radio', xFrac: 0.15 },
+    { label: 'tidepool', room: 'tidepool', xFrac: 0.5 },
+    { label: 'satellite', room: 'satellite', xFrac: 0.85 },
+  ]
 
   // Morse timing (in frames at 60fps)
   const DOT_DURATION = 8
@@ -341,6 +349,27 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       ctx.fillText('type a message, press enter to transmit', w / 2, h * 0.92)
     }
 
+    // Signal navigation on horizon
+    if (deps.switchTo) {
+      for (let i = 0; i < signals.length; i++) {
+        const sg = signals[i]
+        const sx = w * sg.xFrac
+        const sy = horizonY - 5
+        const hovered = hoveredSignal === i
+        // Distant signal blink
+        const blink = Math.sin(time * 3 + i * 2) > 0.5
+        ctx.beginPath()
+        ctx.arc(sx, sy, hovered ? 4 : 2, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(255, 250, 200, ${hovered ? 0.3 : (blink ? 0.08 : 0.02)})`
+        ctx.fill()
+        // Label
+        ctx.font = '7px monospace'
+        ctx.fillStyle = `rgba(255, 250, 200, ${hovered ? 0.25 : 0.03})`
+        ctx.textAlign = 'center'
+        ctx.fillText(sg.label, sx, sy - 10)
+      }
+    }
+
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(255, 250, 200, ${0.06 + Math.sin(time * 0.3) * 0.02})`
@@ -407,6 +436,38 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       ctx = canvas.getContext('2d')
 
       window.addEventListener('keydown', handleKey)
+
+      // Signal click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps.switchTo || !canvas) return
+        const horizonY = canvas.height * 0.65
+        for (let i = 0; i < signals.length; i++) {
+          const sx = canvas.width * signals[i].xFrac
+          const sy = horizonY - 5
+          const dx = e.clientX - sx
+          const dy = e.clientY - sy
+          if (dx * dx + dy * dy < 400) {
+            deps.switchTo(signals[i].room)
+            return
+          }
+        }
+      })
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        hoveredSignal = -1
+        const horizonY = canvas.height * 0.65
+        for (let i = 0; i < signals.length; i++) {
+          const sx = canvas.width * signals[i].xFrac
+          const sy = horizonY - 5
+          const dx = e.clientX - sx
+          const dy = e.clientY - sy
+          if (dx * dx + dy * dy < 400) {
+            hoveredSignal = i
+            break
+          }
+        }
+      })
 
       const onResize = () => {
         if (canvas) {

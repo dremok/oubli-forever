@@ -384,6 +384,7 @@ roomManager.addRoom(createGardenRoom({
 }))
 roomManager.addRoom(createArchiveRoom({
   onDescend: () => roomManager.switchTo('catacombs'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createCatacombsRoom({
   onReturn: () => roomManager.switchTo('archive'),
@@ -439,17 +440,21 @@ roomManager.addRoom(createMirrorRoom({
   getMemories: () => journal.getMemories(),
   getRoomVisits: () => roomManager.getRoomVisits(),
 }))
-roomManager.addRoom(createAutomatonRoom())
-roomManager.addRoom(createSeismographRoom())
-roomManager.addRoom(createPendulumRoom())
-roomManager.addRoom(createCipherRoom())
+roomManager.addRoom(createAutomatonRoom({ switchTo: (name) => roomManager.switchTo(name) }))
+roomManager.addRoom(createSeismographRoom({ switchTo: (name) => roomManager.switchTo(name) }))
+roomManager.addRoom(createPendulumRoom({ switchTo: (name) => roomManager.switchTo(name) }))
+roomManager.addRoom(createCipherRoom({ switchTo: (name) => roomManager.switchTo(name) }))
 roomManager.addRoom(createTerrariumRoom({
   onGarden: () => roomManager.switchTo('garden'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createLighthouseRoom({
   onDescend: () => roomManager.switchTo('tidepool'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
-roomManager.addRoom(createSketchpadRoom())
+roomManager.addRoom(createSketchpadRoom({
+  switchTo: (name) => roomManager.switchTo(name),
+}))
 roomManager.addRoom(createWeathervaneRoom({
   switchTo: (name) => roomManager.switchTo(name),
 }))
@@ -458,8 +463,8 @@ roomManager.addRoom(createCartographerRoom({
   getActiveRoom: () => roomManager.getActiveRoom(),
   getRoomVisits: () => roomManager.getRoomVisits(),
 }))
-roomManager.addRoom(createChoirRoom())
-roomManager.addRoom(createOracleDeckRoom())
+roomManager.addRoom(createChoirRoom({ switchTo: (name) => roomManager.switchTo(name) }))
+roomManager.addRoom(createOracleDeckRoom({ switchTo: (name) => roomManager.switchTo(name) }))
 roomManager.addRoom(createLabyrinthRoom({
   onExit: () => {
     // Labyrinth exit leads to a random hidden room
@@ -485,15 +490,19 @@ roomManager.addRoom(createAsteroidFieldRoom({
 roomManager.addRoom(createDisintegrationLoopsRoom({
   getMemories: () => journal.getMemories(),
   accelerateDegradation: (id, amount) => journal.accelerateDegradation(id, amount),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createProjectionRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createDatePaintingsRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createMadeleineRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createLibraryRoom({
   getMemories: () => journal.getMemories(),
@@ -501,9 +510,11 @@ roomManager.addRoom(createLibraryRoom({
 }))
 roomManager.addRoom(createPalimpsestGalleryRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createRememoryRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 
 // Wire room checks — features only fire in the right room

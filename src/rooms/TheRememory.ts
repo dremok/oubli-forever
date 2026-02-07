@@ -38,6 +38,7 @@ interface Memory {
 
 interface RememoryDeps {
   getMemories: () => Memory[]
+  switchTo?: (name: string) => void
 }
 
 type MemoryState = 'document' | 'trace' | 'ghost'
@@ -335,6 +336,42 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
+
+      // Navigation portals — state transition labels (document/trace/ghost themed)
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'madeleine', label: 'DOCUMENT → madeleine', color: '240, 235, 225', pos: 'bottom: 40px; left: 20px;' },
+          { name: 'projection', label: 'TRACE → projection', color: '220, 190, 130', pos: 'bottom: 40px; left: 50%; transform: translateX(-50%);' },
+          { name: 'seance', label: 'GHOST → séance', color: '180, 160, 220', pos: 'bottom: 40px; right: 20px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: monospace;
+            font-size: 7px; letter-spacing: 2px;
+            color: rgba(${p.color}, 0.05);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 6px 10px; z-index: 10;
+          `
+          el.textContent = p.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.4)`
+            el.style.textShadow = `0 0 10px rgba(${p.color}, 0.15)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.05)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
+
       return overlay
     },
 

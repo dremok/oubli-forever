@@ -56,6 +56,7 @@ function formatTimestamp(ts: string): string {
 
 interface ArchiveDeps {
   onDescend?: () => void
+  switchTo?: (name: string) => void
 }
 
 export function createArchiveRoom(deps?: ArchiveDeps): Room {
@@ -326,6 +327,37 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       `
       hint.textContent = '~38% of web pages from 2013 no longer exist. what did they hold?'
       overlay.appendChild(hint)
+
+      // Passage links to connected rooms
+      if (deps?.switchTo) {
+        const passageRow = document.createElement('div')
+        passageRow.style.cssText = `
+          display: flex; gap: 16px; justify-content: center;
+          width: 480px; max-width: 90vw; margin-bottom: 20px;
+        `
+        const passages = [
+          { label: 'library', room: 'library' },
+          { label: 'cartographer', room: 'cartographer' },
+          { label: 'gallery', room: 'palimpsestgallery' },
+          { label: 'date paintings', room: 'datepaintings' },
+        ]
+        for (const p of passages) {
+          const link = document.createElement('span')
+          link.style.cssText = `
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 10px; font-style: italic;
+            color: rgba(180, 160, 120, 0.1);
+            cursor: pointer; transition: color 0.3s ease;
+            letter-spacing: 1px;
+          `
+          link.textContent = p.label
+          link.addEventListener('mouseenter', () => { link.style.color = 'rgba(180, 160, 120, 0.4)' })
+          link.addEventListener('mouseleave', () => { link.style.color = 'rgba(180, 160, 120, 0.1)' })
+          link.addEventListener('click', () => deps.switchTo!(p.room))
+          passageRow.appendChild(link)
+        }
+        overlay.appendChild(passageRow)
+      }
 
       // Hidden descent link — appears after 2+ searches
       const descent = document.createElement('div')

@@ -23,6 +23,10 @@
 
 import type { Room } from './RoomManager'
 
+interface AutomatonDeps {
+  switchTo?: (name: string) => void
+}
+
 const PATTERNS = {
   glider: [[0,1],[1,2],[2,0],[2,1],[2,2]],
   blinker: [[1,0],[1,1],[1,2]],
@@ -42,7 +46,7 @@ const PATTERNS = {
   ],
 }
 
-export function createAutomatonRoom(): Room {
+export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -53,6 +57,13 @@ export function createAutomatonRoom(): Room {
   let speed = 8 // frames between updates (lower = faster)
   let frameCount = 0
   let paused = false
+  let hoveredNav = -1
+
+  const navPoints = [
+    { label: '\u2699 terrarium', room: 'terrarium', xFrac: 0.07, yFrac: 0.06 },
+    { label: '\u2699 seismograph', room: 'seismograph', xFrac: 0.93, yFrac: 0.06 },
+    { label: '\u2699 pendulum', room: 'pendulum', xFrac: 0.07, yFrac: 0.94 },
+  ]
 
   let cols = 0
   let rows = 0
@@ -216,6 +227,27 @@ export function createAutomatonRoom(): Room {
     ctx.textAlign = 'center'
     ctx.fillText('click to seed life · scroll to change speed · space to pause · r to reset', w / 2, h - 8)
 
+    // Navigation portals — gear/cog labels
+    if (deps?.switchTo) {
+      for (let i = 0; i < navPoints.length; i++) {
+        const np = navPoints[i]
+        const nx = w * np.xFrac
+        const ny = h * np.yFrac
+        const hovered = hoveredNav === i
+        const a = hovered ? 0.35 : 0.06
+        ctx.font = '9px monospace'
+        ctx.fillStyle = `rgba(180, 160, 200, ${a})`
+        ctx.textAlign = np.xFrac < 0.5 ? 'left' : 'right'
+        ctx.fillText(np.label, nx, ny)
+        if (hovered) {
+          ctx.fillStyle = 'rgba(180, 160, 200, 0.15)'
+          ctx.beginPath()
+          ctx.arc(nx + (np.xFrac < 0.5 ? -8 : 8), ny - 3, 4, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
+
     // Auto-reseed if everything dies
     if (liveCells === 0 && !paused) {
       seedRandom(0.05)
@@ -294,6 +326,35 @@ export function createAutomatonRoom(): Room {
         }
       }
       window.addEventListener('keydown', onKey)
+
+      // Navigation portal click + hover
+      canvas.addEventListener('click', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            deps.switchTo(navPoints[i].room)
+            return
+          }
+        }
+      })
+      canvas.addEventListener('mousemove', (e) => {
+        if (!deps?.switchTo || !canvas) return
+        hoveredNav = -1
+        for (let i = 0; i < navPoints.length; i++) {
+          const nx = canvas.width * navPoints[i].xFrac
+          const ny = canvas.height * navPoints[i].yFrac
+          const dx = e.clientX - nx
+          const dy = e.clientY - ny
+          if (dx * dx + dy * dy < 600) {
+            hoveredNav = i
+            break
+          }
+        }
+      })
 
       overlay.appendChild(canvas)
 
