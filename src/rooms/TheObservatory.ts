@@ -32,6 +32,7 @@ interface ObservatoryDeps {
   getCanvas: () => HTMLCanvasElement
   pauseCamera: () => void
   resumeCamera: () => void
+  switchTo?: (name: string) => void
 }
 
 export function createObservatoryRoom(deps: ObservatoryDeps): Room {
@@ -245,6 +246,44 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       // Focus panel
       focusPanel = createFocusPanel()
       document.body.appendChild(focusPanel)
+
+      // In-room navigation portals at corners
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'satellite', symbol: '\uD83D\uDEF0\uFE0F', hint: 'the satellite', color: '100, 200, 255', pos: 'top: 24px; right: 24px;' },
+          { name: 'asteroids', symbol: '\u2604', hint: 'the asteroid field', color: '200, 150, 100', pos: 'bottom: 60px; left: 24px;' },
+          { name: 'clocktower', symbol: '\u231A', hint: 'the clock tower', color: '200, 180, 140', pos: 'bottom: 60px; right: 24px;' },
+          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'top: 24px; left: 24px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300; font-size: 10px;
+            letter-spacing: 2px; text-transform: lowercase;
+            color: rgba(${p.color}, 0.06);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            text-shadow: none;
+            padding: 8px; z-index: 10;
+          `
+          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.5)`
+            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.06)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
 
       return overlay
     },

@@ -339,15 +339,21 @@ guide.show(voice.isSupported())
 const roomManager = new RoomManager()
 
 // Register rooms — Study emits new text, Instrument emits notes
-roomManager.addRoom(createVoidRoom())
-roomManager.addRoom(createStudyRoom(
-  () => journal.getMemories(),
-  (text) => processNewMemory(text),
-))
-roomManager.addRoom(createInstrumentRoom((freq, velocity) => {
-  // Instrument notes cause subtle particle pulses and color shifts
-  voidRenderer.setBeatIntensity(velocity * 0.5)
-  voidRenderer.setDriftHueShift((freq % 440) / 440)
+roomManager.addRoom(createVoidRoom({
+  switchTo: (name) => roomManager.switchTo(name),
+}))
+roomManager.addRoom(createStudyRoom({
+  getMemories: () => journal.getMemories(),
+  onNewText: (text) => processNewMemory(text),
+  switchTo: (name) => roomManager.switchTo(name),
+}))
+roomManager.addRoom(createInstrumentRoom({
+  onNote: (freq, velocity) => {
+    // Instrument notes cause subtle particle pulses and color shifts
+    voidRenderer.setBeatIntensity(velocity * 0.5)
+    voidRenderer.setDriftHueShift((freq % 440) / 440)
+  },
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createObservatoryRoom({
   getMemories: () => journal.getMemories(),
@@ -357,6 +363,7 @@ roomManager.addRoom(createObservatoryRoom({
   getCanvas: () => voidRenderer.getCanvas(),
   pauseCamera: () => voidRenderer.pauseCameraDrift(),
   resumeCamera: () => voidRenderer.resumeCameraDrift(),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createSeanceRoom({
   getMemories: () => journal.getMemories(),
@@ -364,6 +371,7 @@ roomManager.addRoom(createSeanceRoom({
     ? (text) => voidWhisper.onDream(text)
     : undefined,
   onBetween: () => roomManager.switchTo('between'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createDarkroomRoom({
   getMemories: () => journal.getMemories(),
@@ -371,6 +379,7 @@ roomManager.addRoom(createDarkroomRoom({
 roomManager.addRoom(createGardenRoom({
   getMemories: () => journal.getMemories(),
   onDescend: () => roomManager.switchTo('roots'),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createArchiveRoom({
   onDescend: () => roomManager.switchTo('catacombs'),
@@ -402,6 +411,7 @@ roomManager.addRoom(createBetweenRoom({
 roomManager.addRoom(createFurnaceRoom({
   getMemories: () => journal.getMemories(),
   accelerateDegradation: (id, amount) => journal.accelerateDegradation(id, amount),
+  switchTo: (name) => roomManager.switchTo(name),
 }))
 roomManager.addRoom(createRadioRoom({
   getMemories: () => journal.getMemories(),

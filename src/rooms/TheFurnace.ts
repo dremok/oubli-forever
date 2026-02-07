@@ -25,6 +25,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 interface FurnaceDeps {
   getMemories: () => StoredMemory[]
   accelerateDegradation: (id: string, amount: number) => void
+  switchTo?: (name: string) => void
 }
 
 interface Ember {
@@ -446,6 +447,43 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
         }
       }
       window.addEventListener('resize', onResize)
+
+      // In-room portals: fire-themed connections
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'disintegration', symbol: '\uD83C\uDFB5', hint: 'the disintegration loops', color: '200, 140, 80', pos: 'top: 30px; right: 24px;' },
+          { name: 'clocktower', symbol: '\u231A', hint: 'the clock tower', color: '200, 180, 140', pos: 'top: 30px; left: 24px;' },
+          { name: 'well', symbol: '\u2B58', hint: 'the well', color: '120, 160, 200', pos: 'bottom: 60px; right: 24px;' },
+          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300; font-size: 10px;
+            letter-spacing: 2px; text-transform: lowercase;
+            color: rgba(${p.color}, 0.06);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 8px; z-index: 10;
+          `
+          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.5)`
+            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.06)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
 
       return overlay
     },

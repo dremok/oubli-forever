@@ -41,13 +41,21 @@ After context compaction/reset:
 - Examples of what "culturally grounded" means: a room that visualizes real-time CO2 levels as rising water, a room that pulls headlines and lets them decay, a room that uses the ISS position to affect lighting, a room where AI-generated art responds to current news sentiment.
 - The goal: someone visiting Oubli should feel they are experiencing THIS moment in time, not a timeless generic art piece.
 
-## Navigation — RESTRUCTURE NEEDED
-- The simple row-of-titles tab bar is NOT enough for 40+ rooms
-- **Build a graph-based navigation** where rooms connect to each other organically
-- Every room should be reachable from every other room, but NOT directly — there should be paths, not a flat list
-- **Navigation between rooms should be innovative** — not just clicking titles. Think: walking through doors, following threads, solving puzzles, finding hidden links in the room's content
-- But it should NEVER be hard to find your way — discoverable, not frustrating
-- Create an internal room connection map before restructuring
+## Navigation — GRAPH + IN-ROOM PORTALS (Restructured)
+- The flat tab bar is GONE. Replaced by:
+  1. **Room Graph** (`src/navigation/RoomGraph.ts`): Thematic connections between all 43 rooms
+  2. **Passage Bar** (bottom): Contextual — shows only 3-6 connected rooms, back button, compass to map. This is a FALLBACK, not the primary navigation.
+  3. **In-Room Portals**: The PRIMARY way to navigate. Each room has unique, atmospheric navigation elements embedded in its content.
+- **Navigation must be DIVERSE across rooms** — never the same mechanism twice:
+  - The Void: atmospheric edge portals (symbols + hints at screen edges)
+  - Some rooms: clickable objects (bookshelves, doors, instruments)
+  - Some rooms: objectives to unlock (3 transmissions, gen 10 creatures, etc.)
+  - Some rooms: hidden triggers (keywords in séance, clicking soil in garden)
+  - Some rooms: state-based (hour changes, water level rising)
+- The passage bar exists so NO ONE gets lost, but the rich navigation is IN the rooms
+- Every surface room must be reachable within 4 hops from the void
+- Hidden rooms still require discovery through in-room actions
+- **IMPORTANT: Most rooms still LACK in-room portals.** The passage bar is contextual but still just text links. The PRIMARY navigation should be in-room elements — objects, portals, objectives, thematic triggers. Every room needs its own unique way of connecting to neighbors. This is ongoing work — keep adding in-room navigation to every room you touch.
 
 ## Room Development — DEPTH OVER BREADTH
 - **STOP adding new rooms.** There are 40+ rooms already.
@@ -71,7 +79,8 @@ After context compaction/reset:
 
 ## Architecture Quick Reference
 - Stack: Vite + TypeScript + Three.js (WebGL)
-- Rooms: RoomManager with tab bar (void, study, instrument, observatory, séance)
+- Navigation: Graph-based (`src/navigation/RoomGraph.ts`) + contextual passage bar + in-room portals
+- Rooms: RoomManager with graph navigation (43 rooms: 36 surface + 7 hidden)
 - Sound: Shared AudioContext via `src/sound/AudioBus.ts`
 - Memory: MemoryJournal with localStorage persistence
 - Room awareness: `setRoomCheck(() => roomManager.getActiveRoom())`

@@ -70,17 +70,17 @@ export class RoomManager {
       z-index: 700; pointer-events: none;
       display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
       gap: 2px 0; padding: 10px 20px 14px 20px;
-      opacity: 0.25;
-      transition: opacity 0.6s ease;
+      opacity: 0.08;
+      transition: opacity 0.8s ease;
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 12px;
+      font-weight: 300; font-size: 11px;
       letter-spacing: 2px; text-transform: lowercase;
     `
     this.passageBar.addEventListener('mouseenter', () => {
-      this.passageBar.style.opacity = '0.8'
+      this.passageBar.style.opacity = '0.65'
     })
     this.passageBar.addEventListener('mouseleave', () => {
-      this.passageBar.style.opacity = '0.25'
+      this.passageBar.style.opacity = '0.08'
     })
     document.body.appendChild(this.passageBar)
 

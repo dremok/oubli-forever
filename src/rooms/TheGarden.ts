@@ -24,6 +24,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 interface GardenDeps {
   getMemories: () => StoredMemory[]
   onDescend?: () => void
+  switchTo?: (name: string) => void
 }
 
 interface Plant {
@@ -489,6 +490,43 @@ export function createGardenRoom(deps: GardenDeps): Room {
         }
       }
       window.addEventListener('resize', onResize)
+
+      // In-room navigation: organic elements at edges
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'terrarium', symbol: '\uD83E\uDD8E', hint: 'the terrarium', color: '120, 180, 60', pos: 'top: 30px; right: 24px;' },
+          { name: 'tidepool', symbol: '\uD83C\uDF0A', hint: 'the tide pool', color: '100, 160, 200', pos: 'top: 30px; left: 24px;' },
+          { name: 'madeleine', symbol: '\uD83C\uDF3A', hint: 'the madeleine', color: '220, 180, 200', pos: 'bottom: 60px; right: 24px;' },
+          { name: 'void', symbol: '\u2726', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300; font-size: 10px;
+            letter-spacing: 2px; text-transform: lowercase;
+            color: rgba(${p.color}, 0.06);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 8px; z-index: 10;
+          `
+          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.5)`
+            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.06)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
 
       return overlay
     },

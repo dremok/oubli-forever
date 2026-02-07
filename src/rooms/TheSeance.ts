@@ -75,6 +75,7 @@ interface SeanceDeps {
   getMemories: () => StoredMemory[]
   speakText?: (text: string) => Promise<void>
   onBetween?: () => void
+  switchTo?: (name: string) => void
 }
 
 export function createSeanceRoom(deps: SeanceDeps): Room {
@@ -401,6 +402,43 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
           if (betweenRevealed) deps.onBetween!()
         })
         overlay.appendChild(betweenLink)
+      }
+
+      // In-room portals: spirit-themed connections
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'oracle', symbol: '\u2721', hint: 'the oracle deck', color: '200, 180, 100', pos: 'top: 24px; left: 24px;' },
+          { name: 'madeleine', symbol: '\u2055', hint: 'the madeleine', color: '220, 180, 200', pos: 'top: 24px; right: 24px;' },
+          { name: 'rememory', symbol: '\u29BE', hint: 'the rememory', color: '180, 160, 220', pos: 'bottom: 60px; right: 24px;' },
+          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300; font-size: 10px;
+            letter-spacing: 2px; text-transform: lowercase;
+            color: rgba(${p.color}, 0.06);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 8px; z-index: 10;
+          `
+          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.5)`
+            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.06)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
       }
 
       return overlay

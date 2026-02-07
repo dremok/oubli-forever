@@ -43,7 +43,16 @@ interface ActiveNote {
   freq: number
 }
 
-export function createInstrumentRoom(onNote?: (freq: number, velocity: number) => void): Room {
+interface InstrumentDeps {
+  onNote?: (freq: number, velocity: number) => void
+  switchTo?: (name: string) => void
+}
+
+export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: number) => void) | InstrumentDeps): Room {
+  const instrumentDeps: InstrumentDeps = typeof onNoteOrDeps === 'function'
+    ? { onNote: onNoteOrDeps }
+    : (onNoteOrDeps ?? {})
+  const onNote = instrumentDeps.onNote
   let overlay: HTMLElement | null = null
   let audioCtx: AudioContext | null = null
   let masterGain: GainNode | null = null
@@ -420,6 +429,43 @@ export function createInstrumentRoom(onNote?: (freq: number, velocity: number) =
 
       overlay.appendChild(waveRow)
       updateWaveButtons()
+
+      // In-room portals: sound-themed connections
+      if (instrumentDeps.switchTo) {
+        const portalData = [
+          { name: 'choir', symbol: '\uD83C\uDFB6', hint: 'the choir', color: '180, 140, 200', pos: 'top: 24px; left: 24px;' },
+          { name: 'radio', symbol: '\uD83D\uDCE1', hint: 'the radio', color: '120, 200, 120', pos: 'top: 24px; right: 24px;' },
+          { name: 'pendulum', symbol: '\u2384', hint: 'the pendulum', color: '200, 200, 140', pos: 'bottom: 60px; right: 24px;' },
+          { name: 'void', symbol: '\u25C6', hint: 'the void', color: '255, 20, 147', pos: 'bottom: 60px; left: 24px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300; font-size: 10px;
+            letter-spacing: 2px; text-transform: lowercase;
+            color: rgba(${p.color}, 0.06);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+            padding: 8px; z-index: 10;
+          `
+          el.innerHTML = `<span style="font-size:14px; display:block; margin-bottom:2px;">${p.symbol}</span><span style="font-style:italic;">${p.hint}</span>`
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.5)`
+            el.style.textShadow = `0 0 15px rgba(${p.color}, 0.2)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.06)`
+            el.style.textShadow = 'none'
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            instrumentDeps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
 
       return overlay
     },

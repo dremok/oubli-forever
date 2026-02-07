@@ -44,7 +44,19 @@ const PROMPTS_BASE = [
   'Describe a moment that changed everything...',
 ]
 
-export function createStudyRoom(getMemories: () => StoredMemory[], onNewText?: (text: string) => void): Room {
+interface StudyDeps {
+  getMemories: () => StoredMemory[]
+  onNewText?: (text: string) => void
+  switchTo?: (name: string) => void
+}
+
+export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | StudyDeps, onNewText?: (text: string) => void): Room {
+  // Support both old (positional) and new (deps object) signatures
+  const deps: StudyDeps = typeof getMemoriesOrDeps === 'function'
+    ? { getMemories: getMemoriesOrDeps, onNewText }
+    : getMemoriesOrDeps
+  const getMemories = deps.getMemories
+  onNewText = deps.onNewText
   let overlay: HTMLElement | null = null
   let textarea: HTMLTextAreaElement | null = null
   let promptEl: HTMLElement | null = null
@@ -236,6 +248,129 @@ export function createStudyRoom(getMemories: () => StoredMemory[], onNewText?: (
       bottom.appendChild(exportBtn)
 
       overlay.appendChild(bottom)
+
+      // In-room navigation: contextual objects at corners
+      if (deps.switchTo) {
+        const navContainer = document.createElement('div')
+        navContainer.style.cssText = `
+          position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+          pointer-events: none; z-index: 2;
+        `
+
+        // Bookshelf → Library (top-left corner)
+        const bookshelf = document.createElement('div')
+        bookshelf.style.cssText = `
+          position: absolute; top: 30px; left: 24px;
+          pointer-events: auto; cursor: pointer;
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 10px;
+          letter-spacing: 2px; text-transform: lowercase;
+          color: rgba(180, 160, 120, 0.08);
+          transition: color 0.5s ease, text-shadow 0.5s ease;
+          text-shadow: none;
+          padding: 8px;
+        `
+        bookshelf.innerHTML = '<span style="font-size:16px; display:block; margin-bottom:2px;">&#128214;</span><span style="font-style:italic;">the library</span>'
+        bookshelf.addEventListener('mouseenter', () => {
+          bookshelf.style.color = 'rgba(180, 160, 120, 0.5)'
+          bookshelf.style.textShadow = '0 0 15px rgba(180, 160, 120, 0.2)'
+        })
+        bookshelf.addEventListener('mouseleave', () => {
+          bookshelf.style.color = 'rgba(180, 160, 120, 0.08)'
+          bookshelf.style.textShadow = 'none'
+        })
+        bookshelf.addEventListener('click', (e) => {
+          e.stopPropagation()
+          deps.switchTo!('library')
+        })
+        navContainer.appendChild(bookshelf)
+
+        // Tangled thread → Loom (top-right corner)
+        const thread = document.createElement('div')
+        thread.style.cssText = `
+          position: absolute; top: 30px; right: 24px;
+          pointer-events: auto; cursor: pointer;
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 10px;
+          letter-spacing: 2px; text-transform: lowercase;
+          color: rgba(200, 160, 80, 0.08);
+          transition: color 0.5s ease, text-shadow 0.5s ease;
+          text-shadow: none;
+          padding: 8px;
+        `
+        thread.innerHTML = '<span style="font-size:14px; display:block; margin-bottom:2px;">&#10547;</span><span style="font-style:italic;">the loom</span>'
+        thread.addEventListener('mouseenter', () => {
+          thread.style.color = 'rgba(200, 160, 80, 0.5)'
+          thread.style.textShadow = '0 0 15px rgba(200, 160, 80, 0.2)'
+        })
+        thread.addEventListener('mouseleave', () => {
+          thread.style.color = 'rgba(200, 160, 80, 0.08)'
+          thread.style.textShadow = 'none'
+        })
+        thread.addEventListener('click', (e) => {
+          e.stopPropagation()
+          deps.switchTo!('loom')
+        })
+        navContainer.appendChild(thread)
+
+        // Encoded scribble → Cipher (bottom-left)
+        const cipher = document.createElement('div')
+        cipher.style.cssText = `
+          position: absolute; bottom: 60px; left: 24px;
+          pointer-events: auto; cursor: pointer;
+          font-family: monospace;
+          font-size: 9px;
+          letter-spacing: 1px;
+          color: rgba(150, 200, 150, 0.06);
+          transition: color 0.5s ease, text-shadow 0.5s ease;
+          text-shadow: none;
+          padding: 8px;
+        `
+        cipher.innerHTML = '<span style="display:block; margin-bottom:2px; font-family: monospace;">ROT13</span><span style="font-family: Cormorant Garamond, serif; font-style:italic; letter-spacing:2px;">the cipher</span>'
+        cipher.addEventListener('mouseenter', () => {
+          cipher.style.color = 'rgba(150, 200, 150, 0.5)'
+          cipher.style.textShadow = '0 0 15px rgba(150, 200, 150, 0.2)'
+        })
+        cipher.addEventListener('mouseleave', () => {
+          cipher.style.color = 'rgba(150, 200, 150, 0.06)'
+          cipher.style.textShadow = 'none'
+        })
+        cipher.addEventListener('click', (e) => {
+          e.stopPropagation()
+          deps.switchTo!('cipher')
+        })
+        navContainer.appendChild(cipher)
+
+        // Window to void → back to void (bottom-right)
+        const window_ = document.createElement('div')
+        window_.style.cssText = `
+          position: absolute; bottom: 60px; right: 24px;
+          pointer-events: auto; cursor: pointer;
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 10px;
+          letter-spacing: 2px; text-transform: lowercase;
+          color: rgba(255, 20, 147, 0.06);
+          transition: color 0.5s ease, text-shadow 0.5s ease;
+          text-shadow: none;
+          padding: 8px;
+        `
+        window_.innerHTML = '<span style="font-size:14px; display:block; margin-bottom:2px;">&#9670;</span><span style="font-style:italic;">the void</span>'
+        window_.addEventListener('mouseenter', () => {
+          window_.style.color = 'rgba(255, 20, 147, 0.5)'
+          window_.style.textShadow = '0 0 15px rgba(255, 20, 147, 0.2)'
+        })
+        window_.addEventListener('mouseleave', () => {
+          window_.style.color = 'rgba(255, 20, 147, 0.06)'
+          window_.style.textShadow = 'none'
+        })
+        window_.addEventListener('click', (e) => {
+          e.stopPropagation()
+          deps.switchTo!('void')
+        })
+        navContainer.appendChild(window_)
+
+        overlay.appendChild(navContainer)
+      }
 
       return overlay
     },
