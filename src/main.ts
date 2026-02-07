@@ -41,6 +41,7 @@ import { createCatacombsRoom } from './rooms/TheCatacombs'
 import { createLoomRoom } from './rooms/TheLoom'
 import { createRootsRoom } from './rooms/TheRoots'
 import { createOssuaryRoom } from './rooms/TheOssuary'
+import { createTidePoolRoom } from './rooms/TheTidePool'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -358,6 +359,9 @@ roomManager.addRoom(createOssuaryRoom({
   getMemories: () => journal.getMemories(),
   toRoots: () => roomManager.switchTo('roots'),
   toCatacombs: () => roomManager.switchTo('catacombs'),
+}))
+roomManager.addRoom(createTidePoolRoom({
+  getMemories: () => journal.getMemories(),
 }))
 
 // Wire room checks — features only fire in the right room
