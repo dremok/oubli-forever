@@ -1022,6 +1022,28 @@ What's NOT done yet:
 ### Total Rooms: 43 (was 41; +Rememory +Library added in late Era 7)
 Surface: 36 | Hidden: 7
 
+### 81. ThePendulum Deepened (314→609 lines)
+- Resonant audio: 4 sine oscillators at frequency ratios matching pendulum physics (scaled by BASE_HZ=150), delay-based reverb, gain envelopes tracking visual decay
+- Cursor-as-force: normalized mouse position perturbs X/Y calculation
+- Drag-to-pull: mousedown sets pendulum amplitudes/phases from cursor, springy physics
+- Pendulum arm visualization: faint line from center to trace tip, shadow offset, enhanced glow
+- Shift+Click to randomize, crosshair cursor
+- Cultural inspiration: Milan Cortina 2026 Olympics "armonia" (harmony) theme
+
+### 82. TheBetween Deepened (295→742 lines)
+- Ambient audio: 60Hz fluorescent hum + harmonics (120Hz, 180Hz), distant door sounds every 15-30s, footstep echoes modulated by scroll velocity
+- Door hover effects: animated hoverGlow (0→1), brighter fill/frame/handle, floating whisper text, floor reflections
+- Corridor atmosphere: fog gradients at extremes, procedural wall stains, shadow figures appearing every 60-90s
+- Scroll momentum physics: velocity with friction decay (0.97), input adds to velocity not position
+- Cursor changes to pointer over doors
+
+### 83. TheMidnight Deepened (340→776 lines)
+- Hour-specific ambient soundscapes: base drone shifting frequency with hour (65Hz midnight, 262Hz noon), crickets at night (bandpass noise + 4Hz LFO), distant dog barks every 30-60s, bird tones at dawn, wind in evening
+- Doomsday Clock reference: 85-second cycling counter during hours 22:00-01:00 (referencing 2026 Doomsday Clock position), midnight flash when clock strikes 00:00
+- Falling particles: moon dust system (up to 80 particles, spawn rate scales with vividness, glow halos near midnight)
+- Click-to-illuminate: temporarily boosts vividness (+0.3, 3s decay), presence meter limits click frequency, expanding ripple effect at click point
+- Cultural inspiration: Doomsday Clock at 85 seconds (closest ever, Jan 2026)
+
 ---
-*Last updated: Era 8, Feature 80 — Complete Portal Rollout*
-*"every room has doors now — bone-carved, hex-encoded, moonlit, station-coded. 43 rooms, each with navigation that feels like it belongs there."*
+*Last updated: Era 8, Feature 83 — Room Deepening Batch 1 (Pendulum, Between, Midnight)*
+*"three rooms evolved from sketches to living spaces — the pendulum sings, the corridor breathes, and the midnight room counts down to doomsday"*
