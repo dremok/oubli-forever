@@ -36,6 +36,7 @@ import { createObservatoryRoom } from './rooms/TheObservatory'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
+import { VoidWhisper } from './voice/VoidWhisper'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -173,7 +174,18 @@ ripples.loadMemories(journal.getMemories())
 
 // Dream Visions — fal.ai generates images from dream sentences
 const dreamVisions = new DreamVisions()
-dreams.onDream((text) => dreamVisions.onDream(text))
+
+// Void Whisper — ElevenLabs TTS gives the void a voice
+const voidWhisper = new VoidWhisper()
+
+// Wire dreams to both vision and voice
+dreams.onDream((text) => {
+  dreamVisions.onDream(text)
+  voidWhisper.onDream(text)
+})
+
+// Wire whispers to voice
+whispers.onWhisper((text) => voidWhisper.onWhisper(text))
 
 // Tipping Point — entropy cascade when memories degrade past thresholds
 const tippingPoint = new TippingPoint()
@@ -186,6 +198,8 @@ tippingPoint.onChange((state) => {
   voidRenderer.setChromaticAberration(0.002 * state.chromaticIntensity)
   // Modulate sound — dissonance increases with entropy
   drone.setDissonance(state.droneDissonance)
+  // Feed entropy to void whisper — voice degrades with entropy
+  voidWhisper.setEntropy(state.entropy)
 })
 
 // Start dreams, ghost typing, ripples, and tipping point
@@ -320,6 +334,7 @@ roomManager.onRoomChange((room) => {
   ripples.setVisible(inVoid)
   dreamVisions.setVisible(inVoid)
   tippingPoint.setVisible(inVoid)
+  voidWhisper.setVisible(inVoid)
 })
 
 // Show the tab bar after the initial animation settles

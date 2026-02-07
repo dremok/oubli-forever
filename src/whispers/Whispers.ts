@@ -78,6 +78,7 @@ export class Whispers {
   private el: HTMLElement
   private index = 0
   private intervalId: number | null = null
+  private whisperCallback: ((text: string) => void) | null = null
 
   constructor() {
     this.el = document.getElementById('whisper-text')!
@@ -97,10 +98,16 @@ export class Whispers {
     this.intervalId = window.setInterval(() => this.showNext(), 8000)
   }
 
+  /** Register callback for when a whisper is shown */
+  onWhisper(fn: (text: string) => void) {
+    this.whisperCallback = fn
+  }
+
   private showNext() {
     const text = fragments[this.index % fragments.length]
     this.index++
 
+    this.whisperCallback?.(text)
     this.el.textContent = text
     this.el.classList.remove('fading')
 
