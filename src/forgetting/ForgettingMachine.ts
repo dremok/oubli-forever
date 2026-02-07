@@ -46,6 +46,7 @@ export class ForgettingMachine {
   private onDissolveComplete: (() => void) | null = null
   private placeholder = 'type a memory...'
   private showPlaceholder = true
+  private roomCheck: (() => string) | null = null
 
   constructor(
     private parentCanvas: HTMLCanvasElement,
@@ -84,6 +85,9 @@ export class ForgettingMachine {
       // Don't capture if another input is focused
       if (document.activeElement?.tagName === 'INPUT' ||
           document.activeElement?.tagName === 'TEXTAREA') return
+
+      // Only active in void room
+      if (this.roomCheck && this.roomCheck() !== 'void') return
 
       if (e.key === 'Enter' && this.inputText.length > 0) {
         this.dissolve()
@@ -308,6 +312,11 @@ export class ForgettingMachine {
       this.letters = []
       this.onDissolveComplete?.()
     }
+  }
+
+  /** Set a function that returns the current room name */
+  setRoomCheck(check: () => string) {
+    this.roomCheck = check
   }
 
   /** Whether the user is actively typing a memory */

@@ -86,6 +86,7 @@ export class DreamSynthesizer {
   private dpr = 1
   private frame = 0
   private nextDreamFrame = 0
+  private hidden = false
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -246,10 +247,18 @@ export class DreamSynthesizer {
     return words.slice(start, start + len).join(' ')
   }
 
+  setVisible(v: boolean) {
+    this.hidden = !v
+    if (this.hidden) {
+      this.ctx.clearRect(0, 0, this.width, this.height)
+    }
+  }
+
   private render() {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
 
+    if (this.hidden) return
     if (!this.currentDream || this.currentDream.phase === 'gone') return
 
     const d = this.currentDream

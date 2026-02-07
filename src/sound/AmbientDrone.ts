@@ -9,6 +9,8 @@
  * the hum of data centers, the cosmic microwave background.
  */
 
+import { getAudioContext, getAudioDestination } from './AudioBus'
+
 export class AmbientDrone {
   private ctx: AudioContext | null = null
   private masterGain: GainNode | null = null
@@ -34,29 +36,15 @@ export class AmbientDrone {
   async init(): Promise<boolean> {
     if (this.started) return this.isPlaying
 
-    // Audio requires user gesture — we'll init on first interaction
-    const startOnGesture = async () => {
+    // Use shared AudioContext from AudioBus
+    getAudioContext().then((ctx) => {
       if (this.ctx) return
-
-      this.ctx = new AudioContext()
-      if (this.ctx.state === 'suspended') {
-        await this.ctx.resume()
-      }
-
+      this.ctx = ctx
       this.setupAudioGraph()
       this.startModulation()
       this.isPlaying = true
       this.started = true
-
-      // Remove listeners after first trigger
-      window.removeEventListener('click', startOnGesture)
-      window.removeEventListener('touchstart', startOnGesture)
-      window.removeEventListener('keydown', startOnGesture)
-    }
-
-    window.addEventListener('click', startOnGesture)
-    window.addEventListener('touchstart', startOnGesture)
-    window.addEventListener('keydown', startOnGesture)
+    })
 
     return false
   }
@@ -67,7 +55,7 @@ export class AmbientDrone {
     // Master output with very low volume — this is atmosphere, not music
     this.masterGain = this.ctx.createGain()
     this.masterGain.gain.value = 0
-    this.masterGain.connect(this.ctx.destination)
+    this.masterGain.connect(getAudioDestination())
 
     // Fade in slowly — Oubli awakens
     this.masterGain.gain.linearRampToValueAtTime(0.12, this.ctx.currentTime + 8)
@@ -264,7 +252,6 @@ export class AmbientDrone {
     this.drones.forEach(d => d.stop())
     this.noiseNode?.stop()
     this.lfo?.stop()
-    this.ctx?.close()
     this.isPlaying = false
   }
 }

@@ -44,13 +44,14 @@ const PROMPTS_BASE = [
   'Describe a moment that changed everything...',
 ]
 
-export function createStudyRoom(getMemories: () => StoredMemory[]): Room {
+export function createStudyRoom(getMemories: () => StoredMemory[], onNewText?: (text: string) => void): Room {
   let overlay: HTMLElement | null = null
   let textarea: HTMLTextAreaElement | null = null
   let promptEl: HTMLElement | null = null
   let countEl: HTMLElement | null = null
   let saveInterval: number | null = null
   let active = false
+  let lastWordCount = 0
 
   function loadText(): string {
     try {
@@ -183,7 +184,19 @@ export function createStudyRoom(getMemories: () => StoredMemory[]): Room {
         outline: none;
         caret-color: rgba(255, 20, 147, 0.7);
       `
-      textarea.addEventListener('input', updateCount)
+      textarea.addEventListener('input', () => {
+        updateCount()
+        // Emit new text passages every 20+ words
+        if (textarea && onNewText) {
+          const text = textarea.value.trim()
+          const words = text ? text.split(/\s+/).length : 0
+          if (words >= lastWordCount + 20) {
+            const newWords = text.split(/\s+/).slice(lastWordCount).join(' ')
+            lastWordCount = words
+            onNewText(newWords)
+          }
+        }
+      })
       overlay.appendChild(textarea)
 
       // Bottom bar: word count + actions
@@ -229,6 +242,11 @@ export function createStudyRoom(getMemories: () => StoredMemory[]): Room {
 
     activate() {
       active = true
+      // Track word count for new text emissions
+      if (textarea) {
+        const text = textarea.value.trim()
+        lastWordCount = text ? text.split(/\s+/).length : 0
+      }
       // Auto-save every 5 seconds
       saveInterval = window.setInterval(() => {
         if (textarea) saveText(textarea.value)

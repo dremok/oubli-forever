@@ -1,20 +1,12 @@
 /**
- * ROOM MANAGER — a house with rooms connected by passages
+ * ROOM MANAGER — tab-based navigation between rooms
  *
- * Rooms are not listed in a menu. They are connected spatially,
- * like rooms in a real house. Each room has doorways — faint text
- * at the edges of the screen that hint at what lies beyond. Click
- * a doorway to pass through. Some doorways are obvious. Some are
- * hidden until you perform a certain action (type a word, play a
- * note, wait in silence). The house map is convoluted — you might
- * enter The Study from the left wall of The Void, but The Study's
- * exit back is through the ceiling.
+ * Simple bottom tab bar: the void · the study · the instrument
+ * Active room highlighted in pink, others in faint gold.
+ * Low opacity by default, brightens on hover.
  *
- * The connections form a graph, not a line. You discover the house
- * by exploring. A faint room name whispers itself when you arrive.
- *
- * Inspired by: House of Leaves, the Winchester Mystery House,
- * MUD text adventure navigation, Borges's Library of Babel
+ * A faint room name whispers itself when you arrive.
+ * A tiny persistent indicator sits top-right.
  */
 
 export interface Room {
@@ -26,31 +18,21 @@ export interface Room {
   destroy: () => void
 }
 
-export interface Passage {
-  from: string
-  to: string
-  position: 'left' | 'right' | 'top' | 'bottom'
-  hint: string           // poetic text shown at the doorway
-  condition?: () => boolean  // if present, passage is hidden until condition is true
-  discovered?: boolean   // once found, stays visible on future visits
-}
+type RoomChangeListener = (room: string) => void
 
 export class RoomManager {
   private rooms = new Map<string, Room>()
-  private passages: Passage[] = []
   private activeRoom: string = 'void'
   private roomContainer: HTMLDivElement
   private activeOverlay: HTMLElement | null = null
-  private doorways: HTMLElement[] = []
-  private doorwayContainer: HTMLDivElement
   private arrivalWhisper: HTMLDivElement
   private arrivalTimeout: number | null = null
-  private discoveredPassages = new Set<string>()
+  private tabBar: HTMLDivElement
+  private tabButtons = new Map<string, HTMLElement>()
+  private roomIndicator: HTMLDivElement
+  private changeListeners: RoomChangeListener[] = []
 
   constructor() {
-    // Load discovered passages from localStorage
-    this.loadDiscovered()
-
     // Room container — holds the active room's UI
     this.roomContainer = document.createElement('div')
     this.roomContainer.style.cssText = `
@@ -58,15 +40,6 @@ export class RoomManager {
       z-index: 300; pointer-events: none;
     `
     document.body.appendChild(this.roomContainer)
-
-    // Doorway container — passages rendered on top of everything
-    this.doorwayContainer = document.createElement('div')
-    this.doorwayContainer.setAttribute('data-no-resonance', 'true')
-    this.doorwayContainer.style.cssText = `
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      z-index: 700; pointer-events: none;
-    `
-    document.body.appendChild(this.doorwayContainer)
 
     // Arrival whisper — room name fades in when you enter
     this.arrivalWhisper = document.createElement('div')
@@ -83,6 +56,41 @@ export class RoomManager {
       text-transform: lowercase;
     `
     document.body.appendChild(this.arrivalWhisper)
+
+    // Tab bar — bottom of screen
+    this.tabBar = document.createElement('div')
+    this.tabBar.setAttribute('data-no-resonance', 'true')
+    this.tabBar.style.cssText = `
+      position: fixed; bottom: 0; left: 0; width: 100%;
+      z-index: 700; pointer-events: none;
+      display: flex; justify-content: center; align-items: center;
+      gap: 0; padding: 14px 0 18px 0;
+      opacity: 0.2;
+      transition: opacity 0.6s ease;
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 300; font-size: 13px;
+      letter-spacing: 3px; text-transform: lowercase;
+    `
+    this.tabBar.addEventListener('mouseenter', () => {
+      this.tabBar.style.opacity = '0.7'
+    })
+    this.tabBar.addEventListener('mouseleave', () => {
+      this.tabBar.style.opacity = '0.2'
+    })
+    document.body.appendChild(this.tabBar)
+
+    // Persistent room indicator — top-right
+    this.roomIndicator = document.createElement('div')
+    this.roomIndicator.style.cssText = `
+      position: fixed; top: 12px; right: 16px;
+      z-index: 700; pointer-events: none;
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 300; font-size: 10px;
+      letter-spacing: 2px; text-transform: lowercase;
+      color: rgba(255, 215, 0, 0.12);
+    `
+    this.roomIndicator.textContent = 'the void'
+    document.body.appendChild(this.roomIndicator)
   }
 
   /** Register a room */
@@ -90,16 +98,14 @@ export class RoomManager {
     this.rooms.set(room.name, room)
   }
 
-  /** Define a passage between rooms */
-  addPassage(passage: Passage) {
-    const key = `${passage.from}→${passage.to}`
-    passage.discovered = this.discoveredPassages.has(key)
-    this.passages.push(passage)
+  /** Initialize tab bar (called once after animation settles) */
+  init() {
+    this.buildTabBar()
   }
 
-  /** Initialize doorways for the starting room (called once after animation settles) */
-  init() {
-    this.buildDoorways()
+  /** Subscribe to room changes */
+  onRoomChange(fn: RoomChangeListener) {
+    this.changeListeners.push(fn)
   }
 
   /** Switch to a room */
@@ -123,9 +129,6 @@ export class RoomManager {
       setTimeout(() => old.remove(), 1500)
     }
 
-    // Clear current doorways
-    this.clearDoorways()
-
     // Create and show new room overlay
     const overlay = room.create()
     overlay.style.cssText += `
@@ -143,28 +146,23 @@ export class RoomManager {
     this.activeRoom = name
     room.activate()
 
+    // Update tab highlights
+    this.updateTabs()
+
+    // Update indicator
+    this.roomIndicator.textContent = room.label
+
     // Show arrival whisper
     this.showArrival(room.label)
 
-    // Build doorways after transition settles
-    setTimeout(() => this.buildDoorways(), 2000)
+    // Notify listeners
+    for (const fn of this.changeListeners) {
+      fn(name)
+    }
   }
 
-  /** Mark a passage as discovered (for hidden passages) */
-  discoverPassage(from: string, to: string) {
-    const key = `${from}→${to}`
-    this.discoveredPassages.add(key)
-    this.saveDiscovered()
-
-    // Update passage state
-    const passage = this.passages.find(p => p.from === from && p.to === to)
-    if (passage) passage.discovered = true
-
-    // Rebuild doorways to show newly discovered passage
-    if (from === this.activeRoom) {
-      this.clearDoorways()
-      this.buildDoorways()
-    }
+  getActiveRoom(): string {
+    return this.activeRoom
   }
 
   private showArrival(label: string) {
@@ -184,140 +182,72 @@ export class RoomManager {
     }, 3000)
   }
 
-  private buildDoorways() {
-    const activePassages = this.passages.filter(p => {
-      if (p.from !== this.activeRoom) return false
-      // Hidden passages need to be discovered or have condition met
-      if (p.condition) {
-        return p.discovered || p.condition()
+  private buildTabBar() {
+    this.tabBar.innerHTML = ''
+    this.tabButtons.clear()
+
+    const roomOrder = ['void', 'study', 'instrument']
+    const roomLabels: Record<string, string> = {
+      void: 'the void',
+      study: 'the study',
+      instrument: 'the instrument',
+    }
+
+    for (let i = 0; i < roomOrder.length; i++) {
+      const name = roomOrder[i]
+      if (!this.rooms.has(name)) continue
+
+      // Separator dot
+      if (i > 0) {
+        const sep = document.createElement('span')
+        sep.style.cssText = `
+          color: rgba(255, 215, 0, 0.15);
+          margin: 0 16px;
+          pointer-events: none;
+        `
+        sep.textContent = '·'
+        this.tabBar.appendChild(sep)
       }
-      return true
-    })
 
-    for (const passage of activePassages) {
-      this.createDoorway(passage)
-    }
-  }
+      const btn = document.createElement('span')
+      btn.style.cssText = `
+        cursor: pointer;
+        pointer-events: auto;
+        padding: 6px 4px;
+        transition: color 0.4s ease;
+        color: rgba(255, 215, 0, 0.3);
+      `
+      btn.textContent = roomLabels[name] || name
 
-  private createDoorway(passage: Passage) {
-    const door = document.createElement('div')
-    door.setAttribute('data-no-resonance', 'true')
-    door.style.cssText = `
-      position: absolute;
-      pointer-events: auto;
-      cursor: pointer;
-      font-family: 'Cormorant Garamond', serif;
-      font-weight: 300;
-      font-style: italic;
-      transition: opacity 0.8s ease, color 0.5s ease;
-      opacity: 0;
-      display: flex; align-items: center; justify-content: center;
-    `
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.switchTo(name)
+      })
 
-    // Position based on direction
-    switch (passage.position) {
-      case 'left':
-        door.style.cssText += `
-          left: 0; top: 50%; transform: translateY(-50%) rotate(-90deg);
-          width: 200px; height: 40px;
-          font-size: 12px; letter-spacing: 3px;
-          color: rgba(255, 215, 0, 0.15);
-          transform-origin: center center;
-          padding-left: 16px;
-        `
-        // Reposition: rotated text along left edge
-        door.style.left = '-80px'
-        break
+      btn.addEventListener('mouseenter', () => {
+        if (name !== this.activeRoom) {
+          btn.style.color = 'rgba(255, 20, 147, 0.5)'
+        }
+      })
+      btn.addEventListener('mouseleave', () => {
+        this.updateTabs()
+      })
 
-      case 'right':
-        door.style.cssText += `
-          right: 0; top: 50%; transform: translateY(-50%) rotate(90deg);
-          width: 200px; height: 40px;
-          font-size: 12px; letter-spacing: 3px;
-          color: rgba(255, 215, 0, 0.15);
-          transform-origin: center center;
-          padding-right: 16px;
-        `
-        door.style.right = '-80px'
-        break
-
-      case 'top':
-        door.style.cssText += `
-          top: 12px; left: 50%; transform: translateX(-50%);
-          width: 300px; height: 40px;
-          font-size: 12px; letter-spacing: 3px;
-          color: rgba(255, 215, 0, 0.15);
-          text-align: center;
-        `
-        break
-
-      case 'bottom':
-        door.style.cssText += `
-          bottom: 50px; left: 50%; transform: translateX(-50%);
-          width: 300px; height: 40px;
-          font-size: 12px; letter-spacing: 3px;
-          color: rgba(255, 215, 0, 0.15);
-          text-align: center;
-        `
-        break
+      this.tabBar.appendChild(btn)
+      this.tabButtons.set(name, btn)
     }
 
-    door.textContent = passage.hint
-
-    // Hover — the doorway brightens
-    door.addEventListener('mouseenter', () => {
-      door.style.color = 'rgba(255, 20, 147, 0.6)'
-      door.style.opacity = '1'
-    })
-    door.addEventListener('mouseleave', () => {
-      door.style.color = 'rgba(255, 215, 0, 0.15)'
-      door.style.opacity = '0.6'
-    })
-
-    // Click — pass through the doorway
-    door.addEventListener('click', (e) => {
-      e.stopPropagation()
-      // Mark as discovered
-      const key = `${passage.from}→${passage.to}`
-      this.discoveredPassages.add(key)
-      this.saveDiscovered()
-      this.switchTo(passage.to)
-    })
-
-    this.doorwayContainer.appendChild(door)
-    this.doorways.push(door)
-
-    // Fade in after a moment
-    setTimeout(() => {
-      door.style.opacity = '0.6'
-    }, 500)
+    this.updateTabs()
   }
 
-  private clearDoorways() {
-    for (const door of this.doorways) {
-      door.remove()
-    }
-    this.doorways = []
-  }
-
-  private loadDiscovered() {
-    try {
-      const stored = localStorage.getItem('oubli-passages')
-      if (stored) {
-        const arr = JSON.parse(stored) as string[]
-        arr.forEach(k => this.discoveredPassages.add(k))
+  private updateTabs() {
+    for (const [name, btn] of this.tabButtons) {
+      if (name === this.activeRoom) {
+        btn.style.color = 'rgba(255, 20, 147, 0.6)'
+      } else {
+        btn.style.color = 'rgba(255, 215, 0, 0.3)'
       }
-    } catch { /* */ }
-  }
-
-  private saveDiscovered() {
-    try {
-      localStorage.setItem('oubli-passages', JSON.stringify([...this.discoveredPassages]))
-    } catch { /* */ }
-  }
-
-  getActiveRoom(): string {
-    return this.activeRoom
+    }
   }
 
   destroy() {
@@ -325,9 +255,9 @@ export class RoomManager {
     for (const room of this.rooms.values()) {
       room.destroy()
     }
-    this.clearDoorways()
-    this.doorwayContainer.remove()
+    this.tabBar.remove()
     this.roomContainer.remove()
     this.arrivalWhisper.remove()
+    this.roomIndicator.remove()
   }
 }

@@ -97,6 +97,7 @@ export class ExtinctionWhispers {
   private frame = 0
   private nextSpawnFrame = 0
   private usedIndices = new Set<number>()
+  private hidden = false
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -211,10 +212,18 @@ export class ExtinctionWhispers {
     }
   }
 
+  setVisible(v: boolean) {
+    this.hidden = !v
+    if (this.hidden) {
+      this.ctx.clearRect(0, 0, this.width, this.height)
+    }
+  }
+
   private render() {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
 
+    if (this.hidden) return
     if (!this.current || this.current.phase === 'gone') return
 
     const w = this.current

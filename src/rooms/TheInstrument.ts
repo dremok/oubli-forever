@@ -22,6 +22,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 // Chromatic note mapping — two octaves starting from C3
 const KEY_MAP: Record<string, number> = {
@@ -42,7 +43,7 @@ interface ActiveNote {
   freq: number
 }
 
-export function createInstrumentRoom(): Room {
+export function createInstrumentRoom(onNote?: (freq: number, velocity: number) => void): Room {
   let overlay: HTMLElement | null = null
   let audioCtx: AudioContext | null = null
   let masterGain: GainNode | null = null
@@ -75,8 +76,7 @@ export function createInstrumentRoom(): Room {
   async function initAudio() {
     if (audioCtx) return
 
-    audioCtx = new AudioContext()
-    if (audioCtx.state === 'suspended') await audioCtx.resume()
+    audioCtx = await getAudioContext()
 
     // Master gain
     masterGain = audioCtx.createGain()
@@ -125,7 +125,7 @@ export function createInstrumentRoom(): Room {
     reverbNode.connect(wetGain)
     wetGain.connect(masterGain)
 
-    masterGain.connect(audioCtx.destination)
+    masterGain.connect(getAudioDestination())
   }
 
   function createReverb(ctx: AudioContext): ConvolverNode {
@@ -180,6 +180,9 @@ export function createInstrumentRoom(): Room {
     osc2.start(now)
 
     activeNotes.set(key, { key, osc, osc2, env, freq })
+
+    // Notify external systems
+    onNote?.(freq, 0.35)
 
     // Visual feedback
     noteFlash = 1.0
@@ -421,7 +424,6 @@ export function createInstrumentRoom(): Room {
       for (const key of activeNotes.keys()) {
         noteOff(key)
       }
-      audioCtx?.close()
       overlay?.remove()
     },
   }

@@ -35,6 +35,7 @@ export class AsciiVoid {
   private rows = 0
   private memoryChars = '' // characters from stored memories
   private charIndex = 0
+  private roomCheck: (() => string) | null = null
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -50,7 +51,10 @@ export class AsciiVoid {
 
     window.addEventListener('resize', () => this.resize())
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'a' || e.key === 'A') {
+      if ((e.key === 'a' || e.key === 'A') &&
+          document.activeElement?.tagName !== 'INPUT' &&
+          document.activeElement?.tagName !== 'TEXTAREA') {
+        if (this.roomCheck && this.roomCheck() !== 'void') return
         this.toggle()
       }
     })
@@ -76,6 +80,11 @@ export class AsciiVoid {
     if (this.memoryChars.length === 0) {
       this.memoryChars = 'oubli remembers by forgetting what was lost becomes light'
     }
+  }
+
+  /** Set a function that returns the current room name */
+  setRoomCheck(check: () => string) {
+    this.roomCheck = check
   }
 
   toggle() {

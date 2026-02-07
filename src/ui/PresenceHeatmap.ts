@@ -43,6 +43,7 @@ export class PresenceHeatmap {
   private overlayAlpha = 0
   private animating = false
   private frameId = 0
+  private roomCheck: (() => string) | null = null
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -66,6 +67,7 @@ export class PresenceHeatmap {
       if ((e.key === 'h' || e.key === 'H') &&
           document.activeElement?.tagName !== 'INPUT' &&
           document.activeElement?.tagName !== 'TEXTAREA') {
+        if (this.roomCheck && this.roomCheck() !== 'void') return
         this.toggle()
       }
     })
@@ -89,6 +91,11 @@ export class PresenceHeatmap {
       newGrid.set(this.grid.subarray(0, copyLen))
     }
     this.grid = newGrid
+  }
+
+  /** Set a function that returns the current room name */
+  setRoomCheck(check: () => string) {
+    this.roomCheck = check
   }
 
   start() {

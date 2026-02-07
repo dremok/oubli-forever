@@ -114,6 +114,21 @@ export class Whispers {
     }, 5000)
   }
 
+  pause() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId)
+      this.intervalId = null
+    }
+    this.el.classList.remove('visible')
+    this.el.classList.add('fading')
+  }
+
+  resume() {
+    if (this.intervalId) return
+    this.showNext()
+    this.intervalId = window.setInterval(() => this.showNext(), 8000)
+  }
+
   stop() {
     if (this.intervalId) {
       clearInterval(this.intervalId)

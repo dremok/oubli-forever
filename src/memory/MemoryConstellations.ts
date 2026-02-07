@@ -26,6 +26,7 @@ interface ConstellationNode {
   mesh: THREE.Sprite
   birthTime: number
   scale: number
+  wordSet: Set<string>  // cached for connection computation
 }
 
 export class MemoryConstellations {
@@ -39,6 +40,8 @@ export class MemoryConstellations {
   private animating = false
   private frameId = 0
   private time = 0
+  private connectionCache: { i: number; j: number; shared: number }[] = []
+  private connectionsDirty = true
 
   constructor() {
     // Canvas overlay for text labels
@@ -107,12 +110,19 @@ export class MemoryConstellations {
 
     this.scene.add(sprite)
 
+    const wordSet = new Set(
+      memory.currentText.toLowerCase().split(/\W+/).filter(w => w.length > 2)
+    )
+
     this.nodes.push({
       memory,
       mesh: sprite,
       birthTime: animate ? this.time : 0,
       scale: baseScale,
+      wordSet,
     })
+
+    this.connectionsDirty = true
   }
 
   private getScaleForMemory(memory: StoredMemory): number {
@@ -279,14 +289,35 @@ export class MemoryConstellations {
     }
   }
 
+  private recomputeConnections() {
+    this.connectionCache = []
+    for (let i = 0; i < this.nodes.length; i++) {
+      for (let j = i + 1; j < this.nodes.length; j++) {
+        let shared = 0
+        for (const word of this.nodes[i].wordSet) {
+          if (this.nodes[j].wordSet.has(word)) shared++
+        }
+        if (shared > 0) {
+          this.connectionCache.push({ i, j, shared })
+        }
+      }
+    }
+    this.connectionsDirty = false
+  }
+
   /** Draw faint connection lines between memories that share words */
-  private renderConnections(ctx: CanvasRenderingContext2D, projScreenMatrix: THREE.Matrix4) {
+  private renderConnections(ctx: CanvasRenderingContext2D, _projScreenMatrix: THREE.Matrix4) {
     if (this.nodes.length < 2 || !this.camera) return
 
-    // Build word sets for each visible node (cached per frame)
-    const visibleNodes: { node: ConstellationNode; screenX: number; screenY: number; words: Set<string> }[] = []
+    if (this.connectionsDirty) {
+      this.recomputeConnections()
+    }
 
-    for (const node of this.nodes) {
+    // Build screen positions for visible nodes
+    const screenPositions: (null | { x: number; y: number })[] = new Array(this.nodes.length).fill(null)
+
+    for (let idx = 0; idx < this.nodes.length; idx++) {
+      const node = this.nodes[idx]
       const pos3 = node.mesh.position.clone()
       pos3.project(this.camera)
       if (pos3.z > 1) continue
@@ -299,43 +330,29 @@ export class MemoryConstellations {
       const dist = node.mesh.position.distanceTo(this.camera.position)
       if (dist > 500) continue
 
-      const words = new Set(
-        node.memory.currentText.toLowerCase().split(/\W+/).filter(w => w.length > 2)
-      )
-      visibleNodes.push({ node, screenX, screenY, words })
+      screenPositions[idx] = { x: screenX, y: screenY }
     }
 
-    // Check pairs for shared words
-    for (let i = 0; i < visibleNodes.length; i++) {
-      for (let j = i + 1; j < visibleNodes.length; j++) {
-        const a = visibleNodes[i]
-        const b = visibleNodes[j]
+    // Draw cached connections
+    for (const conn of this.connectionCache) {
+      const a = screenPositions[conn.i]
+      const b = screenPositions[conn.j]
+      if (!a || !b) continue
 
-        let shared = 0
-        for (const word of a.words) {
-          if (b.words.has(word)) shared++
-        }
+      const lineAlpha = Math.min(conn.shared * 0.06, 0.15)
 
-        if (shared === 0) continue
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
 
-        // Line strength based on overlap and proximity
-        const lineAlpha = Math.min(shared * 0.06, 0.15)
+      const midX = (a.x + b.x) / 2
+      const midY = (a.y + b.y) / 2
+      const offset = Math.sin(this.time * 0.005 + conn.i + conn.j) * 20
+      ctx.quadraticCurveTo(midX + offset, midY + offset, b.x, b.y)
 
-        // Draw a gentle curved line
-        ctx.beginPath()
-        ctx.moveTo(a.screenX, a.screenY)
-
-        // Slight curve via control point
-        const midX = (a.screenX + b.screenX) / 2
-        const midY = (a.screenY + b.screenY) / 2
-        const offset = Math.sin(this.time * 0.005 + i + j) * 20
-        ctx.quadraticCurveTo(midX + offset, midY + offset, b.screenX, b.screenY)
-
-        const hue = (a.node.memory.hue + b.node.memory.hue) * 0.5 * 360
-        ctx.strokeStyle = `hsla(${hue}, 50%, 60%, ${lineAlpha})`
-        ctx.lineWidth = 0.5
-        ctx.stroke()
-      }
+      const hue = (this.nodes[conn.i].memory.hue + this.nodes[conn.j].memory.hue) * 0.5 * 360
+      ctx.strokeStyle = `hsla(${hue}, 50%, 60%, ${lineAlpha})`
+      ctx.lineWidth = 0.5
+      ctx.stroke()
     }
   }
 

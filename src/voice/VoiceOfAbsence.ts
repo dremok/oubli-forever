@@ -61,6 +61,7 @@ export class VoiceOfAbsence {
   private onMemorySpoken: ((text: string) => void) | null = null
   private indicatorPulse = 0
   private shimmerPhase = 0
+  private roomCheck: (() => string) | null = null
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -154,6 +155,9 @@ export class VoiceOfAbsence {
       // Don't capture if typing in forgetting machine
       if (document.activeElement?.tagName === 'INPUT' ||
           document.activeElement?.tagName === 'TEXTAREA') return
+
+      // Only in void room
+      if (this.roomCheck && this.roomCheck() !== 'void') return
 
       // Only activate with spacebar held (not just pressed)
       // The forgetting machine uses regular typing, this uses hold-space
@@ -361,6 +365,11 @@ export class VoiceOfAbsence {
     }
     if (currentLine) lines.push(currentLine)
     return lines
+  }
+
+  /** Set a function that returns the current room name */
+  setRoomCheck(check: () => string) {
+    this.roomCheck = check
   }
 
   /** Register callback for when a spoken memory is ready to dissolve */

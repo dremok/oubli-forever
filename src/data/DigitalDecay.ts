@@ -104,6 +104,7 @@ export class DigitalDecay {
   private frame = 0
   private usedIndices = new Set<number>()
   private cdxCache = new Map<string, CDXResult | null>()
+  private hidden = false
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -277,9 +278,18 @@ export class DigitalDecay {
     })
   }
 
+  setVisible(v: boolean) {
+    this.hidden = !v
+    if (this.hidden) {
+      this.ctx.clearRect(0, 0, this.width, this.height)
+    }
+  }
+
   private render() {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
+
+    if (this.hidden) return
 
     for (const f of this.fragments) {
       const age = this.frame - f.born

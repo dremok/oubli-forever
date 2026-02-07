@@ -33,7 +33,7 @@ const ALL_ITEMS: GuideItem[] = [
   { key: 'type', action: 'type + enter', result: 'give a memory to the void', position: 'center' },
   { key: 'voice', action: 'hold spacebar', result: 'speak into the darkness', position: 'center' },
   { key: 'click', action: 'click anywhere', result: 'the void sings', position: 'center' },
-  { key: 'drift', action: 'click screen edges', result: 'drift between worlds', position: 'center' },
+  { key: 'rooms', action: 'navigation bar below', result: 'rooms to explore', position: 'center' },
   { key: 'keys', action: 'a  m  h  t', result: 'ascii · memories · heatmap · trails', position: 'center' },
 ]
 

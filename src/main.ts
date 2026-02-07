@@ -60,10 +60,22 @@ asciiVoid.updateMemoryText(allMemoryText)
 constellations.connect(voidRenderer.getScene(), voidRenderer.getCamera())
 constellations.loadMemories(journal.getMemories())
 
-// Voice of Absence — speak memories into the void (hold spacebar)
-const voice = new VoiceOfAbsence()
-voice.onSpoken((text) => {
-  // Spoken memories follow the same path as typed ones
+// Dream Synthesizer — the system recombines your memories into surreal sentences
+const dreams = new DreamSynthesizer()
+dreams.loadMemories(journal.getMemories().map(m => m.currentText))
+
+// Ghost Typing — the void types your memories back at you when idle
+const ghostTyping = new GhostTyping()
+ghostTyping.loadMemories(journal.getMemories())
+
+// Palimpsest — ghosts of previous sessions' text bleed through
+const palimpsest = new Palimpsest()
+
+// Color Memory — the void shifts color based on emotional tone of your words
+const colorMemory = new ColorMemory()
+
+// Helper: save memory to all systems
+function processNewMemory(text: string) {
   const memory = journal.addMemory(text)
   drift.addUserMemory(text)
   const memText = journal.getMemories().map(m => m.currentText).join(' ')
@@ -72,29 +84,17 @@ voice.onSpoken((text) => {
   dreams.addMemory(text)
   palimpsest.addText(text)
   colorMemory.processText(text)
-})
+}
+
+// Voice of Absence — speak memories into the void (hold spacebar)
+const voice = new VoiceOfAbsence()
+voice.onSpoken((text) => processNewMemory(text))
 
 // The forgetting machine — dissolved letters are both forgotten and remembered
 const forgettingMachine = new ForgettingMachine(
   canvas,
   undefined, // no particle injection (we're in WebGL now)
-  (text) => {
-    // Save to journal before dissolving
-    const memory = journal.addMemory(text)
-    // Also send to drift as a fragment
-    drift.addUserMemory(text)
-    // Update ASCII void with new memory text
-    const memText = journal.getMemories().map(m => m.currentText).join(' ')
-    asciiVoid.updateMemoryText(memText)
-    // New memory becomes a star in the constellation
-    constellations.addMemory(memory)
-    // Feed the dream synthesizer
-    dreams.addMemory(text)
-    // Add to palimpsest — will appear as ghost text in future sessions
-    palimpsest.addText(text)
-    // Shift the void's color toward the emotional tone of the words
-    colorMemory.processText(text)
-  }
+  (text) => processNewMemory(text),
 )
 
 // Connect the heartbeat to the void and drone
@@ -161,14 +161,8 @@ clock.start()
 // Visitor Log — how many times you've returned
 const _visitor = new VisitorLog()
 
-// Dream Synthesizer — the system recombines your memories into surreal sentences
-const dreams = new DreamSynthesizer()
-dreams.loadMemories(journal.getMemories().map(m => m.currentText))
+// Start dreams and ghost typing
 dreams.start()
-
-// Ghost Typing — the void types your memories back at you when idle
-const ghostTyping = new GhostTyping()
-ghostTyping.loadMemories(journal.getMemories())
 ghostTyping.start()
 
 // The cursor leaves traces of light
@@ -200,15 +194,10 @@ window.addEventListener('keydown', () => {
   titleOverlay.style.opacity = '0.15'
 }, { once: true })
 
-// Palimpsest — ghosts of previous sessions' text bleed through
-const palimpsest = new Palimpsest()
 palimpsest.start()
 
-// Color Memory — the void shifts color based on emotional tone of your words
-const colorMemory = new ColorMemory()
-
 // Resonance Map — click anywhere to play the void like an instrument
-const _resonance = new ResonanceMap()
+const resonance = new ResonanceMap()
 
 // Particle Trails — press 't' for comet-like afterimages
 const trails = new ParticleTrails()
@@ -225,8 +214,7 @@ setInterval(() => {
   voidRenderer.setFogDensity(circadian.getFogDensity())
 }, 30000)
 
-// Drift Engine — consciousness moves between states
-// Click screen edges to drift, or press 1-5 when not typing
+// Drift Engine — consciousness moves between states (1-5 keys, void room only)
 const driftEngine = new DriftEngine()
 driftEngine.setTypingCheck(() => forgettingMachine.hasActiveInput())
 driftEngine.onChange((state) => {
@@ -255,57 +243,46 @@ cues.start()
 const guide = new GentleGuide()
 guide.show(voice.isSupported())
 
-// Room System — the house of Oubli
-// Rooms are connected by passages like a labyrinthine house
+// Room System — tab-based navigation
 const roomManager = new RoomManager()
 
-// Register rooms
+// Register rooms — Study emits new text, Instrument emits notes
 roomManager.addRoom(createVoidRoom())
-roomManager.addRoom(createStudyRoom(() => journal.getMemories()))
-roomManager.addRoom(createInstrumentRoom())
+roomManager.addRoom(createStudyRoom(
+  () => journal.getMemories(),
+  (text) => processNewMemory(text),
+))
+roomManager.addRoom(createInstrumentRoom((freq, velocity) => {
+  // Instrument notes cause subtle particle pulses and color shifts
+  voidRenderer.setBeatIntensity(velocity * 0.5)
+  voidRenderer.setDriftHueShift((freq % 440) / 440)
+}))
 
-// Define the house map — convoluted, non-obvious connections
-// The Void is the central hub
-roomManager.addPassage({
-  from: 'void', to: 'study', position: 'left',
-  hint: 'a quiet room, through here...',
-})
-roomManager.addPassage({
-  from: 'void', to: 'instrument', position: 'right',
-  hint: 'something hums beyond...',
-})
+// Wire room checks — features only fire in the right room
+const getRoomName = () => roomManager.getActiveRoom()
+driftEngine.setRoomCheck(getRoomName)
+forgettingMachine.setRoomCheck(getRoomName)
+asciiVoid.setRoomCheck(getRoomName)
+trails.setRoomCheck(getRoomName)
+heatmap.setRoomCheck(getRoomName)
+voice.setRoomCheck(getRoomName)
+resonance.setRoomCheck(getRoomName)
 
-// The Study — exit through the ceiling (you entered from the left of the void,
-// but you leave through the top of the study — the house doesn't map linearly)
-roomManager.addPassage({
-  from: 'study', to: 'void', position: 'top',
-  hint: 'the darkness above...',
-})
-// Hidden passage from Study to Instrument — only appears after writing 50+ words
-roomManager.addPassage({
-  from: 'study', to: 'instrument', position: 'bottom',
-  hint: 'music beneath the floorboards...',
-  condition: () => {
-    try {
-      const text = localStorage.getItem('oubli-study') || ''
-      return text.trim().split(/\s+/).length >= 50
-    } catch { return false }
-  },
-})
-
-// The Instrument — exit through the left wall (asymmetric with entry)
-roomManager.addPassage({
-  from: 'instrument', to: 'void', position: 'left',
-  hint: 'silence waits...',
-})
-// Hidden passage from Instrument to Study — always available but through the top
-roomManager.addPassage({
-  from: 'instrument', to: 'study', position: 'top',
-  hint: 'a desk, a pen, a thought...',
+// Room change: toggle void-only text overlays
+roomManager.onRoomChange((room) => {
+  const inVoid = room === 'void'
+  // Whispers pause/resume
+  if (inVoid) whispers.resume(); else whispers.pause()
+  // Canvas-based text overlays show/hide
+  extinction.setVisible(inVoid)
+  drift.setVisible(inVoid)
+  decay.setVisible(inVoid)
+  dreams.setVisible(inVoid)
+  ghostTyping.setVisible(inVoid)
 })
 
-// Show the void's doorways after the initial animation settles
-setTimeout(() => roomManager.init(), 15000)
+// Show the tab bar after the initial animation settles
+setTimeout(() => roomManager.init(), 8000)
 
 // Oubli breathes
 const memCount = journal.getCount()

@@ -19,6 +19,8 @@
  * singing bowls, the idea that the universe is made of vibrating strings
  */
 
+import { getAudioContext, getAudioDestination } from './AudioBus'
+
 // Pentatonic scale — always consonant
 const PENTATONIC = [0, 2, 4, 7, 9] // semitones from root
 
@@ -45,6 +47,7 @@ export class ResonanceMap {
   private animating = false
   private frame = 0
   private initialized = false
+  private roomCheck: (() => string) | null = null
 
   constructor() {
     // Visual ripple canvas
@@ -66,6 +69,9 @@ export class ResonanceMap {
       if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' ||
           target.tagName === 'A' || target.closest('[data-no-resonance]')) return
 
+      // Only play notes in void room
+      if (this.roomCheck && this.roomCheck() !== 'void') return
+
       this.playNote(e.clientX, e.clientY)
     })
   }
@@ -81,18 +87,20 @@ export class ResonanceMap {
     this.drawCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
   }
 
+  /** Set a function that returns the current room name */
+  setRoomCheck(check: () => string) {
+    this.roomCheck = check
+  }
+
   private async initAudio() {
     if (this.initialized) return
     this.initialized = true
 
-    this.ctx = new AudioContext()
-    if (this.ctx.state === 'suspended') {
-      await this.ctx.resume()
-    }
+    this.ctx = await getAudioContext()
 
     this.masterGain = this.ctx.createGain()
     this.masterGain.gain.value = 0.15
-    this.masterGain.connect(this.ctx.destination)
+    this.masterGain.connect(getAudioDestination())
 
     // Create reverb for sustained decay
     this.reverb = this.createReverb()
@@ -243,7 +251,6 @@ export class ResonanceMap {
 
   destroy() {
     cancelAnimationFrame(this.frameId)
-    this.ctx?.close()
     this.canvas.remove()
   }
 }

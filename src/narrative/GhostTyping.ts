@@ -46,6 +46,7 @@ export class GhostTyping {
   private idleThreshold = 90 * 60 // ~90 seconds idle before ghost types
   private nextGhostTime = 0
   private aborted = false     // memory lost mid-typing
+  private hidden = false
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -177,10 +178,18 @@ export class GhostTyping {
     this.nextCharFrame = this.frame + 30 // brief pause before typing starts
   }
 
+  setVisible(v: boolean) {
+    this.hidden = !v
+    if (this.hidden) {
+      this.ctx.clearRect(0, 0, this.width, this.height)
+    }
+  }
+
   private render() {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
 
+    if (this.hidden) return
     if (this.alpha < 0.01 || this.typedText.length === 0) return
 
     const fontSize = Math.min(this.width * 0.04, 36)

@@ -16,6 +16,8 @@
  * sonification, the music of the spheres, whale song.
  */
 
+import { getAudioContext, getAudioDestination } from './AudioBus'
+
 // Pentatonic scale frequencies (A minor pentatonic, multiple octaves)
 const SCALE_FREQS = [
   // Octave 2
@@ -49,25 +51,12 @@ export class TonalEngine {
   private particleDensities: number[] = new Array(8).fill(0) // 8 spatial regions
 
   async init(): Promise<void> {
-    const startOnGesture = async () => {
+    getAudioContext().then((ctx) => {
       if (this.ctx) return
-
-      this.ctx = new AudioContext()
-      if (this.ctx.state === 'suspended') {
-        await this.ctx.resume()
-      }
-
+      this.ctx = ctx
       this.setupAudio()
       this.isRunning = true
-
-      window.removeEventListener('click', startOnGesture)
-      window.removeEventListener('touchstart', startOnGesture)
-      window.removeEventListener('keydown', startOnGesture)
-    }
-
-    window.addEventListener('click', startOnGesture)
-    window.addEventListener('touchstart', startOnGesture)
-    window.addEventListener('keydown', startOnGesture)
+    })
   }
 
   private setupAudio() {
@@ -77,7 +66,7 @@ export class TonalEngine {
     this.masterGain = this.ctx.createGain()
     this.masterGain.gain.value = 0
     this.masterGain.gain.linearRampToValueAtTime(0.06, this.ctx.currentTime + 10)
-    this.masterGain.connect(this.ctx.destination)
+    this.masterGain.connect(getAudioDestination())
 
     // Long reverb for ethereal quality
     this.reverb = this.createReverb()
@@ -206,6 +195,5 @@ export class TonalEngine {
   destroy() {
     if (this.updateInterval) clearInterval(this.updateInterval)
     this.voices.forEach(v => v.oscillator.stop())
-    this.ctx?.close()
   }
 }
