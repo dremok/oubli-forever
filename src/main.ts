@@ -65,6 +65,8 @@ import { createLabyrinthRoom } from './rooms/TheLabyrinth'
 import { createGlaciariumRoom } from './rooms/TheGlacarium'
 import { createSatelliteRoom } from './rooms/TheSatellite'
 import { createAsteroidFieldRoom } from './rooms/TheAsteroidField'
+import { createDisintegrationLoopsRoom } from './rooms/TheDisintegrationLoops'
+import { createProjectionRoom } from './rooms/TheProjectionRoom'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -451,6 +453,13 @@ roomManager.addRoom(createSatelliteRoom({
   getMemories: () => journal.getMemories(),
 }))
 roomManager.addRoom(createAsteroidFieldRoom({
+  getMemories: () => journal.getMemories(),
+}))
+roomManager.addRoom(createDisintegrationLoopsRoom({
+  getMemories: () => journal.getMemories(),
+  accelerateDegradation: (id, amount) => journal.accelerateDegradation(id, amount),
+}))
+roomManager.addRoom(createProjectionRoom({
   getMemories: () => journal.getMemories(),
 }))
 
