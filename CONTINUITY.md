@@ -999,22 +999,29 @@ Surface: 34 | Hidden: 7 (catacombs, roots, ossuary, between, aquifer, midnight, 
 - In-room navigation: seismograph, radio, glacarium, tidepool as corner portals
 - `WeathervaneDeps` interface added with optional `switchTo`
 
+### 80. Complete In-Room Portal Rollout (all 43 rooms)
+- **Batch 2** (8 rooms): Darkroom, Radio (preset frequency buttons), Library (book spines), ClockTower (roman numerals), TidePool (horizon landmarks), Loom (thread spools), Satellite (constellation markers), AsteroidField (sensor readouts)
+- **Batch 3** (16 rooms): Archive (DOM passage links), Terrarium (glass edge labels), Lighthouse (horizon signals), Sketchpad (bottom corner links), DisintegrationLoops (tape transport buttons), ProjectionRoom (film reel numbers), DatePaintings (Kawara date labels), Madeleine (sensory phrases), PalimpsestGallery (gallery placards), Rememory (state transition labels), Automaton (gear labels), Seismograph (station codes), Pendulum (compass markers), Cipher (hex-encoded names), Choir (voice part labels), OracleDeck (card suits)
+- **Batch 4** (7 hidden rooms): Ossuary (bone-themed), Catacombs (inscription links), Roots (earth-toned), Aquifer (underwater glow), Well (blue-tinted), Midnight (moonlit), Mirror (mirror-themed)
+- Every room now has themed in-room portals matching its aesthetic
+- Portal pattern: subtle (alpha 0.05-0.08), brighter on hover (0.3-0.4), themed to room
+
 ### Navigation Vision (IMPORTANT — read after compaction)
 PRIMARY navigation should be through IN-ROOM elements, not the passage bar:
 - Objects you find (labyrinth artifacts)
 - Visual elements in the scene (glacarium sky objects, weathervane portals)
-- Objectives to fulfill (terrarium gen 10, lighthouse 3 transmits)
-- Audio/text triggers (séance keywords)
+- Themed portals in every room (hex codes in Cipher, station IDs in Seismograph, etc.)
 - The passage bar is a FALLBACK for when you're lost
+- ALL 43 rooms now have in-room navigation portals
 
 What's NOT done yet:
-- ~25 rooms still ONLY have passage bar navigation (no in-room portals)
 - No objective-based unlock mechanics for surface→surface connections
 - Need MORE diverse navigation styles: clickable scene objects, state-based triggers, earned unlocks
+- Some rooms could benefit from deeper interactivity beyond portals
 
 ### Total Rooms: 43 (was 41; +Rememory +Library added in late Era 7)
 Surface: 36 | Hidden: 7
 
 ---
-*Last updated: Era 8, Feature 79 — Weathervane Deepened*
-*"43 rooms connected by a graph, not a list. the house has corridors now, not just doors. artifacts hidden in labyrinths, warmth melting ice, wind you can push. navigation as exploration."*
+*Last updated: Era 8, Feature 80 — Complete Portal Rollout*
+*"every room has doors now — bone-carved, hex-encoded, moonlit, station-coded. 43 rooms, each with navigation that feels like it belongs there."*
