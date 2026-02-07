@@ -836,5 +836,84 @@ Era 6 focused on FEATURE DIVERSITY. 12 new rooms, of which 12 have ZERO memory d
 - **Meta**: Cartographer (map of the house), Mirror (behavior portrait)
 
 ---
-*Last updated: Era 6, Feature 65 — Choir, Oracle Deck, Labyrinth*
-*"32 rooms. some rooms sing. some rooms tell fortunes. one room is a maze that leads to places you haven't found yet."*
+
+66. **The Glacarium** (`src/rooms/TheGlacarium.ts`) — ERA 7
+    - Memories as ice crystals on a dark Arctic ocean
+    - Inspired by Feb 2026 record-low Arctic sea ice extent
+    - Crystal height/sharpness reflects memory health, drip effects for degradation
+    - Aurora borealis, star field, wave lines on dark water
+    - Sea ice extent data (13.2M km² — 9% below Feb average)
+    - Melt rate modulated by real Arctic conditions
+    - USES MEMORIES. Data-driven. Climate-aware.
+
+67. **The Satellite** (`src/rooms/TheSatellite.ts`) — ERA 7
+    - LIVE ISS TRACKING via api.open-notify.org (no auth, 5-second polling)
+    - Equirectangular world map with simplified continent outlines
+    - Memories placed as signal beacons at deterministic lat/lon positions
+    - ISS passes over beacons → "receives transmission" → displays memory text
+    - ISS trail, footprint circle, golden orbital glow
+    - Inspired by Artemis II delays, Overview Effect, SETI
+    - USES MEMORIES. Live orbital data. Space-aware.
+
+68. **The Asteroid Field** (`src/rooms/TheAsteroidField.ts`) — ERA 7
+    - LIVE NEAR-EARTH OBJECT DATA from JPL Close Approach API
+    - Asteroids as tumbling irregular rocks with craters
+    - Memories float among them as fragile light points
+    - Asteroids passing near memories cause text distortion (gravitational lensing)
+    - Inspired by Melancholia (Lars von Trier), DART mission, Tunguska
+    - USES MEMORIES. Live data. Existential threat.
+
+69. **The Disintegration Loops** (`src/rooms/TheDisintegrationLoops.ts`) — ERA 7
+    - After William Basinski's masterpiece (2001): tape loops degrading with each pass
+    - Memories become tape loops — text scrolls, degrades each pass through
+    - Characters drop out, get replaced with static, duplicate (tape echo)
+    - Reel visualization, magnetic oxide particles falling from tape
+    - DESTRUCTIVE: accelerates real memory degradation every 3 passes
+    - Low drone via Web Audio, click degradation sounds
+    - Also inspired by Alvin Lucier's "I Am Sitting in a Room"
+    - USES MEMORIES. Music-inspired. Destructive observation.
+
+70. **The Projection Room** (`src/rooms/TheProjectionRoom.ts`) — ERA 7
+    - Cinema of memory: memories as deteriorating film reels
+    - SMPTE countdown leader, sprocket holes, film grain
+    - Degraded memories: scratches, frame skips, cigarette burns, sepia shift
+    - Light leaks, vignette, projector flicker
+    - Inspired by: Eternal Sunshine, Stalker, Sans Soleil, Last Year at Marienbad, Memento
+    - Cycling film quotes at bottom
+    - USES MEMORIES. Cinema-inspired. Atmospheric.
+
+71. **The Date Paintings** (`src/rooms/TheDatePaintings.ts`) — ERA 7
+    - After On Kawara's "Today" series (1966-2013): 3,000 date paintings over 48 years
+    - Each memory shows ONLY its creation date as monochrome painting
+    - Today's painting only exists if you visit today (tracked in localStorage)
+    - Attendance tracking: days since first visit, days actually visited
+    - Older memories → warmer backgrounds, degraded → illegible dates
+    - Also inspired by Roman Opalka, Tehching Hsieh, ichi-go ichi-e
+    - USES MEMORIES (dates only). Conceptual art. Attendance mechanic.
+
+### Era 7 Summary
+Era 7 marked a shift toward **cultural grounding**: features inspired by real culture
+(music, film, visual art, current events) rather than generic art rooms.
+- **Live data + memories**: Glacarium (Arctic ice), Satellite (ISS), Asteroid Field (JPL NEOs)
+- **Music-inspired**: Disintegration Loops (Basinski tape decay)
+- **Cinema-inspired**: Projection Room (film degradation aesthetics)
+- **Art-inspired**: Date Paintings (On Kawara conceptual art)
+- ALL six rooms use the memory system in different ways
+- External APIs: ISS position, JPL close approaches, Arctic sea ice reference data
+
+### Updated Rooms Table (Era 7)
+| Tab | Name | Purpose | Memory? | Cultural Source |
+|-----|------|---------|---------|----------------|
+| glacarium | The Glacarium | Arctic ice crystals | Yes | Feb 2026 sea ice record low |
+| satellite | The Satellite | ISS orbital tracker | Yes | Artemis II, Overview Effect |
+| asteroids | The Asteroid Field | Near-Earth objects | Yes | Melancholia, DART mission |
+| disintegration | The Disintegration Loops | Tape decay | Yes (destructive) | Basinski (2001) |
+| projection | The Projection Room | Film degradation | Yes | Eternal Sunshine, Stalker, Sans Soleil |
+| datepaintings | The Date Paintings | Calendar existence | Yes (dates) | On Kawara, Roman Opalka |
+
+### Total Rooms: 38
+Surface: 33 | Hidden: 7 (catacombs, roots, ossuary, between, aquifer, midnight, mirror)
+
+---
+*Last updated: Era 7, Feature 71 — Date Paintings*
+*"38 rooms. the house is a museum, a cinema, a space station, a glacier. every room remembers differently."*

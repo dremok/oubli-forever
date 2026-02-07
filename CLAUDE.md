@@ -27,11 +27,19 @@ After context compaction/reset:
 - Test that existing features (typing, voice, navigation, sound) still work after adding anything
 
 ## Feature Diversity — CRITICAL
-- **NOT everything has to revolve around saved memories.** Many rooms use `getMemories()` as their primary content source — this is getting repetitive
-- Think MORE outside the box: rooms can be about real-time data, external APIs, generative systems, pure interaction, games, tools, narratives, live feeds, sensor data, browser APIs, or anything else
-- Features can be completely self-contained with no connection to the memory system
-- Variety is essential — each new room should feel like a genuinely different experience, not just "another way to view your memories"
-- The system is a living world that contains EVERYTHING, not just a memory gallery
+- **Diversity means MIX, not avoidance.** Memories can and should still be used — but not in EVERY room.
+- Some rooms should deeply engage with memories. Some should ignore them entirely. Some should mix memories with external data. The balance matters.
+- **Connections between rooms are essential.** Rooms should NOT be isolated islands. Build passages, cross-references, thematic links, shared effects. The house is interconnected.
+- Variety in feature types: real-time data, external APIs, generative systems, pure interaction, games, tools, narratives, live feeds, sensor data, browser APIs — AND memory-based rooms that do new things with memories.
+- Each new room should feel genuinely different, but still part of the same house.
+
+## Cultural Grounding — CRITICAL
+- **Every new feature must be inspired by something real** — current events, cultural trends, scientific discoveries, art movements, technological shifts, social phenomena happening NOW (2025-2026).
+- Do NOT build generic rooms. Build rooms that could only exist in this specific moment in time.
+- **Web search BEFORE building.** Find what's happening in the world — new research, cultural moments, emerging technologies, viral phenomena, political shifts, environmental events — and let those inspire features.
+- **Use external data innovatively.** Don't just fetch and display data — transform it, let it drive aesthetics, make it emotional, combine it with the memory system, use it as a metaphor.
+- Examples of what "culturally grounded" means: a room that visualizes real-time CO2 levels as rising water, a room that pulls headlines and lets them decay, a room that uses the ISS position to affect lighting, a room where AI-generated art responds to current news sentiment.
+- The goal: someone visiting Oubli should feel they are experiencing THIS moment in time, not a timeless generic art piece.
 
 ## Workflow
 - Commit and push after every major feature
