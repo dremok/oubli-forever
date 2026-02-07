@@ -161,6 +161,20 @@ function generatePlant(memory: StoredMemory, baseX: number, groundY: number): Pl
   }
 }
 
+interface WaterDrop {
+  x: number
+  y: number
+  radius: number
+  alpha: number
+}
+
+interface PlantTooltip {
+  plant: Plant
+  x: number
+  y: number
+  alpha: number
+}
+
 export function createGardenRoom(deps: GardenDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -169,6 +183,10 @@ export function createGardenRoom(deps: GardenDeps): Room {
   let frameId = 0
   let plants: Plant[] = []
   let time = 0
+  let waterDrops: WaterDrop[] = []
+  let tooltip: PlantTooltip | null = null
+  let mouseX = 0
+  let mouseY = 0
 
   function buildGarden() {
     const memories = deps.getMemories()
@@ -304,6 +322,72 @@ export function createGardenRoom(deps: GardenDeps): Room {
       ctx.fillText(label, plant.x + Math.sin(time * plant.swaySpeed + plant.swayPhase) * 1, groundY + 18)
     }
 
+    // Water drop animations
+    for (let i = waterDrops.length - 1; i >= 0; i--) {
+      const drop = waterDrops[i]
+      drop.radius += 0.8
+      drop.alpha -= 0.008
+
+      if (drop.alpha <= 0) {
+        waterDrops.splice(i, 1)
+        continue
+      }
+
+      ctx.beginPath()
+      ctx.arc(drop.x, drop.y, drop.radius, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(100, 160, 200, ${drop.alpha})`
+      ctx.lineWidth = 1
+      ctx.stroke()
+    }
+
+    // Hover highlight — glow around nearest plant
+    if (mouseY < groundY) {
+      for (const plant of plants) {
+        const dist = Math.abs(mouseX - plant.x)
+        if (dist < 30) {
+          ctx.beginPath()
+          ctx.arc(plant.x, groundY - 5, 4, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.08)'
+          ctx.fill()
+        }
+      }
+    }
+
+    // Plant tooltip
+    if (tooltip) {
+      tooltip.alpha -= 0.003
+      if (tooltip.alpha <= 0) {
+        tooltip = null
+      } else {
+        const t = tooltip
+        const mem = t.plant.memory
+        const health = Math.floor((1 - mem.degradation) * 100)
+        const age = Math.floor((Date.now() - mem.timestamp) / (1000 * 60 * 60 * 24))
+
+        // Background
+        ctx.fillStyle = `rgba(10, 8, 5, ${t.alpha * 0.85})`
+        ctx.fillRect(t.x - 120, t.y - 45, 240, 75)
+        ctx.strokeStyle = `rgba(120, 90, 50, ${t.alpha * 0.15})`
+        ctx.lineWidth = 1
+        ctx.strokeRect(t.x - 120, t.y - 45, 240, 75)
+
+        // Text
+        ctx.font = '12px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 180, 140, ${t.alpha * 0.6})`
+        ctx.textAlign = 'center'
+        const label = mem.currentText.slice(0, 40) || '(empty)'
+        ctx.fillText(`"${label}"`, t.x, t.y - 20)
+
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 180, 140, ${t.alpha * 0.3})`
+        ctx.fillText(`${health}% alive · ${age} days old`, t.x, t.y)
+
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 180, 140, ${t.alpha * 0.15})`
+        ctx.fillText('click water to nurture · click soil to descend', t.x, t.y + 16)
+      }
+    }
+
     // Descent hint — click ground to go to roots
     if (deps.onDescend && plants.length > 0) {
       ctx.font = '9px "Cormorant Garamond", serif'
@@ -343,14 +427,55 @@ export function createGardenRoom(deps: GardenDeps): Room {
       `
       ctx = canvas.getContext('2d')
 
-      // Click on ground area to descend to roots
+      // Click interactions
       canvas.addEventListener('click', (e) => {
         const rect = canvas!.getBoundingClientRect()
-        const y = e.clientY - rect.top
+        const clickX = e.clientX - rect.left
+        const clickY = e.clientY - rect.top
         const groundY = canvas!.height * 0.82
-        if (y > groundY && deps.onDescend) {
+
+        if (clickY > groundY && deps.onDescend) {
           deps.onDescend()
+          return
         }
+
+        // Check if clicked near a plant
+        let clickedPlant: Plant | null = null
+        let closestDist = 40 // max click distance
+        for (const plant of plants) {
+          const dist = Math.abs(clickX - plant.x)
+          if (dist < closestDist && clickY < groundY) {
+            closestDist = dist
+            clickedPlant = plant
+          }
+        }
+
+        if (clickedPlant) {
+          // Show tooltip for this plant
+          tooltip = {
+            plant: clickedPlant,
+            x: clickedPlant.x,
+            y: groundY - 80,
+            alpha: 1,
+          }
+        } else {
+          // Water effect — click on ground near plants
+          waterDrops.push({
+            x: clickX,
+            y: clickY,
+            radius: 2,
+            alpha: 0.4,
+          })
+          // Dismiss tooltip
+          tooltip = null
+        }
+      })
+
+      // Track mouse for hover effects
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas!.getBoundingClientRect()
+        mouseX = e.clientX - rect.left
+        mouseY = e.clientY - rect.top
       })
 
       overlay.appendChild(canvas)

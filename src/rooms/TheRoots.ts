@@ -109,6 +109,9 @@ export function createRootsRoom(deps: RootsDeps): Room {
   let frameId = 0
   let time = 0
   let particles: Particle[] = []
+  let mouseX = 0
+  let mouseY = 0
+  let clickRipples: { x: number; y: number; radius: number; alpha: number }[] = []
 
   function drawRoot(node: RootNode, parentX: number, parentY: number) {
     if (!ctx) return
@@ -265,6 +268,26 @@ export function createRootsRoom(deps: RootsDeps): Room {
     // Keep particles manageable
     if (particles.length > 100) particles.splice(0, 20)
 
+    // Click ripples — underground tremors
+    for (let i = clickRipples.length - 1; i >= 0; i--) {
+      const r = clickRipples[i]
+      r.radius += 1.2
+      r.alpha -= 0.008
+      if (r.alpha <= 0) { clickRipples.splice(i, 1); continue }
+
+      ctx.beginPath()
+      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(120, 90, 50, ${r.alpha})`
+      ctx.lineWidth = 0.5
+      ctx.stroke()
+    }
+
+    // Mouse proximity glow — roots react to presence
+    ctx.beginPath()
+    ctx.arc(mouseX, mouseY, 40, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(80, 120, 60, 0.02)'
+    ctx.fill()
+
     // Ascend link
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(120, 90, 50, ${0.1 + Math.sin(time * 0.5) * 0.05})`
@@ -310,12 +333,30 @@ export function createRootsRoom(deps: RootsDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click top area to ascend, bottom-right to go deeper
+      canvas.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX
+        mouseY = e.clientY
+      })
+
+      // Click: ascend, descend, or create tremor ripple
       canvas.addEventListener('click', (e) => {
         if (e.clientY < 50) {
           deps.onAscend()
         } else if (e.clientX > window.innerWidth * 0.7 && e.clientY > window.innerHeight * 0.85 && deps.onDeeper) {
           deps.onDeeper()
+        } else {
+          // Tremor ripple + spawn particles from click point
+          clickRipples.push({ x: e.clientX, y: e.clientY, radius: 5, alpha: 0.3 })
+          for (let i = 0; i < 5; i++) {
+            particles.push({
+              x: e.clientX + (Math.random() - 0.5) * 20,
+              y: e.clientY,
+              vy: -0.5 - Math.random() * 1,
+              alpha: 0.3 + Math.random() * 0.2,
+              size: 1 + Math.random() * 2,
+              hue: 30 + Math.random() * 30,
+            })
+          }
         }
       })
 

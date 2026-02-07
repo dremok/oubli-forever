@@ -343,7 +343,13 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
 
       async function doSearch() {
         const query = input.value.trim()
-        if (!query || searching) return
+        if (searching) return
+
+        if (!query) {
+          status.textContent = 'type a URL or domain first'
+          status.style.color = 'rgba(180, 160, 120, 0.3)'
+          return
+        }
 
         searching = true
         status.textContent = 'searching the archive...'
@@ -358,8 +364,9 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
           if (searchCount >= 2 && deps?.onDescend) {
             descent.style.color = 'rgba(180, 160, 120, 0.12)'
           }
-        } catch {
+        } catch (err) {
           status.textContent = 'the archive is unreachable. try again.'
+          console.warn('Archive search failed:', err)
         } finally {
           searching = false
         }
@@ -369,7 +376,10 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         e.stopPropagation()
         if (e.key === 'Enter') doSearch()
       })
-      searchBtn.addEventListener('click', doSearch)
+      searchBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        doSearch()
+      })
 
       return overlay
     },
