@@ -499,12 +499,71 @@ The core metaphor: We forget details to learn larger structures. We forget the o
 - Railway: https://oubli-forever-production.up.railway.app
 - Auto-deploy via `railway up`
 
-### Navigation Paths
-- Tab bar → all visible rooms (void, study, instrument, observatory, séance, darkroom, garden, archive)
-- The Archive → (hidden) The Catacombs (after 2+ searches, "descend deeper" link)
-- The Catacombs → The Archive ("ascend" link at bottom)
-- More convoluted paths to come — not everything connects through the void
+41. **The Loom** (`src/rooms/TheLoom.ts`) — ERA 5
+    - Memories woven into generative textiles on canvas
+    - Each memory = colored thread, text → binary weave pattern (over/under)
+    - Degraded memories = frayed/broken threads with gaps
+    - Shuttle animation, Jacquard loom aesthetic, warm wood tones
+    - Thread stats: intact, fraying, broken counts
+
+42. **The Roots** (`src/rooms/TheRoots.ts`) — ERA 5, HIDDEN
+    - Below the garden: root systems grow downward from each memory
+    - Branching like neural dendrites, earth-tone palette
+    - Bioluminescent mycorrhizal nodes at connection points
+    - Decomposition particles drift upward from degraded memories
+    - Soil strata: topsoil, subsoil, decomposition layer
+    - Connects to: Garden (up) and Ossuary (deeper)
+
+43. **The Ossuary** (`src/rooms/TheOssuary.ts`) — ERA 5, HIDDEN
+    - Junction room where underground paths converge
+    - Degraded memories (>40%) shown as bone-like glyphs
+    - Glyph types: long bones, skulls, vertebrae, shards
+    - Near-silent, faint wind only, stone texture background
+    - Connects to: Roots (left) and Catacombs (right)
+
+44. **The Tide Pool** (`src/rooms/TheTidePool.ts`) — ERA 5
+    - Ocean room with layered sine wave water rendering
+    - Memories float as driftwood, some wash ashore
+    - Degraded memories are waterlogged (blurred text)
+    - Tide oscillates over ~3 min (high/mid/low)
+    - Procedural ocean sound: brown noise + low-pass filter
+    - Moon reflection shimmers on water surface
+
+### Rooms
+| Tab | Name | Purpose |
+|-----|------|---------|
+| the void | Default | Particle cosmos, text overlays, memory input |
+| the study | Writing | Distraction-free writing with prompts |
+| the instrument | Synth | Keyboard synth with waveform viz |
+| the observatory | Stars | Orbit through memory constellations |
+| the séance | Oracle | Ask questions, void answers from memories |
+| the darkroom | Photos | Develop memories into photographs via fal.ai |
+| the garden | Growth | Memories grow as procedural plants |
+| the archive | Dig | Search Wayback Machine for dead websites |
+| the loom | Textile | Weave memories into generative patterns |
+| the tide pool | Ocean | Memories wash ashore on waves |
+| (hidden) catacombs | Descent | Strata of dead internet history |
+| (hidden) roots | Below | Root systems beneath the garden |
+| (hidden) ossuary | Junction | Where underground paths converge |
+
+### Navigation Map
+```
+                    TAB BAR (surface)
+    ┌──────────────────────────────────────────┐
+    │ void · study · instrument · observatory  │
+    │ séance · darkroom · garden · archive     │
+    │ loom · tide pool                         │
+    └──────┬──────────────────────────┬────────┘
+           │                          │
+        garden                     archive
+           │ (click soil)             │ (2+ searches)
+           ▼                          ▼
+        THE ROOTS              THE CATACOMBS
+           │ (bottom-right)           │ (bottom)
+           ▼                          ▼
+           └──────► OSSUARY ◄─────────┘
+```
 
 ---
-*Last updated: Era 5, Feature 40 — Darkroom, Garden, Archive, Catacombs*
-*"beneath the archive, the bones of the old internet. descend deeper."*
+*Last updated: Era 5, Feature 44 — Loom, Roots, Ossuary, Tide Pool*
+*"the underground paths converge. what decays above becomes architecture below."*
