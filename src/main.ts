@@ -33,6 +33,7 @@ import { createVoidRoom } from './rooms/TheVoid'
 import { createStudyRoom } from './rooms/TheStudy'
 import { createInstrumentRoom } from './rooms/TheInstrument'
 import { createObservatoryRoom } from './rooms/TheObservatory'
+import { SharpWaveRipples } from './replay/SharpWaveRipples'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -85,6 +86,7 @@ function processNewMemory(text: string) {
   dreams.addMemory(text)
   palimpsest.addText(text)
   colorMemory.processText(text)
+  ripples.addMemory(memory)
 }
 
 // Voice of Absence — speak memories into the void (hold spacebar)
@@ -163,9 +165,14 @@ clock.start()
 // Visitor Log — how many times you've returned
 const _visitor = new VisitorLog()
 
-// Start dreams and ghost typing
+// Sharp Wave Ripples — periodic memory replay events
+const ripples = new SharpWaveRipples()
+ripples.loadMemories(journal.getMemories())
+
+// Start dreams, ghost typing, and ripples
 dreams.start()
 ghostTyping.start()
+ripples.start()
 
 // The cursor leaves traces of light
 cursorGlow.init()
@@ -290,6 +297,7 @@ roomManager.onRoomChange((room) => {
   decay.setVisible(inVoid)
   dreams.setVisible(inVoid)
   ghostTyping.setVisible(inVoid)
+  ripples.setVisible(inVoid)
 })
 
 // Show the tab bar after the initial animation settles
