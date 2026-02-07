@@ -24,6 +24,7 @@ import type { StoredMemory } from '../memory/MemoryJournal'
 
 interface ClockTowerDeps {
   getMemories: () => StoredMemory[]
+  onMidnight?: () => void
 }
 
 export function createClockTowerRoom(deps: ClockTowerDeps): Room {
@@ -36,6 +37,9 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
   let pendulumAngle = 0
   let pendulumVelocity = 0
   let tickSound = 0 // visual tick flash
+  let lastHour = -1
+  let portalVisible = false
+  let portalAlpha = 0
 
   function render() {
     if (!canvas || !ctx || !active) return
@@ -302,6 +306,22 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       ctx.fillStyle = `rgba(255, 80, 80, ${0.1 + Math.sin(time * 2) * 0.05})`
       ctx.fillText('◄ time is running backwards', w / 2, cy + radius + 18)
     }
+
+    // Portal to The Midnight — appears when the hour changes
+    const currentHour = now.getHours()
+    if (lastHour >= 0 && currentHour !== lastHour && deps.onMidnight) {
+      portalVisible = true
+      portalAlpha = 0.4
+    }
+    lastHour = currentHour
+
+    if (portalVisible && portalAlpha > 0.02) {
+      portalAlpha *= 0.998 // slow fade
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(180, 160, 220, ${portalAlpha})`
+      ctx.textAlign = 'center'
+      ctx.fillText('▸ the hour has changed. step through.', w / 2, h - 60)
+    }
   }
 
   return {
@@ -319,8 +339,19 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       canvas = document.createElement('canvas')
       canvas.width = window.innerWidth
       canvas.height = window.innerHeight
-      canvas.style.cssText = 'width: 100%; height: 100%;'
+      canvas.style.cssText = 'width: 100%; height: 100%; cursor: default;'
       ctx = canvas.getContext('2d')
+
+      // Click: portal to midnight
+      canvas.addEventListener('click', (e) => {
+        if (portalVisible && portalAlpha > 0.02 && deps.onMidnight) {
+          // Click bottom area for portal
+          if (e.clientY > window.innerHeight * 0.8) {
+            deps.onMidnight()
+          }
+        }
+      })
+
       overlay.appendChild(canvas)
 
       const onResize = () => {
