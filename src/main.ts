@@ -61,6 +61,7 @@ import { createWeathervaneRoom } from './rooms/TheWeathervane'
 import { createCartographerRoom } from './rooms/TheCartographer'
 import { createChoirRoom } from './rooms/TheChoir'
 import { createOracleDeckRoom } from './rooms/TheOracleDeck'
+import { createLabyrinthRoom } from './rooms/TheLabyrinth'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -432,6 +433,14 @@ roomManager.addRoom(createCartographerRoom({
 }))
 roomManager.addRoom(createChoirRoom())
 roomManager.addRoom(createOracleDeckRoom())
+roomManager.addRoom(createLabyrinthRoom({
+  onExit: () => {
+    // Labyrinth exit leads to a random hidden room
+    const hiddenRooms = ['between', 'catacombs', 'roots', 'ossuary', 'aquifer', 'midnight', 'mirror']
+    const target = hiddenRooms[Math.floor(Math.random() * hiddenRooms.length)]
+    roomManager.switchTo(target)
+  },
+}))
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
