@@ -59,6 +59,7 @@ import { createLighthouseRoom } from './rooms/TheLighthouse'
 import { createSketchpadRoom } from './rooms/TheSketchpad'
 import { createWeathervaneRoom } from './rooms/TheWeathervane'
 import { createCartographerRoom } from './rooms/TheCartographer'
+import { createChoirRoom } from './rooms/TheChoir'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -428,6 +429,7 @@ roomManager.addRoom(createCartographerRoom({
   getActiveRoom: () => roomManager.getActiveRoom(),
   getRoomVisits: () => roomManager.getRoomVisits(),
 }))
+roomManager.addRoom(createChoirRoom())
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
