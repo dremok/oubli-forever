@@ -648,6 +648,110 @@ The core metaphor: We forget details to learn larger structures. We forget the o
     séance → (ask "between") → BETWEEN (doors to all rooms)
 ```
 
+53. **The Mirror** (`src/rooms/TheMirror.ts`) — ERA 5, HIDDEN
+    - Behavior portrait: reflects your usage patterns back at you
+    - Word frequencies from memories + room visit data
+    - Oval portrait shape, characters from most-used words
+    - Degrades (fogs) if you don't visit — the mirror forgets you
+    - Uses localStorage for mirror-specific data
+
+54. **The Automaton** (`src/rooms/TheAutomaton.ts`) — ERA 5
+    - Conway's Game of Life — ZERO MEMORY DEPENDENCY
+    - Toroidal grid, cells colored by age (pink→gold→gray)
+    - Resurrection cells glow violet
+    - Click to seed, drag to paint, scroll speed, space pause, r reset
+    - Auto-reseeds when all cells die
+
+55. **The Seismograph** (`src/rooms/TheSeismograph.ts`) — ERA 6
+    - LIVE EARTHQUAKE DATA from USGS GeoJSON feed
+    - World map projection with tectonic plate boundaries
+    - Earthquakes as expanding rings, colored by depth
+    - Seismograph trace animation, click quakes for details
+    - Auto-refreshes every 5 minutes. ZERO MEMORY DEPENDENCY.
+
+56. **The Pendulum** (`src/rooms/ThePendulum.ts`) — ERA 6
+    - Harmonograph simulator: 4 coupled pendulums trace decaying curves
+    - Lissajous-like patterns with frequency ratios and slight detuning
+    - Color shifts along the trace, patterns slowly fade
+    - Click to randomize, scroll to adjust decay rate
+    - Each drawing is temporary — you cannot save them. ZERO MEMORY DEPENDENCY.
+
+57. **The Cipher** (`src/rooms/TheCipher.ts`) — ERA 6
+    - Interactive Caesar cipher puzzle with 12 levels
+    - Each solved cipher reveals a fragment of Oubli's creation myth
+    - Arrow keys to shift letters, hint per puzzle
+    - Correct characters highlighted green, solved text glows gold
+    - Progress saved in localStorage. ZERO MEMORY DEPENDENCY.
+
+58. **The Terrarium** (`src/rooms/TheTerrarium.ts`) — ERA 6
+    - Artificial life ecosystem simulation
+    - Creatures: eat, reproduce, age, die, evolve color through generations
+    - Food grows naturally, dead creatures become food
+    - Click to drop food, population dynamics, auto-reseed on crash
+    - Hidden passage to Garden when creatures reach gen 10. ZERO MEMORY DEPENDENCY.
+
+59. **The Lighthouse** (`src/rooms/TheLighthouse.ts`) — ERA 6
+    - Morse code transmitter in the dark
+    - Rotating lighthouse beam, type messages to transmit
+    - Auto-transmits maritime distress calls and poetry when idle
+    - Stars, water shimmer, decoded text appears letter by letter
+    - Hidden passage to Tide Pool after 3+ transmissions. ZERO MEMORY DEPENDENCY.
+
+### Updated Rooms Table
+| Tab | Name | Purpose | Memory? |
+|-----|------|---------|---------|
+| the void | Default | Particle cosmos, text overlays | Yes |
+| the study | Writing | Distraction-free writing | Yes |
+| the instrument | Synth | Keyboard synth | No |
+| the observatory | Stars | Memory constellation orbit | Yes |
+| the séance | Oracle | Ask questions | Yes |
+| the darkroom | Photos | AI-generated photos | Yes |
+| the garden | Growth | Procedural plants | Yes |
+| the archive | Dig | Wayback Machine | No |
+| the loom | Textile | Weave memories | Yes |
+| the tide pool | Ocean | Waves and driftwood | Yes |
+| the furnace | Fire | Burn memories | Yes |
+| the radio | Signal | Frequency tuning | Yes |
+| the well | Echo | Drop and distort | Yes |
+| the clock tower | Time | Real-time clock | Yes |
+| the automaton | Life | Conway's Game of Life | No |
+| the seismograph | Earth | Live earthquake data | No |
+| the pendulum | Physics | Harmonograph curves | No |
+| the cipher | Puzzle | Cryptography game | No |
+| the terrarium | Ecosystem | Artificial life | No |
+| the lighthouse | Signal | Morse code | No |
+| (hidden) catacombs | Descent | Dead internet strata | No |
+| (hidden) roots | Below | Root systems | Yes |
+| (hidden) ossuary | Junction | Underground junction | Yes |
+| (hidden) between | Corridor | Liminal hallway | No |
+| (hidden) aquifer | Water | Dissolved fragments | Yes |
+| (hidden) midnight | Time | Hourly poems | No |
+| (hidden) mirror | Portrait | Behavior reflection | Yes |
+
+### Updated Navigation Map
+```
+                       TAB BAR (surface)
+    ┌──────────────────────────────────────────────────────────────┐
+    │ void · study · instrument · observatory · séance              │
+    │ darkroom · garden · archive · loom · tide pool                │
+    │ furnace · radio · well · clock tower · automaton              │
+    │ seismograph · pendulum · cipher · terrarium · lighthouse      │
+    └──┬──────┬──────────────┬──────────────┬──────────────────────┘
+       │      │              │              │
+    garden  archive        well       clock tower
+       │      │              │         (hour change)
+       │(soil) │(2+ search)  │(drop enough) │
+       ▼      ▼              ▼              ▼
+    ROOTS  CATACOMBS     AQUIFER       MIDNIGHT
+       │       │              │        (time-gated)
+       │(deep) │(bottom)      │(right)
+       ▼       ▼              ▼
+       └─► OSSUARY ◄─┘    TIDE POOL ◄── lighthouse (3+ transmits)
+                                ▲
+    terrarium (gen 10) → GARDEN─┘
+    séance → (ask "between") → BETWEEN (doors to all rooms)
+```
+
 ---
-*Last updated: Era 5, Feature 52 — ClockTower, Midnight, HouseWeather*
-*"some rooms create. some rooms destroy. some rooms just listen. one only exists at midnight."*
+*Last updated: Era 6, Feature 59 — Seismograph, Pendulum, Cipher, Terrarium, Lighthouse*
+*"some rooms are alive. some rooms solve puzzles. some rooms listen to the earth. the lighthouse signals to no one."*
