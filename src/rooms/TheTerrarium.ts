@@ -44,7 +44,11 @@ interface Food {
   growth: number
 }
 
-export function createTerrariumRoom(): Room {
+interface TerrariumDeps {
+  onGarden?: () => void // passage to the garden
+}
+
+export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -59,6 +63,8 @@ export function createTerrariumRoom(): Room {
   let totalBorn = 0
   let totalDied = 0
   let maxGeneration = 0
+  let gardenLink: HTMLElement | null = null
+  let gardenLinkVisible = false
 
   function init() {
     if (!canvas) return
@@ -369,6 +375,13 @@ export function createTerrariumRoom(): Room {
     ctx.fillText(`gen ${maxGeneration}`, w - 25, h - 35)
     ctx.fillText(`ratio: ${creatures.length > 0 ? (food.length / creatures.length).toFixed(1) : '∞'}`, w - 25, h - 23)
 
+    // Garden passage — life evolved enough to find the garden
+    if (maxGeneration >= 10 && deps.onGarden && gardenLink && !gardenLinkVisible) {
+      gardenLinkVisible = true
+      gardenLink.style.opacity = '0.3'
+      gardenLink.style.pointerEvents = 'auto'
+    }
+
     // Hint
     ctx.font = '9px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(120, 160, 120, 0.04)'
@@ -415,12 +428,34 @@ export function createTerrariumRoom(): Room {
       }
       window.addEventListener('resize', onResize)
 
+      // Garden link — appears when life evolves enough
+      if (deps.onGarden) {
+        gardenLink = document.createElement('div')
+        gardenLink.style.cssText = `
+          position: absolute; top: 12px; right: 16px;
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 10px; font-style: italic;
+          letter-spacing: 2px;
+          color: rgba(80, 180, 80, 0.4);
+          cursor: pointer; pointer-events: none;
+          opacity: 0; transition: opacity 2s ease;
+        `
+        gardenLink.textContent = 'life finds the garden'
+        gardenLink.addEventListener('click', () => deps.onGarden?.())
+        overlay.appendChild(gardenLink)
+      }
+
       overlay.appendChild(canvas)
       return overlay
     },
 
     activate() {
       active = true
+      gardenLinkVisible = false
+      if (gardenLink) {
+        gardenLink.style.opacity = '0'
+        gardenLink.style.pointerEvents = 'none'
+      }
       init()
       render()
     },

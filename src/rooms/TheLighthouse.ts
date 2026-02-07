@@ -51,7 +51,11 @@ const AUTO_MESSAGES = [
   'lat 36.0 lon 25.4 minoan eruption',
 ]
 
-export function createLighthouseRoom(): Room {
+interface LighthouseDeps {
+  onDescend?: () => void // navigate to tide pool
+}
+
+export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -70,6 +74,9 @@ export function createLighthouseRoom(): Room {
   let autoTimer = 0
   let currentMessage = ''
   let decodedSoFar = ''
+  let transmitCount = 0
+  let shoreLink: HTMLElement | null = null
+  let shoreLinkVisible = false
 
   // Morse timing (in frames at 60fps)
   const DOT_DURATION = 8
@@ -106,6 +113,14 @@ export function createLighthouseRoom(): Room {
     decodedSoFar = ''
     transmitting = true
     autoMode = false
+    transmitCount++
+
+    // After 3 manual transmissions, reveal the shore link
+    if (transmitCount >= 3 && !shoreLinkVisible && shoreLink && deps.onDescend) {
+      shoreLinkVisible = true
+      shoreLink.style.opacity = '0.3'
+      shoreLink.style.pointerEvents = 'auto'
+    }
   }
 
   function processQueue() {
@@ -401,6 +416,24 @@ export function createLighthouseRoom(): Room {
       }
       window.addEventListener('resize', onResize)
 
+      // Shore link — hidden passage to tide pool
+      if (deps.onDescend) {
+        shoreLink = document.createElement('div')
+        shoreLink.style.cssText = `
+          position: absolute; bottom: 40px; left: 50%;
+          transform: translateX(-50%);
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 10px; font-style: italic;
+          letter-spacing: 2px;
+          color: rgba(80, 120, 180, 0.4);
+          cursor: pointer; pointer-events: none;
+          opacity: 0; transition: opacity 2s ease;
+        `
+        shoreLink.textContent = 'descend to the shore'
+        shoreLink.addEventListener('click', () => deps.onDescend?.())
+        overlay.appendChild(shoreLink)
+      }
+
       overlay.appendChild(canvas)
       return overlay
     },
@@ -408,6 +441,12 @@ export function createLighthouseRoom(): Room {
     activate() {
       active = true
       autoTimer = 60 // start auto-transmit after 1 second
+      transmitCount = 0
+      shoreLinkVisible = false
+      if (shoreLink) {
+        shoreLink.style.opacity = '0'
+        shoreLink.style.pointerEvents = 'none'
+      }
       render()
     },
 

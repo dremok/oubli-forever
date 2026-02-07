@@ -412,8 +412,12 @@ roomManager.addRoom(createAutomatonRoom())
 roomManager.addRoom(createSeismographRoom())
 roomManager.addRoom(createPendulumRoom())
 roomManager.addRoom(createCipherRoom())
-roomManager.addRoom(createTerrariumRoom())
-roomManager.addRoom(createLighthouseRoom())
+roomManager.addRoom(createTerrariumRoom({
+  onGarden: () => roomManager.switchTo('garden'),
+}))
+roomManager.addRoom(createLighthouseRoom({
+  onDescend: () => roomManager.switchTo('tidepool'),
+}))
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
