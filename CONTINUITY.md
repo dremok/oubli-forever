@@ -1044,6 +1044,32 @@ Surface: 36 | Hidden: 7
 - Click-to-illuminate: temporarily boosts vividness (+0.3, 3s decay), presence meter limits click frequency, expanding ripple effect at click point
 - Cultural inspiration: Doomsday Clock at 85 seconds (closest ever, Jan 2026)
 
+### 84. TheSketchpad Deepened (319→673 lines)
+- Drawing audio: sine osc tracking Y position (200-800Hz), reverb (2.5s impulse) + delay (350ms/30% feedback), volume scales with stroke speed
+- Particle trail system: embers drift upward from brush, 100 max, 2-4s lifespan, match brush hue
+- Brush pressure simulation: speed→width (1.3x at rest, 0.7x at max speed), calligraphic variation
+- Symmetry mode: S key toggle, mirrored strokes with +30 hue shift, diamond indicator
+- Visual atmosphere: sparse grain texture, ghost afterimages (8s extra after 60s fade), background breathing
+- Inspired by: zen brushwork, cave paintings, light painting photography
+
+### 85. TheLoom Deepened (327→878 lines)
+- Loom audio: shuttle click on direction change (bandpass noise burst at 800Hz), warm drone (80Hz sawtooth filtered), tension creaks every 10-20s (2kHz filtered noise)
+- Click-to-examine thread: shows full memory text, degradation %, age in days in styled overlay, auto-dismiss after 5s
+- Weave pattern enhancement: hue gradients along threads, intersection pearl nodes where bright threads cross, frayed ends (branching fibers) at degradation gaps
+- Wooden loom frame: top/bottom beams + side posts with sine-based wood grain texture
+- Heddle mechanism: small bars above weaving that rise/fall with animation
+- Tension meter: right-side vertical bar, tension scales with thread count, affects shuttle speed
+- Thread snap: at high tension, occasional thread disappears briefly then reappears
+- Inspired by: Jacquard looms, Anni Albers, Ada Lovelace
+
+### 86. TheDatePaintings Deepened (362→1053 lines)
+- Gallery ambience audio: reverberant footsteps every 8-15s, hover tone per painting (sine frequency from date hash), extremely quiet museum feel
+- Click-to-enlarge: smooth ease-in-out animation (~0.5s), shows day of week, memory count, days since, procedural Kawara-style newspaper clipping with headline fragments about time/memory
+- Time gap connectors: horizontal lines between paintings, solid for consecutive days, dotted for gaps >7 days
+- Today's painting: slow pulse (background color oscillation), thin gold border, midnight detection with flash when date changes
+- Gallery wall texture: faint vertical stripes, spotlight gradients above paintings, drop shadows, gallery labels in long date format
+- Inspired by: On Kawara "Today" series, Tehching Hsieh, Roman Opalka
+
 ---
-*Last updated: Era 8, Feature 83 — Room Deepening Batch 1 (Pendulum, Between, Midnight)*
-*"three rooms evolved from sketches to living spaces — the pendulum sings, the corridor breathes, and the midnight room counts down to doomsday"*
+*Last updated: Era 8, Feature 86 — Room Deepening Batch 2 (Sketchpad, Loom, DatePaintings)*
+*"six rooms deepened so far — audio, interaction, atmosphere. the house breathes."*
