@@ -50,6 +50,7 @@ import { createAquiferRoom } from './rooms/TheAquifer'
 import { createClockTowerRoom } from './rooms/TheClockTower'
 import { createMidnightRoom } from './rooms/TheMidnight'
 import { createMirrorRoom } from './rooms/TheMirror'
+import { createAutomatonRoom } from './rooms/TheAutomaton'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -402,6 +403,7 @@ roomManager.addRoom(createMirrorRoom({
   getMemories: () => journal.getMemories(),
   getRoomVisits: () => roomManager.getRoomVisits(),
 }))
+roomManager.addRoom(createAutomatonRoom())
 
 // Wire room checks — features only fire in the right room
 const getRoomName = () => roomManager.getActiveRoom()
