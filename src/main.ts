@@ -53,6 +53,7 @@ import { TippingPoint } from './events/TippingPoint'
 import { VoidWhisper } from './voice/VoidWhisper'
 import { AmbientTextures } from './sound/AmbientTextures'
 import { TimeCapsule } from './memory/TimeCapsule'
+import { HouseWeather } from './atmosphere/HouseWeather'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -400,8 +401,17 @@ heatmap.setRoomCheck(getRoomName)
 voice.setRoomCheck(getRoomName)
 resonance.setRoomCheck(getRoomName)
 
+// House Weather — ambient cross-room influence
+const houseWeather = new HouseWeather()
+houseWeather.setDegradationSource(() => {
+  const mems = journal.getMemories()
+  if (mems.length === 0) return 0
+  return mems.reduce((sum, m) => sum + m.degradation, 0) / mems.length
+})
+
 // Room change: toggle void-only text overlays
 roomManager.onRoomChange((room) => {
+  houseWeather.setRoom(room)
   const inVoid = room === 'void'
   // Whispers pause/resume
   if (inVoid) whispers.resume(); else whispers.pause()
@@ -430,7 +440,10 @@ const _timeCapsule = new TimeCapsule({
 })
 
 // Show the tab bar after the initial animation settles
-setTimeout(() => roomManager.init(), 8000)
+setTimeout(() => {
+  roomManager.init()
+  houseWeather.init()
+}, 8000)
 
 // Oubli breathes
 const memCount = journal.getCount()

@@ -73,15 +73,25 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
 
     const url = `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(searchUrl)}&output=text&limit=20&fl=urlkey,timestamp,original,mimetype,statuscode,length&filter=mimetype:text/html&collapse=urlkey`
 
-    const response = await fetch(url)
-    if (!response.ok) return []
+    // Add timeout to prevent hanging
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
 
-    const text = await response.text()
-    const lines = text.trim().split('\n').filter(l => l.trim())
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (!response.ok) return []
 
-    return lines
-      .map(parseCdxLine)
-      .filter((r): r is ArchiveResult => r !== null)
+      const text = await response.text()
+      const lines = text.trim().split('\n').filter(l => l.trim())
+
+      return lines
+        .map(parseCdxLine)
+        .filter((r): r is ArchiveResult => r !== null)
+    } catch (err) {
+      clearTimeout(timeoutId)
+      throw err
+    }
   }
 
   function renderResults(results: ArchiveResult[], container: HTMLElement, statusEl: HTMLElement) {
@@ -343,16 +353,29 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
 
       async function doSearch() {
         const query = input.value.trim()
-        if (searching) return
+
+        // Safety: reset searching flag if stuck for more than 30s
+        if (searching) {
+          console.warn('[archive] search already in progress, skipping')
+          return
+        }
 
         if (!query) {
           status.textContent = 'type a URL or domain first'
           status.style.color = 'rgba(180, 160, 120, 0.3)'
+          // Flash the input border to indicate it needs text
+          input.style.borderBottomColor = 'rgba(255, 180, 100, 0.5)'
+          setTimeout(() => {
+            input.style.borderBottomColor = 'rgba(180, 160, 120, 0.15)'
+          }, 1500)
+          input.focus()
           return
         }
 
         searching = true
-        status.textContent = 'searching the archive...'
+        searchBtn.textContent = '...'
+        searchBtn.style.opacity = '0.5'
+        status.textContent = `searching the archive for "${query}"...`
         status.style.color = 'rgba(180, 160, 120, 0.4)'
         results.innerHTML = ''
 
@@ -365,10 +388,16 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
             descent.style.color = 'rgba(180, 160, 120, 0.12)'
           }
         } catch (err) {
-          status.textContent = 'the archive is unreachable. try again.'
-          console.warn('Archive search failed:', err)
+          const errMsg = err instanceof Error && err.name === 'AbortError'
+            ? 'the archive took too long. the past resists being found.'
+            : 'the archive is unreachable. try again.'
+          status.textContent = errMsg
+          status.style.color = 'rgba(180, 120, 80, 0.4)'
+          console.warn('[archive] search failed:', err)
         } finally {
           searching = false
+          searchBtn.textContent = 'dig'
+          searchBtn.style.opacity = '1'
         }
       }
 
@@ -378,7 +407,11 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       })
       searchBtn.addEventListener('click', (e) => {
         e.stopPropagation()
+        e.preventDefault()
         doSearch()
+      })
+      searchBtn.addEventListener('mousedown', (e) => {
+        e.stopPropagation()
       })
 
       return overlay
