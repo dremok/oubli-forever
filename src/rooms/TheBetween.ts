@@ -24,6 +24,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { ROOM_GRAPH } from '../navigation/RoomGraph'
 
 interface BetweenDeps {
   switchTo: (name: string) => void
@@ -38,6 +39,16 @@ interface Door {
   side: 'left' | 'right'
 }
 
+// Color palette for doors — hashed from room name for consistency
+function doorColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffff
+  const r = 80 + (h & 0xff) % 120
+  const g = 80 + ((h >> 8) & 0xff) % 120
+  const b = 80 + ((h >> 16) & 0xff) % 120
+  return `rgba(${r}, ${g}, ${b}, 0.3)`
+}
+
 export function createBetweenRoom(deps: BetweenDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -49,18 +60,10 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
   let doors: Door[] = []
   let flickerPhase = 0
 
-  const ROOMS = [
-    { name: 'void', label: 'the void', color: 'rgba(255, 20, 147, 0.3)' },
-    { name: 'study', label: 'the study', color: 'rgba(255, 215, 0, 0.3)' },
-    { name: 'instrument', label: 'the instrument', color: 'rgba(100, 200, 255, 0.3)' },
-    { name: 'observatory', label: 'the observatory', color: 'rgba(200, 180, 255, 0.3)' },
-    { name: 'seance', label: 'the séance', color: 'rgba(180, 160, 220, 0.3)' },
-    { name: 'darkroom', label: 'the darkroom', color: 'rgba(200, 100, 100, 0.3)' },
-    { name: 'garden', label: 'the garden', color: 'rgba(100, 180, 80, 0.3)' },
-    { name: 'archive', label: 'the archive', color: 'rgba(180, 160, 120, 0.3)' },
-    { name: 'loom', label: 'the loom', color: 'rgba(200, 160, 80, 0.3)' },
-    { name: 'tidepool', label: 'the tide pool', color: 'rgba(100, 150, 200, 0.3)' },
-  ]
+  // All non-hidden rooms become doors (the between connects everything)
+  const ROOMS = ROOM_GRAPH
+    .filter(r => !r.hidden && r.name !== 'between')
+    .map(r => ({ name: r.name, label: r.label, color: doorColor(r.name) }))
 
   function buildDoors() {
     doors = []

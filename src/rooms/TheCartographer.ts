@@ -16,6 +16,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { ROOM_GRAPH as SHARED_GRAPH } from '../navigation/RoomGraph'
 
 interface MapNode {
   name: string
@@ -33,53 +34,13 @@ interface MapDeps {
   getRoomVisits: () => Map<string, number>
 }
 
-// Define the room topology
-const ROOM_GRAPH: { name: string; label: string; hidden: boolean; connects: string[] }[] = [
-  // Surface rooms (tab bar)
-  { name: 'void', label: 'the void', hidden: false, connects: [] },
-  { name: 'study', label: 'the study', hidden: false, connects: ['void'] },
-  { name: 'instrument', label: 'the instrument', hidden: false, connects: ['void'] },
-  { name: 'observatory', label: 'the observatory', hidden: false, connects: ['void'] },
-  { name: 'seance', label: 'the séance', hidden: false, connects: ['void', 'between'] },
-  { name: 'darkroom', label: 'the darkroom', hidden: false, connects: ['void'] },
-  { name: 'garden', label: 'the garden', hidden: false, connects: ['void', 'roots'] },
-  { name: 'archive', label: 'the archive', hidden: false, connects: ['void', 'catacombs'] },
-  { name: 'loom', label: 'the loom', hidden: false, connects: ['void'] },
-  { name: 'tidepool', label: 'the tide pool', hidden: false, connects: ['void'] },
-  { name: 'furnace', label: 'the furnace', hidden: false, connects: ['void'] },
-  { name: 'radio', label: 'the radio', hidden: false, connects: ['void'] },
-  { name: 'well', label: 'the well', hidden: false, connects: ['void', 'aquifer'] },
-  { name: 'clocktower', label: 'the clock tower', hidden: false, connects: ['void', 'midnight'] },
-  { name: 'automaton', label: 'the automaton', hidden: false, connects: ['void'] },
-  { name: 'seismograph', label: 'the seismograph', hidden: false, connects: ['void'] },
-  { name: 'pendulum', label: 'the pendulum', hidden: false, connects: ['void'] },
-  { name: 'cipher', label: 'the cipher', hidden: false, connects: ['void'] },
-  { name: 'terrarium', label: 'the terrarium', hidden: false, connects: ['void', 'garden'] },
-  { name: 'lighthouse', label: 'the lighthouse', hidden: false, connects: ['void', 'tidepool'] },
-  { name: 'sketchpad', label: 'the sketchpad', hidden: false, connects: ['void'] },
-  { name: 'weathervane', label: 'the weathervane', hidden: false, connects: ['void'] },
-  { name: 'cartographer', label: 'the cartographer', hidden: false, connects: ['void'] },
-  { name: 'choir', label: 'the choir', hidden: false, connects: ['void'] },
-  { name: 'oracle', label: 'the oracle deck', hidden: false, connects: ['void'] },
-  { name: 'labyrinth', label: 'the labyrinth', hidden: false, connects: ['void'] },
-  { name: 'glacarium', label: 'the glacarium', hidden: false, connects: ['void'] },
-  { name: 'satellite', label: 'the satellite', hidden: false, connects: ['void'] },
-  { name: 'asteroids', label: 'the asteroid field', hidden: false, connects: ['void'] },
-  { name: 'disintegration', label: 'the disintegration loops', hidden: false, connects: ['void'] },
-  { name: 'projection', label: 'the projection room', hidden: false, connects: ['void'] },
-  { name: 'datepaintings', label: 'the date paintings', hidden: false, connects: ['void'] },
-  { name: 'madeleine', label: 'the madeleine', hidden: false, connects: ['void'] },
-  { name: 'library', label: 'the library', hidden: false, connects: ['void'] },
-  { name: 'palimpsestgallery', label: 'the palimpsest gallery', hidden: false, connects: ['void'] },
-  // Hidden rooms
-  { name: 'catacombs', label: 'the catacombs', hidden: true, connects: ['archive', 'ossuary'] },
-  { name: 'roots', label: 'the roots', hidden: true, connects: ['garden', 'ossuary'] },
-  { name: 'ossuary', label: 'the ossuary', hidden: true, connects: ['roots', 'catacombs'] },
-  { name: 'between', label: 'the between', hidden: true, connects: ['seance'] },
-  { name: 'aquifer', label: 'the aquifer', hidden: true, connects: ['well', 'tidepool'] },
-  { name: 'midnight', label: 'the midnight', hidden: true, connects: ['clocktower'] },
-  { name: 'mirror', label: 'the mirror', hidden: true, connects: [] },
-]
+// Use the shared room graph
+const ROOM_GRAPH = SHARED_GRAPH.map(n => ({
+  name: n.name,
+  label: n.label,
+  hidden: n.hidden,
+  connects: n.connections,
+}))
 
 export function createCartographerRoom(deps: MapDeps): Room {
   let overlay: HTMLElement | null = null

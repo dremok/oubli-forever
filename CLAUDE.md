@@ -41,6 +41,27 @@ After context compaction/reset:
 - Examples of what "culturally grounded" means: a room that visualizes real-time CO2 levels as rising water, a room that pulls headlines and lets them decay, a room that uses the ISS position to affect lighting, a room where AI-generated art responds to current news sentiment.
 - The goal: someone visiting Oubli should feel they are experiencing THIS moment in time, not a timeless generic art piece.
 
+## Navigation — RESTRUCTURE NEEDED
+- The simple row-of-titles tab bar is NOT enough for 40+ rooms
+- **Build a graph-based navigation** where rooms connect to each other organically
+- Every room should be reachable from every other room, but NOT directly — there should be paths, not a flat list
+- **Navigation between rooms should be innovative** — not just clicking titles. Think: walking through doors, following threads, solving puzzles, finding hidden links in the room's content
+- But it should NEVER be hard to find your way — discoverable, not frustrating
+- Create an internal room connection map before restructuring
+
+## Room Development — DEPTH OVER BREADTH
+- **STOP adding new rooms.** There are 40+ rooms already.
+- Instead, **improve underdeveloped rooms** — add interactivity, polish, depth, connections
+- Examples of rooms that need work: the labyrinth, the glacarium, many Era 6 rooms
+- Make existing rooms richer rather than adding more thin rooms
+
+## Asset Generation — USE FAL AND ELEVENLABS
+- FAL_KEY and ELEVENLABS_API_KEY can be used to **pre-generate assets** (images, sounds, voice)
+- Generated assets can be **downloaded and committed to the repo** — they don't need runtime API calls
+- The client does NOT need API keys — assets are static files served with the app
+- Use this for: background textures, ambient sounds, voice lines, visual elements
+- Think: generate a set of whisper audio files, generate background textures for rooms, generate ambient soundscapes
+
 ## Workflow
 - Commit and push after every major feature
 - Deploy to Railway after EACH feature: `railway up --detach`
