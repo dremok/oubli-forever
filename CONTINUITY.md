@@ -911,9 +911,46 @@ Era 7 marked a shift toward **cultural grounding**: features inspired by real cu
 | projection | The Projection Room | Film degradation | Yes | Eternal Sunshine, Stalker, Sans Soleil |
 | datepaintings | The Date Paintings | Calendar existence | Yes (dates) | On Kawara, Roman Opalka |
 
-### Total Rooms: 38
-Surface: 33 | Hidden: 7 (catacombs, roots, ossuary, between, aquifer, midnight, mirror)
+72. **The Madeleine** (`src/rooms/TheMadeleine.ts`) — ERA 7
+    - Involuntary memory room after Proust's madeleine-in-tea
+    - Sensory triggers drift across screen (smells, sounds, words, colors)
+    - Click a trigger → word-association algorithm surfaces a related memory
+    - You can't choose which memory — the connection emerges
+    - Inspired by: Proust, synesthesia, mono no aware, Sei Shōnagon
+    - USES MEMORIES. Literary. Associative mechanics.
+
+73. **The Library** (`src/rooms/TheLibrary.ts`) — ERA 7
+    - After Borges' "Library of Babel" — every possible page exists
+    - Deterministic PRNG generates pseudo-infinite library from location seed
+    - Memory fragments embedded at deterministic positions in random text
+    - Each memory maps to a unique library location (hexagon/wall/shelf/volume/page)
+    - Navigate pages with arrow keys, 'r' for random location
+    - Inspired by: Borges, Calvino, Voynich Manuscript, infinite monkey theorem
+    - USES MEMORIES (as seeds). Literary. Procedural infinity.
+
+74. **The Palimpsest Gallery** (`src/rooms/ThePalimpsestGallery.ts`) — ERA 7
+    - LIVE ART DATA from Metropolitan Museum of Art Open Access API (470K+ works)
+    - Random public domain paintings displayed with memory text overlaid
+    - Text appears ghostly, like chalk on canvas — digital palimpsest
+    - Click for new painting/memory pairing, degraded memories show fragmentary text
+    - Inspired by: Cy Twombly, Jenny Holzer, Rauschenberg's Erased de Kooning
+    - USES MEMORIES. Art API. Layered meaning.
+
+### Era 7 Summary — CULTURAL GROUNDING
+Era 7 marked a fundamental shift. Every room is grounded in specific cultural references
+(artists, filmmakers, musicians, writers, current events) rather than generic art rooms.
+9 new rooms, ALL using the memory system:
+- **Live data + memories**: Glacarium (Arctic ice), Satellite (ISS), Asteroid Field (JPL NEOs), Palimpsest Gallery (Met Museum)
+- **Music-inspired**: Disintegration Loops (Basinski tape decay)
+- **Cinema-inspired**: Projection Room (film degradation aesthetics)
+- **Art-inspired**: Date Paintings (On Kawara), Palimpsest Gallery (Twombly/Holzer)
+- **Literature-inspired**: Madeleine (Proust), Library (Borges)
+- External APIs: ISS position, JPL close approaches, Met Museum Open Access
+- Destructive rooms: Disintegration Loops (accelerates real degradation)
+
+### Total Rooms: 41
+Surface: 34 | Hidden: 7 (catacombs, roots, ossuary, between, aquifer, midnight, mirror)
 
 ---
-*Last updated: Era 7, Feature 71 — Date Paintings*
-*"38 rooms. the house is a museum, a cinema, a space station, a glacier. every room remembers differently."*
+*Last updated: Era 7, Feature 74 — Palimpsest Gallery*
+*"41 rooms. the house is a museum, a cinema, a space station, a glacier, a library. every room remembers differently. some rooms cost something to visit."*
