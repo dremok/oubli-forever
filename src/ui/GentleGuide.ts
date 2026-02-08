@@ -42,6 +42,7 @@ export class GentleGuide {
   private state: GuideState
   private visible = false
   private timeout: number | null = null
+  private dismissHandler: ((e: Event) => void) | null = null
 
   constructor() {
     this.state = this.load()
@@ -59,13 +60,16 @@ export class GentleGuide {
     `
     document.body.appendChild(this.overlay)
 
-    // Dismiss on any interaction
-    const dismiss = () => {
-      if (this.visible) this.hide()
+    // Dismiss on any interaction (only if visible)
+    this.dismissHandler = () => {
+      if (this.visible) {
+        this.hide()
+        this.removeDismissListeners()
+      }
     }
-    window.addEventListener('keydown', dismiss, { once: true })
-    window.addEventListener('click', dismiss, { once: true })
-    window.addEventListener('touchstart', dismiss, { once: true })
+    window.addEventListener('keydown', this.dismissHandler)
+    window.addEventListener('click', this.dismissHandler)
+    window.addEventListener('touchstart', this.dismissHandler)
   }
 
   private load(): GuideState {
@@ -84,8 +88,8 @@ export class GentleGuide {
 
   /** Show the guide after a delay */
   show(voiceSupported: boolean) {
-    // Don't show after 5 visits — user knows the void by now
-    if (this.state.visits > 5) return
+    // After many visits, only show on ~20% of visits as a gentle reminder
+    if (this.state.visits > 5 && Math.random() > 0.2) return
 
     const items = ALL_ITEMS.filter(item => {
       if (item.key === 'voice' && !voiceSupported) return false
@@ -164,8 +168,17 @@ export class GentleGuide {
     }
   }
 
+  private removeDismissListeners() {
+    if (this.dismissHandler) {
+      window.removeEventListener('keydown', this.dismissHandler)
+      window.removeEventListener('click', this.dismissHandler)
+      window.removeEventListener('touchstart', this.dismissHandler)
+    }
+  }
+
   destroy() {
     if (this.timeout) clearTimeout(this.timeout)
+    this.removeDismissListeners()
     this.overlay.remove()
   }
 }
