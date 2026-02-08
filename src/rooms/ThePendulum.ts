@@ -79,6 +79,9 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
   // Cursor state (normalized -1..1 from center)
   let cursorX = 0
   let cursorY = 0
+  // Cursor screen position for magnetic field
+  let cursorScreenX = 0
+  let cursorScreenY = 0
 
   // Drag state
   let isDragging = false
@@ -92,12 +95,24 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
   let dryGain: GainNode | null = null
   let wetGain: GainNode | null = null
   let audioMaster: GainNode | null = null
-  const BASE_HZ = 150
+  const BASE_HZ = 220
 
   // Two pendulums for X, two for Y (full harmonograph has 4)
   let pendulums: PendulumState[] = []
   let hue = 330 // starting hue (pink)
   let fadeSpeed = 0.003 // how fast the trace fades
+
+  // Ghost trace buffer — stores a snapshot of the canvas when pattern completes
+  let ghostCanvas: HTMLCanvasElement | null = null
+  let ghostCtx: CanvasRenderingContext2D | null = null
+  let ghostAlpha = 0 // current ghost layer opacity (fades in when pattern dies)
+  let ghostCaptured = false
+
+  // Pattern catalog state
+  let catalogLabel = ''
+  let catalogAlpha = 0
+  let catalogFadeStart = 0
+  let lastFreqRatio: [number, number] = [1, 1] // store for classification
 
   // --- Audio ---
 
@@ -172,12 +187,13 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
   function updateAudioDecay() {
     if (!audioInitialized || oscillators.length < 4) return
     // Set oscillator gains based on pendulum amplitude * exponential decay
+    // Very quiet tones (0.02-0.03) that fade with amplitude
     for (let i = 0; i < 4; i++) {
       const p = pendulums[i]
       if (!p) continue
       const envAmp = p.amp * Math.exp(-p.decay * traceTime)
-      // Scale to a quiet listening level (0.03 - 0.08)
-      const targetGain = Math.min(0.08, envAmp * 0.15)
+      // Scale to very quiet level (0.02-0.03 max)
+      const targetGain = Math.min(0.03, envAmp * 0.08)
       oscGains[i].gain.value = targetGain
     }
   }
@@ -229,11 +245,12 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
 
   function randomize() {
     // Create 4 pendulums with interesting frequency ratios
-    const ratios = [
+    const ratios: [number, number][] = [
       [1, 1], [2, 3], [3, 4], [3, 2], [4, 3], [5, 4],
       [2, 1], [3, 1], [1, 2], [1, 3], [5, 6], [7, 8],
     ]
     const ratio = ratios[Math.floor(Math.random() * ratios.length)]
+    lastFreqRatio = ratio
 
     const baseFreq = 1 + Math.random() * 2
 
@@ -268,6 +285,7 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
 
     traceTime = 0
     hue = Math.random() * 360
+    ghostCaptured = false
 
     // Clear canvas with fade
     if (ctx && canvas) {
@@ -484,6 +502,50 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     bob.swingVel += dir * amount * 0.5
   }
 
+  // --- Phase-based trail color ---
+  // Returns an HSL hue based on the phase relationship between X and Y pendulums.
+  // In-phase (similar phase) -> warm (gold/amber, hue ~40-50)
+  // Out-of-phase (opposite phase) -> cool (blue/violet, hue ~240-280)
+  function getPhaseHue(t: number): number {
+    if (pendulums.length < 4) return hue
+    // Compare instantaneous phases of X pendulum 0 and Y pendulum 2
+    const phaseX = (pendulums[0].freq * t + pendulums[0].phase) % (Math.PI * 2)
+    const phaseY = (pendulums[2].freq * t + pendulums[2].phase) % (Math.PI * 2)
+    // Phase difference normalized to 0..1 (0 = in-phase, 0.5 = opposite)
+    let phaseDiff = Math.abs(phaseX - phaseY) % (Math.PI * 2)
+    if (phaseDiff > Math.PI) phaseDiff = Math.PI * 2 - phaseDiff
+    const normalized = phaseDiff / Math.PI // 0 = in-phase, 1 = out-of-phase
+    // Smooth interpolation: warm (45) -> cool (260)
+    return 45 + normalized * 215
+  }
+
+  // --- Pattern classification ---
+  function classifyPattern(ratio: [number, number]): string {
+    const [a, b] = ratio
+    if (a === b) return `lissajous ${a}:${b} \u00b7 circle`
+    const gcd = (x: number, y: number): number => y === 0 ? x : gcd(y, x % y)
+    const g = gcd(a, b)
+    const ra = a / g
+    const rb = b / g
+    if (ra + rb <= 4) return `lissajous ${ra}:${rb}`
+    if (ra + rb <= 7) return `spirograph ${ra}:${rb}`
+    return `decaying harmonic ${ra}:${rb}`
+  }
+
+  // --- Cursor magnetic field ---
+  // Returns a displacement [dx, dy] that bends a trace point toward the cursor.
+  // Only affects points within a radius. Very subtle.
+  function magneticPull(screenX: number, screenY: number): [number, number] {
+    const dx = cursorScreenX - screenX
+    const dy = cursorScreenY - screenY
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    const radius = 120 // pixels within which magnetic field acts
+    if (dist > radius || dist < 1) return [0, 0]
+    // Inverse-linear falloff, very subtle strength
+    const strength = 0.15 * (1 - dist / radius)
+    return [dx * strength, dy * strength]
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -494,6 +556,16 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     const cx = w / 2
     const cy = h / 2
     const scale = Math.min(w, h) * 0.9
+
+    // Draw ghost layer (afterimage of previous pattern) if present
+    if (ghostCanvas && ghostAlpha > 0.001) {
+      ctx.globalAlpha = ghostAlpha
+      ctx.drawImage(ghostCanvas, 0, 0)
+      ctx.globalAlpha = 1.0
+      // Fade ghost layer gradually
+      ghostAlpha *= 0.997
+      if (ghostAlpha < 0.001) ghostAlpha = 0
+    }
 
     // Very gentle fade — creates persistence effect
     ctx.fillStyle = `rgba(3, 2, 8, ${fadeSpeed})`
@@ -520,21 +592,51 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
         sum + p.amp * Math.exp(-p.decay * traceTime), 0)
 
       if (totalAmp < 0.01) {
+        // Capture ghost trace before clearing (only once per pattern)
+        if (!ghostCaptured && canvas && ctx) {
+          if (!ghostCanvas) {
+            ghostCanvas = document.createElement('canvas')
+            ghostCtx = ghostCanvas.getContext('2d')
+          }
+          ghostCanvas.width = canvas.width
+          ghostCanvas.height = canvas.height
+          ghostCtx?.drawImage(canvas, 0, 0)
+          ghostAlpha = 0.08 // start very faint
+          ghostCaptured = true
+
+          // Show pattern catalog label
+          catalogLabel = classifyPattern(lastFreqRatio)
+          catalogAlpha = 0.5
+          catalogFadeStart = time
+        }
+
         // Pendulums have died — randomize new ones after a pause
         if (traceTime > 500) randomize()
         continue
       }
 
-      const screenX = cx + x * scale
-      const screenY = cy + y * scale
+      let screenX = cx + x * scale
+      let screenY = cy + y * scale
 
-      // Color shifts slowly along the trace
-      const traceHue = (hue + traceTime * 0.3) % 360
-      const alpha = Math.min(0.6, totalAmp * 1.5)
+      // Cursor magnetic field: bend nearby trace toward cursor
+      const [mx, my] = magneticPull(screenX, screenY)
+      screenX += mx
+      screenY += my
 
-      ctx.fillStyle = `hsla(${traceHue}, 50%, 60%, ${alpha})`
+      // Phase-based trail color (warm in-phase, cool out-of-phase)
+      const traceHue = getPhaseHue(traceTime)
+      // Saturation increases slightly when more in-phase (warmer)
+      const saturation = traceHue < 150 ? 60 : 45
+
+      // Decay visualization: alpha and size decrease with amplitude
+      const decayFactor = Math.min(1, totalAmp * 2.5) // 1 at full, -> 0 at decay
+      const alpha = Math.min(0.6, totalAmp * 1.5) * decayFactor
+      // Trail width thins with decay (1.2 at full -> 0.4 near end)
+      const trailRadius = 0.4 + 0.8 * decayFactor
+
+      ctx.fillStyle = `hsla(${traceHue}, ${saturation}%, 60%, ${alpha})`
       ctx.beginPath()
-      ctx.arc(screenX, screenY, 1, 0, Math.PI * 2)
+      ctx.arc(screenX, screenY, trailRadius, 0, Math.PI * 2)
       ctx.fill()
 
       lastScreenX = screenX
@@ -558,20 +660,22 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
         ctx.lineTo(screenX + 3, screenY + 3)
         ctx.stroke()
 
-        // Enhanced glow at the tip (larger radius)
-        const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, 14)
+        // Enhanced glow at the tip (larger radius, scales with decay)
+        const glowSize = 8 + 6 * decayFactor
+        const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, glowSize)
         glow.addColorStop(0, `hsla(${traceHue}, 70%, 80%, ${alpha * 0.6})`)
         glow.addColorStop(0.4, `hsla(${traceHue}, 60%, 70%, ${alpha * 0.25})`)
         glow.addColorStop(1, 'transparent')
         ctx.fillStyle = glow
         ctx.beginPath()
-        ctx.arc(screenX, screenY, 14, 0, Math.PI * 2)
+        ctx.arc(screenX, screenY, glowSize, 0, Math.PI * 2)
         ctx.fill()
 
-        // Bright core dot
+        // Bright core dot (shrinks with decay)
+        const coreSize = 1 + 1 * decayFactor
         ctx.fillStyle = `hsla(${traceHue}, 60%, 85%, ${alpha * 0.8})`
         ctx.beginPath()
-        ctx.arc(screenX, screenY, 2, 0, Math.PI * 2)
+        ctx.arc(screenX, screenY, coreSize, 0, Math.PI * 2)
         ctx.fill()
       }
     }
@@ -581,6 +685,23 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     ctx.beginPath()
     ctx.arc(cx, cy, 2, 0, Math.PI * 2)
     ctx.fill()
+
+    // Pattern catalog label (appears when pattern fully decays, fades over 2s)
+    if (catalogAlpha > 0.01) {
+      const elapsed = time - catalogFadeStart
+      if (elapsed > 2.0) {
+        // Fade out over 1 second after the 2s display
+        catalogAlpha = Math.max(0, 0.5 * (1 - (elapsed - 2.0)))
+      }
+      if (catalogAlpha > 0.01) {
+        ctx.save()
+        ctx.font = '14px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 180, 220, ${catalogAlpha * 0.6})`
+        ctx.textAlign = 'center'
+        ctx.fillText(catalogLabel, cx, cy + 30)
+        ctx.restore()
+      }
+    }
 
     // If dragging, show a pull line from cursor to the trace point
     if (isDragging && lastScreenX && lastScreenY) {
@@ -726,13 +847,16 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
         cursorY = 0
       })
 
-      // Mousemove: update cursor for perturbation + drag
+      // Mousemove: update cursor for perturbation + drag + magnetic field
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
 
         // Normalized -1..1 from center
         cursorX = (e.clientX / canvas.width - 0.5) * 2
         cursorY = (e.clientY / canvas.height - 0.5) * 2
+        // Screen coordinates for magnetic field
+        cursorScreenX = e.clientX
+        cursorScreenY = e.clientY
 
         // Drag: continuously adjust pendulum parameters
         if (isDragging && pendulums.length >= 4) {
@@ -803,6 +927,8 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       destroyAudio()
+      ghostCanvas = null
+      ghostCtx = null
       overlay?.remove()
     },
   }

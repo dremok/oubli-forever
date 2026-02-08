@@ -346,6 +346,7 @@ const roomManager = new RoomManager()
 roomManager.addRoom(createVoidRoom({
   switchTo: (name) => roomManager.switchTo(name),
   voiceSupported: voice.isSupported(),
+  getMemories: () => journal.getMemories(),
 }))
 roomManager.addRoom(createStudyRoom({
   getMemories: () => journal.getMemories(),

@@ -220,6 +220,12 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
   let lastMoveTime = 0
   let currentSpeed = 0
 
+  // Drawing activity tracking for particle response
+  let lastDrawX = 0
+  let lastDrawY = 0
+  let drawingActivity = 0 // 0-1, decays when idle
+  let idleParticleTimer = 0
+
   // Audio state
   let audioInitialized = false
   let audioCtx: AudioContext | null = null
@@ -236,7 +242,13 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
   let breathPhase = 0
 
   const FADE_TIME = 60 // seconds before stroke fully fades
-  const GHOST_EXTRA = 8 // extra seconds ghosts linger after stroke fades
+  const GHOST_EXTRA = 45 // extra seconds ghosts linger after stroke fades (30-60s range)
+
+  // Bloom state — tracks which strokes have bloomed
+  const bloomedStrokes = new Set<Stroke>()
+  const BLOOM_DELAY = 0.7 // seconds after stroke ends before bloom starts
+  const BLOOM_DURATION = 0.5 // seconds the bloom animation takes
+  const BLOOM_EXPAND = 1.5 // pixels to expand outward
 
   // --- Audio setup ---
   async function initAudio() {
@@ -351,7 +363,7 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
   }
 
   // --- Particle system ---
-  function spawnParticle(x: number, y: number, hue: number) {
+  function spawnParticle(x: number, y: number, hue: number, extraVx = 0, extraVy = 0) {
     if (particles.length >= MAX_PARTICLES) {
       // Remove oldest
       particles.shift()
@@ -359,8 +371,8 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     particles.push({
       x,
       y,
-      vx: (Math.random() - 0.5) * 0.5,
-      vy: -(Math.random() * 0.3 + 0.15), // drift upward
+      vx: (Math.random() - 0.5) * 0.5 + extraVx,
+      vy: -(Math.random() * 0.3 + 0.15) + extraVy, // drift upward
       hue,
       birth: time,
       life: 2 + Math.random() * 2, // 2-4 second lifespan
@@ -392,10 +404,10 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
 
   // --- Brush pressure (speed-based width) ---
   function getPressureWidth(baseWidth: number, speed: number): number {
-    // Faster = thinner, slower = thicker. +/- 30%
-    const speedNorm = Math.min(1, speed / 600)
-    const factor = 1.3 - speedNorm * 0.6 // 1.3 at rest, 0.7 at max speed
-    return baseWidth * factor
+    // Faster = thinner delicate lines, slower = thicker saturated marks
+    const speedNorm = Math.min(1, speed / 500)
+    const factor = 1.8 - speedNorm * 1.4 // 1.8x at rest, 0.4x at max speed
+    return Math.max(0.5, baseWidth * factor)
   }
 
   // --- Grain texture ---
@@ -472,7 +484,7 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     for (const stroke of strokes) {
       const age = now - stroke.birth
       if (age > FADE_TIME && age <= FADE_TIME + GHOST_EXTRA) {
-        const ghostAlpha = Math.max(0, 1 - (age - FADE_TIME) / GHOST_EXTRA) * 0.04
+        const ghostAlpha = Math.max(0, 1 - (age - FADE_TIME) / GHOST_EXTRA) * 0.02
         if (stroke.points.length >= 2) {
           drawStrokePath(c, stroke.points, stroke.hue, stroke.width, ghostAlpha, false, 0)
         }
@@ -482,7 +494,10 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     // Draw all strokes
     strokes = strokes.filter(stroke => {
       const age = now - stroke.birth
-      if (age > FADE_TIME + GHOST_EXTRA) return false // ghost also gone
+      if (age > FADE_TIME + GHOST_EXTRA) {
+        bloomedStrokes.delete(stroke) // clean up bloom tracking
+        return false // ghost also gone
+      }
 
       if (age > FADE_TIME) return true // keep for ghost rendering above
 
@@ -494,8 +509,33 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
       const glowAlpha = isRecent ? (1 - age / 3) * 0.2 : 0
       drawStrokePath(c, stroke.points, stroke.hue, stroke.width, alpha * 0.7, isRecent, glowAlpha)
 
+      // Ink bloom effect — watercolor bleed after a short delay
+      const bloomAge = age - BLOOM_DELAY
+      if (bloomAge > 0 && bloomAge < BLOOM_DURATION) {
+        const bloomProgress = bloomAge / BLOOM_DURATION
+        // Ease out — fast start, gentle end
+        const eased = 1 - (1 - bloomProgress) * (1 - bloomProgress)
+        const bloomWidth = stroke.width + BLOOM_EXPAND * 2 * eased
+        const bloomAlpha = alpha * 0.12 * (1 - eased) // fades as it expands
+        drawStrokePath(c, stroke.points, stroke.hue, bloomWidth, bloomAlpha, false, 0)
+        bloomedStrokes.add(stroke)
+      }
+
       return true
     })
+
+    // Decay drawing activity when not drawing
+    drawingActivity = Math.max(0, drawingActivity - 0.01)
+
+    // Ambient idle particles — lazy drift when not drawing
+    idleParticleTimer += 0.016
+    if (!drawing && idleParticleTimer > 0.4 && particles.length < MAX_PARTICLES * 0.3) {
+      idleParticleTimer = 0
+      // Spawn a lazy particle at a random position
+      const rx = Math.random() * w
+      const ry = Math.random() * h
+      spawnParticle(rx, ry, drawHue + (Math.random() - 0.5) * 60)
+    }
 
     // Particles
     updateAndDrawParticles(c)
@@ -670,6 +710,9 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
       }
     }
     lastMoveTime = performance.now()
+    lastDrawX = x
+    lastDrawY = y
+    drawingActivity = 0.3
 
     // Start audio
     initAudio().then(() => {
@@ -702,11 +745,27 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
         mirrorStroke.width = pressureW
       }
 
-      // Spawn particle at brush position
-      spawnParticle(x, y, drawHue)
+      // Track drawing position and activity
+      lastDrawX = x
+      lastDrawY = y
+      drawingActivity = Math.min(1, drawingActivity + 0.15)
+
+      // Spawn particles — more when drawing, scattered when fast
+      const speedNorm = Math.min(1, currentSpeed / 600)
+      const particleCount = speedNorm > 0.5 ? 3 : 1 // more sparks when moving fast
+      for (let pi = 0; pi < particleCount; pi++) {
+        // Fast strokes scatter particles outward from cursor
+        const scatterVx = speedNorm > 0.3 ? (Math.random() - 0.5) * speedNorm * 3 : 0
+        const scatterVy = speedNorm > 0.3 ? (Math.random() - 0.5) * speedNorm * 3 : 0
+        const offsetX = (Math.random() - 0.5) * 10
+        const offsetY = (Math.random() - 0.5) * 10
+        spawnParticle(x + offsetX, y + offsetY, drawHue, scatterVx, scatterVy)
+      }
       if (symmetryMode) {
-        const w = canvas?.width || window.innerWidth
-        spawnParticle(w - x, y, (drawHue + 30) % 360)
+        const cw = canvas?.width || window.innerWidth
+        const scatterVx = speedNorm > 0.3 ? (Math.random() - 0.5) * speedNorm * 3 : 0
+        const scatterVy = speedNorm > 0.3 ? (Math.random() - 0.5) * speedNorm * 3 : 0
+        spawnParticle(cw - x, y, (drawHue + 30) % 360, -scatterVx, scatterVy)
       }
 
       // Update audio
@@ -813,6 +872,7 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
       canvas.addEventListener('dblclick', () => {
         strokes = []
         particles = []
+        bloomedStrokes.clear()
       })
 
       // Scroll to change hue, shift+scroll for width

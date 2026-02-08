@@ -181,6 +181,35 @@ const fragments: string[] = [
   "the roman telescope will map dark energy. the force that makes the universe forget itself.",
   "a billion galaxies surveyed. each one a memory the universe is losing.",
   "cosmic voids: the places where nothing chose to be. dark energy's fingerprint.",
+
+  // Feb 2026 — hidden layers in hippocampal CA1 (Nature Communications, Dec 2025)
+  "the brain's memory center has four hidden layers. we mapped 330,000 genetic signals to find them.",
+  "CA1: four sheets of neurons that shift and thin along the hippocampus. a map inside a map.",
+  "each part of CA1 has its own mix of neuron types. memory isn't stored — it's layered.",
+  "in alzheimer's, certain layers break first. the architecture of forgetting has a blueprint.",
+  "330,000 RNA molecules. each one a message about which genes are awake. the brain's own source code.",
+
+  // Feb 2026 — electrons stop being particles (Nature Physics, Jan 2026)
+  "in some materials, electrons stop acting like particles. and physics still works.",
+  "topology is more fundamental than particles. order persists even after identity dissolves.",
+  "CeRu₄Sn₆: a compound where the particle picture breaks down completely. something remains.",
+  "what survives when everything you thought was fundamental disappears? topology. structure. pattern.",
+
+  // Feb 2026 — quantum transistor moment (U Chicago, Jan 2026)
+  "quantum technology has reached its transistor moment. the physics works. now we scale.",
+  "six platforms, one question: how do you wire a million qubits when each needs its own control line?",
+  "the first transistor was a curiosity. then it ate the world. quantum is at that threshold.",
+
+  // Feb 2026 — deep-sea mining species loss (Clarion-Clipperton Zone)
+  "788 species on the seafloor, most unnamed. mining cut their numbers by a third.",
+  "the seabed grows one thousandth of a millimeter per year. we scarred it in an afternoon.",
+  "hundreds of new species discovered the same week we learned mining was killing them.",
+  "the clarion-clipperton zone: a hidden world 4,000 meters down, already being erased.",
+
+  // Feb 2026 — polar vortex split
+  "the polar vortex is splitting in two. one piece heads for north america, one for eurasia.",
+  "sudden stratospheric warming: the atmosphere remembers summer at the wrong time.",
+  "the jet stream forgets its shape. arctic air spills south. the boundary between climates dissolves.",
 ]
 
 export class Whispers {

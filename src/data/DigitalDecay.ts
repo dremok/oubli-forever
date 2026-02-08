@@ -110,6 +110,11 @@ const DECAY_MEDITATIONS = [
   'mechanistic interpretability: we built a microscope for thought. MIT, 2026.',
   '68 boxes of Elvis film in a salt mine. geology remembers what culture forgot.',
   'the roman telescope launches to map dark energy. the force erasing the universe.',
+  'four hidden layers in the brain\'s memory center. we needed 330,000 RNA signals to see them.',
+  'electrons stop acting like particles. topology survives where identity fails.',
+  '788 unnamed species on the seafloor. mining erased a third before we could name them.',
+  'the polar vortex splits. the atmosphere forgets which hemisphere is which.',
+  'quantum technology reaches its transistor moment. the physics works. now we scale.',
 ]
 
 export class DigitalDecay {

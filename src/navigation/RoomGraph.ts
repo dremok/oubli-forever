@@ -28,7 +28,7 @@ export const ROOM_GRAPH: RoomNode[] = [
 
   // Words & Text
   { name: 'study', label: 'the study', hidden: false,
-    connections: ['void', 'library', 'loom', 'cipher'] },
+    connections: ['void', 'library', 'loom', 'cipher', 'instrument'] },
   { name: 'library', label: 'the library', hidden: false,
     connections: ['study', 'archive', 'cipher', 'oracle', 'projection', 'datepaintings'] },
   { name: 'cipher', label: 'the cipher', hidden: false,
@@ -36,11 +36,11 @@ export const ROOM_GRAPH: RoomNode[] = [
 
   // Sound & Music
   { name: 'instrument', label: 'the instrument', hidden: false,
-    connections: ['void', 'choir', 'radio', 'pendulum'] },
+    connections: ['void', 'choir', 'pendulum', 'disintegration', 'study'] },
   { name: 'choir', label: 'the choir', hidden: false,
     connections: ['instrument', 'terrarium', 'seance'] },
   { name: 'radio', label: 'the radio', hidden: false,
-    connections: ['instrument', 'lighthouse', 'satellite', 'weathervane'] },
+    connections: ['lighthouse', 'satellite', 'weathervane'] },
 
   // Space & Stars
   { name: 'observatory', label: 'the observatory', hidden: false,
@@ -78,7 +78,7 @@ export const ROOM_GRAPH: RoomNode[] = [
   { name: 'furnace', label: 'the furnace', hidden: false,
     connections: ['void', 'disintegration', 'clocktower', 'well'] },
   { name: 'disintegration', label: 'the disintegration loops', hidden: false,
-    connections: ['furnace', 'radio', 'projection'] },
+    connections: ['furnace', 'radio', 'projection', 'instrument'] },
 
   // Time
   { name: 'clocktower', label: 'the clock tower', hidden: false,

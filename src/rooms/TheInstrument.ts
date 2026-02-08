@@ -131,10 +131,11 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
 
   // Portal band state — frequency zones on the waveform canvas
   const portalBands = [
-    { name: 'choir', label: 'the choir', freqRange: [0, 0.25] as [number, number], hue: 280, hoverGlow: 0 },
-    { name: 'radio', label: 'the radio', freqRange: [0.25, 0.5] as [number, number], hue: 120, hoverGlow: 0 },
-    { name: 'pendulum', label: 'the pendulum', freqRange: [0.5, 0.75] as [number, number], hue: 45, hoverGlow: 0 },
-    { name: 'void', label: 'the void', freqRange: [0.75, 1.0] as [number, number], hue: 320, hoverGlow: 0 },
+    { name: 'study', label: 'the study', freqRange: [0, 0.2] as [number, number], hue: 200, hoverGlow: 0 },
+    { name: 'choir', label: 'the choir', freqRange: [0.2, 0.4] as [number, number], hue: 280, hoverGlow: 0 },
+    { name: 'pendulum', label: 'the pendulum', freqRange: [0.4, 0.6] as [number, number], hue: 45, hoverGlow: 0 },
+    { name: 'disintegration', label: 'the disintegration loops', freqRange: [0.6, 0.8] as [number, number], hue: 15, hoverGlow: 0 },
+    { name: 'void', label: 'the void', freqRange: [0.8, 1.0] as [number, number], hue: 320, hoverGlow: 0 },
   ]
   let hoveredBand = -1
   let clickedBand = -1
@@ -382,7 +383,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     const w = waveCanvas.width
     const h = waveCanvas.height
     const ctx = waveCtx
-    const bandBarH = 15
+    const bandBarH = 20
     const ghostKeyH = 28 // height reserved for ghost keyboard at bottom (above portal bars)
     const now = performance.now()
 
@@ -448,25 +449,28 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       const target = bi === hoveredBand ? 1 : 0
       band.hoverGlow += (target - band.hoverGlow) * 0.12
 
+      // Idle pulse — each band pulses at a different rate, staggered by index
+      const idlePulse = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(now / 2000 + bi * 1.3))
+
       // Flash white on click
       const isClicked = bi === clickedBand
       const clickElapsed = clickTime ? (now - clickTime) / 1000 : 1
       const clickFlash = isClicked ? Math.max(0, 1 - clickElapsed / 0.3) : 0
 
       // Bar background
-      const baseAlpha = 0.04 + band.hoverGlow * 0.18 + clickFlash * 0.6
+      const baseAlpha = 0.06 + idlePulse * 0.03 + band.hoverGlow * 0.2 + clickFlash * 0.6
       if (clickFlash > 0) {
         const r = Math.round(255 * clickFlash + (1 - clickFlash) * 128)
         const g = Math.round(255 * clickFlash + (1 - clickFlash) * 128)
-        const b = Math.round(255 * clickFlash + (1 - clickFlash) * 128)
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${baseAlpha})`
+        const b2 = Math.round(255 * clickFlash + (1 - clickFlash) * 128)
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b2}, ${baseAlpha})`
       } else {
         ctx.fillStyle = `hsla(${band.hue}, 60%, 55%, ${baseAlpha})`
       }
       ctx.fillRect(x0, h - bandBarH, bw, bandBarH)
 
       // Top edge line of the bar
-      const edgeAlpha = 0.06 + band.hoverGlow * 0.35
+      const edgeAlpha = 0.08 + idlePulse * 0.04 + band.hoverGlow * 0.35
       ctx.beginPath()
       ctx.moveTo(x0, h - bandBarH)
       ctx.lineTo(x1, h - bandBarH)
@@ -484,10 +488,13 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
         ctx.stroke()
       }
 
-      // Label on hover
-      if (band.hoverGlow > 0.05) {
-        const labelAlpha = band.hoverGlow * 0.7
-        ctx.font = '12px "Cormorant Garamond", serif'
+      // Label — always faintly visible, brighter on hover
+      {
+        const idleLabelAlpha = 0.08 + idlePulse * 0.04
+        const labelAlpha = band.hoverGlow > 0.05
+          ? band.hoverGlow * 0.7
+          : idleLabelAlpha
+        ctx.font = '11px "Cormorant Garamond", serif'
         ctx.textAlign = 'center'
         ctx.fillStyle = `hsla(${band.hue}, 50%, 75%, ${labelAlpha})`
         ctx.fillText(band.label, x0 + bw / 2, h - bandBarH - ghostKeyH - 6)
@@ -806,7 +813,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
           const scaleY = waveCanvas!.height / rect.height
           const cx = (e.clientX - rect.left) * scaleX
           const cy = (e.clientY - rect.top) * scaleY
-          const bandBarH = 15
+          const bandBarH = 20
           const h = waveCanvas!.height
           const w = waveCanvas!.width
 
