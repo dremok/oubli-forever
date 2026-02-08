@@ -70,17 +70,17 @@ export class RoomManager {
       z-index: 700; pointer-events: none;
       display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
       gap: 2px 0; padding: 10px 20px 14px 20px;
-      opacity: 0.08;
+      opacity: 0.18;
       transition: opacity 0.8s ease;
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 13px;
+      font-weight: 300; font-size: 16px;
       letter-spacing: 2px; text-transform: lowercase;
     `
     this.passageBar.addEventListener('mouseenter', () => {
-      this.passageBar.style.opacity = '0.65'
+      this.passageBar.style.opacity = '0.85'
     })
     this.passageBar.addEventListener('mouseleave', () => {
-      this.passageBar.style.opacity = '0.08'
+      this.passageBar.style.opacity = '0.18'
     })
     document.body.appendChild(this.passageBar)
 
@@ -90,9 +90,9 @@ export class RoomManager {
       position: fixed; top: 12px; right: 16px;
       z-index: 700; pointer-events: none;
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 12px;
+      font-weight: 300; font-size: 15px;
       letter-spacing: 2px; text-transform: lowercase;
-      color: rgba(255, 215, 0, 0.12);
+      color: rgba(255, 215, 0, 0.18);
     `
     this.roomIndicator.textContent = 'the void'
     document.body.appendChild(this.roomIndicator)
@@ -214,8 +214,8 @@ export class RoomManager {
         cursor: pointer; pointer-events: auto;
         padding: 4px 6px 4px 4px;
         transition: color 0.4s ease;
-        color: rgba(255, 215, 0, 0.2);
-        font-size: 13px;
+        color: rgba(255, 215, 0, 0.35);
+        font-size: 16px;
         white-space: nowrap;
       `
       backBtn.textContent = `\u2190 ${getRoomLabel(prevRoom)}`
@@ -225,10 +225,10 @@ export class RoomManager {
         this.goBack()
       })
       backBtn.addEventListener('mouseenter', () => {
-        backBtn.style.color = 'rgba(255, 20, 147, 0.5)'
+        backBtn.style.color = 'rgba(255, 20, 147, 0.7)'
       })
       backBtn.addEventListener('mouseleave', () => {
-        backBtn.style.color = 'rgba(255, 215, 0, 0.2)'
+        backBtn.style.color = 'rgba(255, 215, 0, 0.35)'
       })
       this.passageBar.appendChild(backBtn)
 
@@ -246,10 +246,10 @@ export class RoomManager {
       if (!first) {
         const sep = document.createElement('span')
         sep.style.cssText = `
-          color: rgba(255, 215, 0, 0.08);
-          margin: 0 6px;
+          color: rgba(255, 215, 0, 0.15);
+          margin: 0 8px;
           pointer-events: none;
-          font-size: 11px;
+          font-size: 14px;
         `
         sep.textContent = '\u00B7'
         this.passageBar.appendChild(sep)
@@ -260,9 +260,9 @@ export class RoomManager {
       const btn = document.createElement('span')
       btn.style.cssText = `
         cursor: pointer; pointer-events: auto;
-        padding: 4px 2px;
+        padding: 4px 4px;
         transition: color 0.4s ease;
-        color: rgba(255, 215, 0, ${visited ? '0.3' : '0.15'});
+        color: rgba(255, 215, 0, ${visited ? '0.5' : '0.3'});
         white-space: nowrap;
       `
       btn.textContent = room.label
@@ -272,11 +272,11 @@ export class RoomManager {
         this.switchTo(connName)
       })
       btn.addEventListener('mouseenter', () => {
-        btn.style.color = 'rgba(255, 20, 147, 0.5)'
+        btn.style.color = 'rgba(255, 20, 147, 0.7)'
       })
       btn.addEventListener('mouseleave', () => {
         const v = (this.roomVisits.get(connName) || 0) > 0
-        btn.style.color = `rgba(255, 215, 0, ${v ? '0.3' : '0.15'})`
+        btn.style.color = `rgba(255, 215, 0, ${v ? '0.5' : '0.3'})`
       })
 
       this.passageBar.appendChild(btn)
@@ -291,8 +291,8 @@ export class RoomManager {
         cursor: pointer; pointer-events: auto;
         padding: 4px 4px;
         transition: color 0.4s ease;
-        color: rgba(255, 215, 0, 0.15);
-        font-size: 13px;
+        color: rgba(255, 215, 0, 0.3);
+        font-size: 16px;
         white-space: nowrap;
       `
       compass.textContent = '\u25CE map'
@@ -301,10 +301,10 @@ export class RoomManager {
         this.switchTo('cartographer')
       })
       compass.addEventListener('mouseenter', () => {
-        compass.style.color = 'rgba(255, 20, 147, 0.5)'
+        compass.style.color = 'rgba(255, 20, 147, 0.7)'
       })
       compass.addEventListener('mouseleave', () => {
-        compass.style.color = 'rgba(255, 215, 0, 0.15)'
+        compass.style.color = 'rgba(255, 215, 0, 0.3)'
       })
       this.passageBar.appendChild(compass)
     }
@@ -313,10 +313,10 @@ export class RoomManager {
   private appendDivider() {
     const div = document.createElement('span')
     div.style.cssText = `
-      color: rgba(255, 215, 0, 0.06);
-      margin: 0 4px;
+      color: rgba(255, 215, 0, 0.12);
+      margin: 0 6px;
       pointer-events: none;
-      font-size: 12px;
+      font-size: 15px;
     `
     div.textContent = '\u2502'
     this.passageBar.appendChild(div)
