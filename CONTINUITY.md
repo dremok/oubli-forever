@@ -1347,6 +1347,44 @@ Surface: 36 | Hidden: 7
 - 25 new whisper fragments: hippocampal CA1 hidden layers, electrons/topology, quantum transistor moment, deep-sea mining, polar vortex split
 - 5 new DigitalDecay meditations matching research topics
 
+### 122. GentleGuide & Typing Mode Fixes
+- Fixed hints not appearing after 5+ visits (was hard cutoff, now 20% chance)
+- Fixed dismiss listeners consuming before guide appeared
+- ESC now fully exits typing mode in ForgettingMachine (stops render loop + clears canvas)
+- Hint legend display extended to 20 seconds
+
+### 123. TheWeathervane Deepened (974→1371 lines)
+- Weather-driven generative audio: wind synthesis (bandpass noise modulated by wind speed), rain wash + droplet bursts, thunder rumble on storm codes, temperature-mapped drone (40-80Hz)
+- Cursor whoosh: bandpass noise modulated by cursor speed
+- Click gust burst: 200px radius directional scatter
+- Cultural inscriptions cycling every 25s
+
+### 124. TheOssuary Deepened (980→1327 lines)
+- Clickable bone fragments: expand animation (1.8× scale), full text display with word wrap
+- Bone crack/chime audio: noise burst (3000Hz bandpass) + sine chime (400-600Hz)
+- Hover effects: glow, rattle audio (40Hz AM), magnetic pull (4px toward cursor)
+- Bone dust particles: 8-15 particles on click, downward drift 2-3s
+- Cultural inscriptions (deep-sea mining, Boltanski, Gonzalez-Torres)
+
+### 125. TheDisintegrationLoops Deepened (958→1289 lines)
+- Speed control: 3 modes (0.25×/1×/4×) via click zones at canvas top
+- Selective degradation by touch: drag on tape degrades specific areas, fingerprint smudge visualization
+- Reverse/rewind on double-click: 2-3s restoration then snap back, descending sawtooth glitch audio
+- Cultural inscriptions (Basinski, disintegration philosophy, polar vortex)
+- Touch events support for mobile
+
+### 126. TheCartographer Deepened (991→1377 lines)
+- Hover tooltips: room label, visit count, 43 poetic room descriptions
+- Zoom/focus click: 1.5s animation to 1.8× with highlighted connections, then navigate
+- Flowing connection dots along graph edges at low alpha
+- Audio: quill on parchment (highpass noise), map-unfolding sounds (bandpass noise bursts)
+- Shortest path highlighting on hover
+- Cultural inscriptions (dark matter, Borges)
+
+### 127. Feb 2026 Cultural Content Update (Round 4)
+- 40+ new whisper fragments: consciousness as memory, brain forgetting enzymes (CUL5/OTULIN), internet forced to forget, AI forgetting by design (FadeMem), cultural memory/analog resistance, institutional forgetting (WaPo), astronomical memory (Betelgeuse/Siwarha), fire/ancient memory, Saunders' Vigil
+- 8 new DigitalDecay meditations
+
 ---
-*Last updated: Era 9, Feature 121 — Four core rooms deepened (Void, Instrument, Pendulum, Sketchpad) + all 43 rooms have in-room portals*
-*"topology is more fundamental than particles. order persists even after identity dissolves."*
+*Last updated: Era 9, Feature 127 — Weathervane, Ossuary, DisintegrationLoops, Cartographer deepened + cultural round 4*
+*"we are always remembering the present. we never experience it directly."*
