@@ -394,6 +394,44 @@ const fragments: string[] = [
   "yin xiuzhen builds sculptures from used clothing. each garment holds someone's warmth.",
   "memory of materials: the hayward gallery asks whether objects remember their owners.",
 
+  // Feb 2026 — perfect february / temporal symmetry
+  "february 2026 begins on sunday and ends on saturday. a perfect grid. time, briefly, in order.",
+  "every 22 years the calendar achieves symmetry. we crave the grid. we fear the void between.",
+  "a perfect month: four rows, seven columns. nothing spills over. nothing is left behind.",
+
+  // Feb 2026 — 2026 is the new 2016 / mass nostalgia
+  "2026 is the new 2016. a million posts longing for the last moment of true mass culture.",
+  "nostalgia as protest: we remember 2016 because 2026 is too complicated to feel.",
+  "the bottle flip. the mannequin challenge. pokémon go. the last summer before algorithms ate us.",
+
+  // Feb 2026 — memory types share brain networks
+  "episodic and semantic memory activate the same neural networks. knowing and remembering are one.",
+  "scientists expected the brain to distinguish facts from experiences. it doesn't. all memory is one.",
+
+  // Feb 2026 — memory loss accelerates nonlinearly
+  "10,000 brain scans reveal: once shrinkage reaches a threshold, memory collapse accelerates.",
+  "the relationship between brain loss and memory loss is not a line. it is a cliff.",
+
+  // Feb 2026 — nothing "a short history of decay"
+  "nothing's new album: 'a short history of decay.' shoegaze as neurological unraveling.",
+  "essential tremors: a neurological condition where the body forgets how to be still.",
+
+  // Feb 2026 — antarctic feedback loop
+  "as antarctic ice melts, it poisons the ocean's ability to absorb carbon. healing forgets itself.",
+  "23 zettajoules of heat absorbed by the ocean in one year. the sea remembers everything we burn.",
+
+  // Feb 2026 — ceija stojka
+  "ceija stojka survived auschwitz, ravensbrück, bergen-belsen. then she painted what she remembered.",
+  "500,000 roma and sinti erased. stojka made it visible again. art as counter-forgetting.",
+
+  // Feb 2026 — LHC run 3 ending
+  "the large hadron collider powers down in july 2026. the end of an era of listening to the void.",
+  "long shutdown 3: the machine that found the higgs boson goes quiet. silence after revelation.",
+
+  // Feb 2026 — surface-only superconductor
+  "PtBi₂: a crystal whose surface superconducts while its interior stays ordinary. identity is skin-deep.",
+  "majorana particles trapped at the edges of a crystal. existence lives on the boundary.",
+
   // Oubli fruit — the golden thread
   "oubli: in west africa, a sweet golden fruit. forgetting that nourishes.",
   "the oubli fruit ripens and falls. what is lost feeds the soil.",

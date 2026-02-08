@@ -151,6 +151,14 @@ const DECAY_MEDITATIONS = [
   'yin xiuzhen builds art from secondhand clothing. each shirt remembers the body it covered.',
   'memory of materials: the hayward gallery, february 2026. objects that hold their owners\' warmth.',
   'ruthenium complexes that switch between memory, logic, and learning. the molecule decides what to be.',
+  'february 2026: a perfect 4×7 grid. every 22 years the calendar achieves symmetry. then time spills again.',
+  'episodic and semantic memory share the same brain networks. the line between knowing and remembering is an illusion.',
+  '10,000 MRI scans reveal: memory loss accelerates past a threshold. the cliff, not the slope.',
+  'nothing\'s "a short history of decay": shoegaze as neurological unraveling. essential tremors. the body forgetting stillness.',
+  'antarctic ice delivers dead sediment to the ocean. the more it melts, the less the sea can heal. forgetting how to heal.',
+  'ceija stojka survived three concentration camps. then she painted. 500,000 roma erased. one woman\'s brush against oblivion.',
+  'the large hadron collider powers down july 2026 for long shutdown 3. the machine that heard the higgs boson falls silent.',
+  'PtBi₂: superconductivity only on the surface. the interior stays ordinary. what if identity works the same way?',
 ]
 
 export class DigitalDecay {
