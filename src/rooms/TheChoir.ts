@@ -15,14 +15,21 @@
  * resonate with adjacent rooms. Sustain a voice at the boundary
  * to open a passage through sound.
  *
- * Inspired by: Gregorian chant, Arvo P\u00e4rt's tintinnabuli,
+ * Cathedral reverb with multiple delay lines for depth.
+ * Harmonic rules inspired by tintinnabuli: consonant intervals
+ * ring longer, dissonant intervals create beating/tremolo.
+ * Ghost voices replay from the cathedral's memory.
+ *
+ * Inspired by: Gregorian chant, tintinnabuli technique,
+ * Ligeti's Atmospheres, Hildegard von Bingen,
+ * Meredith Monk's extended vocal techniques,
  * Pauline Oliveros' deep listening, throat singing,
  * the sound of wind through architecture, how voices
  * combine to create something none of them contain alone
  */
 
 import type { Room } from './RoomManager'
-import { getAudioContext } from '../sound/AudioBus'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface ChoirDeps {
   switchTo?: (name: string) => void
@@ -39,6 +46,26 @@ interface Voice {
   birth: number
   life: number // max life in seconds
   alpha: number
+  isGhost?: boolean
+}
+
+/** Record of a voice that has faded, for ghost replay */
+interface GhostRecord {
+  x: number
+  y: number
+  freq: number
+  xNorm: number
+  yNorm: number
+}
+
+/** A flickering candle point at the base of the cathedral */
+interface Candle {
+  x: number
+  y: number
+  phase: number
+  speed: number
+  brightness: number
+  size: number
 }
 
 interface ResonanceZone {
@@ -62,6 +89,24 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
   let reverb: ConvolverNode | null = null
   let totalVoices = 0
 
+  // Cathedral delay-based reverb nodes
+  let delayLines: { delay: DelayNode; feedback: GainNode; output: GainNode }[] = []
+
+  // Ambient pad nodes
+  let padOscs: OscillatorNode[] = []
+  let padGains: GainNode[] = []
+  let padFilter: BiquadFilterNode | null = null
+  let padMasterGain: GainNode | null = null
+  let padLfoOsc: OscillatorNode | null = null
+  let padLfoGain: GainNode | null = null
+
+  // Ghost voice system
+  const ghostRecords: GhostRecord[] = []
+  let ghostTimer: ReturnType<typeof setInterval> | null = null
+
+  // Candles for visual depth
+  let candles: Candle[] = []
+
   // Resonance zones — voices placed near edges create portals to adjacent rooms
   const resonanceZones: ResonanceZone[] = [
     {
@@ -71,7 +116,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       test: (_x, y, _w, h) => y < h * 0.15,
     },
     {
-      label: 'the s\u00e9ance',
+      label: 'the seance',
       room: 'seance',
       resonance: 0,
       test: (_x, y, _w, h) => y > h * 0.85,
@@ -85,9 +130,9 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
   ]
 
   // Create a simple reverb impulse response
-  function createReverbIR(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
-    const length = ctx.sampleRate * duration
-    const buffer = ctx.createBuffer(2, length, ctx.sampleRate)
+  function createReverbIR(actx: AudioContext, duration: number, decay: number): AudioBuffer {
+    const length = actx.sampleRate * duration
+    const buffer = actx.createBuffer(2, length, actx.sampleRate)
     for (let ch = 0; ch < 2; ch++) {
       const data = buffer.getChannelData(ch)
       for (let i = 0; i < length; i++) {
@@ -97,29 +142,237 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     return buffer
   }
 
+  // Create cathedral delay-based reverb (4 delay lines with different times + feedback)
+  function createCathedralDelays(actx: AudioContext, destination: AudioNode, source: AudioNode) {
+    const delayConfigs = [
+      { time: 0.071, feedback: 0.62, gain: 0.18 },  // short early reflection
+      { time: 0.137, feedback: 0.55, gain: 0.14 },  // medium reflection
+      { time: 0.233, feedback: 0.48, gain: 0.11 },  // longer reflection
+      { time: 0.379, feedback: 0.42, gain: 0.08 },  // long cathedral tail
+    ]
+
+    delayLines = delayConfigs.map(cfg => {
+      const delay = actx.createDelay(1.0)
+      delay.delayTime.value = cfg.time
+
+      const feedback = actx.createGain()
+      feedback.gain.value = cfg.feedback
+
+      const output = actx.createGain()
+      output.gain.value = cfg.gain
+
+      // Source -> delay -> output -> destination
+      source.connect(delay)
+      delay.connect(output)
+      output.connect(destination)
+
+      // Feedback loop: delay -> feedback -> delay
+      delay.connect(feedback)
+      feedback.connect(delay)
+
+      return { delay, feedback, output }
+    })
+  }
+
+  // Create ambient pad — low sustained chord (C2-G2-C3) with slow filter sweep
+  function createAmbientPad(actx: AudioContext, destination: AudioNode) {
+    const padFreqs = [65.41, 98.0, 130.81] // C2, G2, C3
+
+    padMasterGain = actx.createGain()
+    padMasterGain.gain.value = 0
+
+    padFilter = actx.createBiquadFilter()
+    padFilter.type = 'lowpass'
+    padFilter.frequency.value = 400
+    padFilter.Q.value = 1.0
+
+    // LFO for slow filter sweep
+    padLfoOsc = actx.createOscillator()
+    padLfoOsc.frequency.value = 0.05 // very slow: one cycle per 20 seconds
+    padLfoGain = actx.createGain()
+    padLfoGain.gain.value = 200 // sweep range: 200-600 Hz
+    padLfoOsc.connect(padLfoGain)
+    padLfoGain.connect(padFilter.frequency)
+    padLfoOsc.start()
+
+    padFilter.connect(padMasterGain)
+    padMasterGain.connect(destination)
+
+    // Fade in the pad over 6 seconds
+    const now = actx.currentTime
+    padMasterGain.gain.setValueAtTime(0, now)
+    padMasterGain.gain.linearRampToValueAtTime(0.03, now + 6)
+
+    padFreqs.forEach(freq => {
+      const osc = actx.createOscillator()
+
+      // Soft sawtooth-ish wave for warmth
+      const nH = 12
+      const real = new Float32Array(nH)
+      const imag = new Float32Array(nH)
+      real[0] = 0; imag[0] = 0
+      for (let k = 1; k < nH; k++) {
+        imag[k] = 1.0 / (k * k) // steep rolloff for soft tone
+      }
+      const wave = actx.createPeriodicWave(real, imag, { disableNormalization: false })
+      osc.setPeriodicWave(wave)
+      osc.frequency.value = freq
+
+      const g = actx.createGain()
+      g.gain.value = 0.3 // balance between the 3 tones
+
+      osc.connect(g)
+      g.connect(padFilter!)
+      osc.start()
+
+      padOscs.push(osc)
+      padGains.push(g)
+    })
+  }
+
+  /** Compute the interval in semitones between two frequencies */
+  function intervalSemitones(f1: number, f2: number): number {
+    return Math.abs(12 * Math.log2(f1 / f2))
+  }
+
+  /** Classify an interval for harmonic rules */
+  function classifyInterval(semitones: number): 'consonant' | 'dissonant' | 'neutral' {
+    // Reduce to within one octave
+    const s = semitones % 12
+    // Perfect intervals: unison, fifth, octave
+    if (s < 0.3 || Math.abs(s - 7) < 0.3 || Math.abs(s - 12) < 0.3) return 'consonant'
+    // Minor second / major seventh — dissonant
+    if (s < 1.3 || s > 10.7) return 'dissonant'
+    // Tritone
+    if (Math.abs(s - 6) < 0.3) return 'dissonant'
+    return 'neutral'
+  }
+
+  /**
+   * Apply harmonic rules between overlapping voices.
+   * - Consonant intervals (P5, P8): boost gain slightly, extend life feel
+   * - Dissonant intervals (m2): apply tremolo via gain modulation
+   * - Voices drift toward consonant intervals over time
+   */
+  function applyHarmonicRules() {
+    if (!audioCtx) return
+
+    for (let i = 0; i < voices.length; i++) {
+      const vi = voices[i]
+      if (!vi.gain || !vi.osc) continue
+      const ageI = time - vi.birth
+      if (ageI < 2 || ageI > vi.life - 3) continue // skip during fade in/out
+
+      let consonantBoost = 0
+      let dissonantBeat = 0
+
+      for (let j = 0; j < voices.length; j++) {
+        if (i === j) continue
+        const vj = voices[j]
+        if (!vj.osc) continue
+        const ageJ = time - vj.birth
+        if (ageJ < 2 || ageJ > vj.life - 3) continue
+
+        const semis = intervalSemitones(vi.freq, vj.freq)
+        const cls = classifyInterval(semis)
+
+        if (cls === 'consonant') {
+          consonantBoost += 0.04
+        } else if (cls === 'dissonant') {
+          dissonantBeat += 0.15
+        }
+      }
+
+      // Consonant: slightly louder (cap at +0.1)
+      const boostTarget = Math.min(0.1, consonantBoost)
+      // Dissonant: tremolo beating
+      const beatAmount = Math.min(0.3, dissonantBeat)
+
+      try {
+        const baseGain = 0.3
+        const now = audioCtx.currentTime
+        if (beatAmount > 0.01) {
+          // Create beating effect — modulate gain with sine at ~6-8 Hz
+          const beatRate = 6 + beatAmount * 4
+          const beatDepth = beatAmount * 0.08
+          const mod = Math.sin(now * beatRate * Math.PI * 2) * beatDepth
+          vi.gain.gain.setTargetAtTime(baseGain + boostTarget + mod, now, 0.05)
+        } else {
+          vi.gain.gain.setTargetAtTime(baseGain + boostTarget, now, 0.1)
+        }
+      } catch {
+        // Audio scheduling error — ignore
+      }
+
+      // Drift toward consonant intervals: gently pull frequency toward nearest P5/P8
+      if (vi.osc && voices.length > 1) {
+        let nearestConsonant = vi.freq
+        let minDist = Infinity
+        for (let j = 0; j < voices.length; j++) {
+          if (i === j) continue
+          const vj = voices[j]
+          if (!vj.osc) continue
+          // Check P5 above and below, P8 above and below
+          const targets = [
+            vj.freq * 1.5,    // P5 above
+            vj.freq / 1.5,    // P5 below
+            vj.freq * 2,      // P8 above
+            vj.freq / 2,      // P8 below
+            vj.freq,          // unison
+          ]
+          for (const t of targets) {
+            const dist = Math.abs(t - vi.freq)
+            if (dist < minDist && dist > 0.5) { // don't drift if already there
+              minDist = dist
+              nearestConsonant = t
+            }
+          }
+        }
+        // Very gentle drift — 0.02 Hz per frame toward consonance
+        if (minDist < 20 && minDist > 0.5) {
+          const drift = (nearestConsonant - vi.freq) * 0.0003
+          vi.freq += drift
+          try {
+            vi.osc.frequency.setTargetAtTime(vi.freq, audioCtx.currentTime, 0.5)
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  }
+
   async function initAudio() {
     try {
       audioCtx = await getAudioContext()
+      const destination = getAudioDestination()
+
       masterGain = audioCtx.createGain()
       masterGain.gain.value = 0.15
 
-      // Reverb for cathedral-like space
+      // Convolver reverb for cathedral-like space
       reverb = audioCtx.createConvolver()
       reverb.buffer = createReverbIR(audioCtx, 4, 2)
 
       const reverbGain = audioCtx.createGain()
       reverbGain.gain.value = 0.5
 
-      masterGain.connect(audioCtx.destination)
+      masterGain.connect(destination)
       masterGain.connect(reverb)
       reverb.connect(reverbGain)
-      reverbGain.connect(audioCtx.destination)
+      reverbGain.connect(destination)
+
+      // Additional cathedral delay-based reverb for depth
+      createCathedralDelays(audioCtx, destination, masterGain)
+
+      // Ambient pad drone
+      createAmbientPad(audioCtx, destination)
     } catch {
       // Audio not available
     }
   }
 
-  function addVoice(x: number, y: number) {
+  function addVoice(x: number, y: number, isGhost = false) {
     if (!audioCtx || !masterGain || !canvas) return
 
     const w = canvas.width
@@ -143,13 +396,13 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     // Pick a random chord tone
     const note = voicedNotes[Math.floor(Math.random() * voicedNotes.length)]
 
-    // Y position shifts the octave preference (higher click → higher octaves)
-    const adjusted = note.weights.map((w, i) => {
+    // Y position shifts the octave preference (higher click -> higher octaves)
+    const adjusted = note.weights.map((wt, i) => {
       const octaveBias = (i - 1) * 0.6 // -0.6, 0, +0.6
-      return Math.max(0.01, w * (1 + (pitchRatio - 0.5) * octaveBias))
+      return Math.max(0.01, wt * (1 + (pitchRatio - 0.5) * octaveBias))
     })
     const wSum = adjusted[0] + adjusted[1] + adjusted[2]
-    const norm = adjusted.map(w => w / wSum)
+    const norm = adjusted.map(wt => wt / wSum)
 
     // Weighted random octave selection
     const roll = Math.random()
@@ -198,14 +451,21 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       filter.frequency.value = 300 + xNorm * 2200 + pitchRatio * 800 // 300-3300 Hz
       filter.Q.value = 1.5 + (1 - xNorm) * 3 + yNorm * 1.5 // more resonant when pure/low
 
+      // Ghost voices: more filtered and quieter
+      if (isGhost) {
+        filter.frequency.value *= 0.6 // darker, more distant
+        filter.Q.value += 2 // more nasal/distant quality
+      }
+
       // Gain envelope
       const gain = audioCtx.createGain()
       gain.gain.value = 0
 
       // Fade in
       const now = audioCtx.currentTime
+      const peakGain = isGhost ? 0.12 : 0.3 // ghosts are quieter
       gain.gain.setValueAtTime(0, now)
-      gain.gain.linearRampToValueAtTime(0.3, now + 2)
+      gain.gain.linearRampToValueAtTime(peakGain, now + 2)
 
       // Connect
       osc.connect(filter)
@@ -215,7 +475,9 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       osc.start()
       vibrato.start()
 
-      const life = 15 + Math.random() * 20 // 15-35 seconds
+      const life = isGhost
+        ? 8 + Math.random() * 10  // ghosts: shorter life (8-18s)
+        : 15 + Math.random() * 20 // normal: 15-35 seconds
 
       voices.push({
         x, y, freq,
@@ -223,12 +485,20 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
         birth: time,
         life,
         alpha: 0,
+        isGhost,
       })
 
       totalVoices++
 
+      // Record for ghost replay (only non-ghosts)
+      if (!isGhost) {
+        ghostRecords.push({ x, y, freq, xNorm, yNorm })
+        // Keep only last 20 records
+        if (ghostRecords.length > 20) ghostRecords.shift()
+      }
+
       // Schedule fade out
-      gain.gain.setValueAtTime(0.3, now + life - 3)
+      gain.gain.setValueAtTime(peakGain, now + life - 3)
       gain.gain.linearRampToValueAtTime(0, now + life)
 
       // Stop after fade
@@ -241,6 +511,13 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     } catch {
       // Audio error
     }
+  }
+
+  /** Replay a ghost voice from the cathedral's memory */
+  function spawnGhostVoice() {
+    if (!active || !canvas || ghostRecords.length < 5) return
+    const record = ghostRecords[Math.floor(Math.random() * ghostRecords.length)]
+    addVoice(record.x, record.y, true)
   }
 
   function removeDeadVoices() {
@@ -268,6 +545,25 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     addVoice(w * 0.3, h * 0.5)
     addVoice(w * 0.5, h * 0.35)
     addVoice(w * 0.7, h * 0.6)
+  }
+
+  // Initialize candles
+  function initCandles() {
+    if (!canvas) return
+    candles = []
+    const w = canvas.width
+    const h = canvas.height
+    const count = 12 + Math.floor(Math.random() * 8)
+    for (let i = 0; i < count; i++) {
+      candles.push({
+        x: w * 0.05 + Math.random() * w * 0.9,
+        y: h * 0.85 + Math.random() * h * 0.12,
+        phase: Math.random() * Math.PI * 2,
+        speed: 2 + Math.random() * 4,
+        brightness: 0.3 + Math.random() * 0.5,
+        size: 1.5 + Math.random() * 2.5,
+      })
+    }
   }
 
   // Draw resonance zone edge effects
@@ -362,6 +658,154 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     c.stroke()
   }
 
+  // Draw cathedral pillars — faint vertical columns at left and right edges
+  function drawPillars(c: CanvasRenderingContext2D, w: number, h: number, t: number) {
+    const pillarCount = 4 // pillars per side
+    const pillarWidth = 18
+    const marginX = w * 0.03
+
+    for (let side = 0; side < 2; side++) {
+      for (let i = 0; i < pillarCount; i++) {
+        const baseX = side === 0
+          ? marginX + i * (w * 0.04)
+          : w - marginX - i * (w * 0.04)
+
+        const flicker = Math.sin(t * 0.3 + i * 1.7 + side * 2.1) * 0.01
+        const alpha = 0.025 + flicker
+
+        // Main pillar body — gradient from bottom to top
+        const grad = c.createLinearGradient(baseX, 0, baseX, h)
+        grad.addColorStop(0, `rgba(80, 70, 110, ${alpha * 0.3})`)
+        grad.addColorStop(0.3, `rgba(60, 50, 90, ${alpha})`)
+        grad.addColorStop(0.8, `rgba(50, 40, 80, ${alpha})`)
+        grad.addColorStop(1, `rgba(40, 30, 70, ${alpha * 0.5})`)
+
+        c.fillStyle = grad
+        c.fillRect(baseX - pillarWidth / 2, 0, pillarWidth, h)
+
+        // Capital at top — small widening
+        const capHeight = 20
+        c.fillStyle = `rgba(70, 60, 100, ${alpha * 1.2})`
+        c.beginPath()
+        c.moveTo(baseX - pillarWidth / 2 - 4, capHeight)
+        c.lineTo(baseX + pillarWidth / 2 + 4, capHeight)
+        c.lineTo(baseX + pillarWidth / 2, capHeight + 10)
+        c.lineTo(baseX - pillarWidth / 2, capHeight + 10)
+        c.closePath()
+        c.fill()
+
+        // Base at bottom
+        c.fillStyle = `rgba(70, 60, 100, ${alpha * 1.2})`
+        c.beginPath()
+        c.moveTo(baseX - pillarWidth / 2 - 4, h - 10)
+        c.lineTo(baseX + pillarWidth / 2 + 4, h - 10)
+        c.lineTo(baseX + pillarWidth / 2, h - 20)
+        c.lineTo(baseX - pillarWidth / 2, h - 20)
+        c.closePath()
+        c.fill()
+      }
+    }
+  }
+
+  // Draw flickering candles at the base
+  function drawCandles(c: CanvasRenderingContext2D, t: number) {
+    for (const candle of candles) {
+      const flicker = Math.sin(t * candle.speed + candle.phase) * 0.3
+        + Math.sin(t * candle.speed * 1.7 + candle.phase * 0.6) * 0.2
+      const b = candle.brightness * (0.7 + flicker * 0.3)
+      if (b < 0.05) continue
+
+      // Warm glow
+      const glowR = 8 + candle.size * 4
+      const glow = c.createRadialGradient(candle.x, candle.y, 0, candle.x, candle.y, glowR)
+      glow.addColorStop(0, `rgba(255, 200, 100, ${b * 0.15})`)
+      glow.addColorStop(0.4, `rgba(255, 160, 60, ${b * 0.06})`)
+      glow.addColorStop(1, 'transparent')
+      c.fillStyle = glow
+      c.beginPath()
+      c.arc(candle.x, candle.y, glowR, 0, Math.PI * 2)
+      c.fill()
+
+      // Flame point
+      c.fillStyle = `rgba(255, 220, 140, ${b * 0.5})`
+      c.beginPath()
+      c.arc(candle.x, candle.y - candle.size * 0.5, candle.size * 0.6, 0, Math.PI * 2)
+      c.fill()
+    }
+  }
+
+  // Draw rose window — circular mandala pattern at top-center, responds to harmonic density
+  function drawRoseWindow(c: CanvasRenderingContext2D, w: number, h: number, t: number) {
+    const cx = w / 2
+    const cy = h * 0.08
+    const baseRadius = Math.min(w, h) * 0.06
+
+    // Harmonic density = number of active voices, capped
+    const density = Math.min(voices.length / 6, 1)
+    if (density < 0.01 && voices.length === 0) return
+
+    const alpha = 0.02 + density * 0.04
+
+    // Outer circle
+    c.strokeStyle = `rgba(180, 150, 220, ${alpha})`
+    c.lineWidth = 1
+    c.beginPath()
+    c.arc(cx, cy, baseRadius, 0, Math.PI * 2)
+    c.stroke()
+
+    // Petal pattern — number of petals increases with density
+    const petalCount = 6 + Math.floor(density * 6)
+    for (let p = 0; p < petalCount; p++) {
+      const angle = (p / petalCount) * Math.PI * 2 + t * 0.1
+      const petalAlpha = alpha * (0.5 + Math.sin(t * 0.8 + p * 0.5) * 0.3)
+
+      // Inner petal arc
+      const innerR = baseRadius * 0.3
+      const outerR = baseRadius * (0.6 + density * 0.3)
+      const px = cx + Math.cos(angle) * innerR
+      const py = cy + Math.sin(angle) * innerR
+      const px2 = cx + Math.cos(angle) * outerR
+      const py2 = cy + Math.sin(angle) * outerR
+
+      c.strokeStyle = `rgba(200, 170, 240, ${petalAlpha})`
+      c.lineWidth = 0.5
+      c.beginPath()
+      c.moveTo(px, py)
+      c.lineTo(px2, py2)
+      c.stroke()
+
+      // Small arc at petal tip
+      const tipAngle = angle + 0.15
+      const tipX = cx + Math.cos(tipAngle) * outerR
+      const tipY = cy + Math.sin(tipAngle) * outerR
+      c.beginPath()
+      c.moveTo(px2, py2)
+      c.quadraticCurveTo(
+        cx + Math.cos(angle + 0.08) * (outerR + 5),
+        cy + Math.sin(angle + 0.08) * (outerR + 5),
+        tipX, tipY,
+      )
+      c.stroke()
+    }
+
+    // Center dot
+    c.fillStyle = `rgba(220, 200, 255, ${alpha * 1.5})`
+    c.beginPath()
+    c.arc(cx, cy, 2, 0, Math.PI * 2)
+    c.fill()
+
+    // Concentric inner rings
+    for (let r = 1; r <= 3; r++) {
+      const ringR = baseRadius * (r * 0.2)
+      const ringPulse = Math.sin(t * 0.6 + r * 1.2) * 0.3 + 0.7
+      c.strokeStyle = `rgba(180, 160, 220, ${alpha * 0.4 * ringPulse})`
+      c.lineWidth = 0.5
+      c.beginPath()
+      c.arc(cx, cy, ringR, 0, Math.PI * 2)
+      c.stroke()
+    }
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -369,12 +813,22 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
 
     removeDeadVoices()
 
+    // Apply harmonic interval rules every few frames
+    if (Math.floor(time * 60) % 4 === 0) {
+      applyHarmonicRules()
+    }
+
     const w = canvas.width
     const h = canvas.height
 
     // Background — cathedral dark
     ctx.fillStyle = 'rgba(3, 2, 8, 1)'
     ctx.fillRect(0, 0, w, h)
+
+    // --- Draw cathedral structure (behind everything) ---
+    drawPillars(ctx, w, h, time)
+    drawCandles(ctx, time)
+    drawRoseWindow(ctx, w, h, time)
 
     // --- Update resonance zones ---
     const livingVoices = voices.filter(v => {
@@ -414,23 +868,34 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
 
       const breathe = Math.sin(time * 1.2 + v.x * 0.01) * 0.1
 
-      // Voice visualization — concentric rings
+      // Voice visualization — concentric rings with more variance
       const maxRadius = 30 + v.freq * 0.05
-      for (let ring = 0; ring < 3; ring++) {
-        const radius = maxRadius * (0.3 + ring * 0.35)
+      const ringCount = v.isGhost ? 5 : 3 // ghosts have more ethereal rings
+      for (let ring = 0; ring < ringCount; ring++) {
+        const radius = maxRadius * (0.3 + ring * (v.isGhost ? 0.2 : 0.35))
         const ringPhase = Math.sin(time * 2 + ring * 2 + v.x * 0.01)
-        const ringAlpha = v.alpha * (0.05 + breathe) * (1 - ring * 0.25)
+        // More variance in pulsing
+        const pulseVar = Math.sin(time * 0.7 + ring * 3.1 + v.y * 0.005) * 0.15
+        const ringAlpha = v.alpha * (0.05 + breathe + pulseVar) * (1 - ring * (1 / (ringCount + 1)))
 
-        ctx.strokeStyle = `rgba(200, 180, 255, ${ringAlpha})`
-        ctx.lineWidth = 1
+        // Ghost voices: blue-shifted, more transparent
+        const color = v.isGhost
+          ? `rgba(150, 170, 255, ${ringAlpha * 0.6})`
+          : `rgba(200, 180, 255, ${ringAlpha})`
+
+        ctx.strokeStyle = color
+        ctx.lineWidth = v.isGhost ? 0.5 : 1
         ctx.beginPath()
         ctx.arc(v.x, v.y, radius + ringPhase * 3, 0, Math.PI * 2)
         ctx.stroke()
       }
 
       // Core glow
+      const glowColor = v.isGhost
+        ? `rgba(150, 170, 255, ${v.alpha * 0.1})`
+        : `rgba(200, 180, 255, ${v.alpha * 0.2})`
       const glow = ctx.createRadialGradient(v.x, v.y, 0, v.x, v.y, 15)
-      glow.addColorStop(0, `rgba(200, 180, 255, ${v.alpha * 0.2})`)
+      glow.addColorStop(0, glowColor)
       glow.addColorStop(1, 'transparent')
       ctx.fillStyle = glow
       ctx.beginPath()
@@ -438,16 +903,24 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       ctx.fill()
 
       // Center dot
-      ctx.fillStyle = `rgba(220, 200, 255, ${v.alpha * 0.4})`
+      const dotColor = v.isGhost
+        ? `rgba(180, 190, 255, ${v.alpha * 0.25})`
+        : `rgba(220, 200, 255, ${v.alpha * 0.4})`
+      ctx.fillStyle = dotColor
       ctx.beginPath()
-      ctx.arc(v.x, v.y, 3, 0, Math.PI * 2)
+      ctx.arc(v.x, v.y, v.isGhost ? 2 : 3, 0, Math.PI * 2)
       ctx.fill()
 
-      // Note label (very faint)
+      // Note label (very faint) — ghosts show "ghost" indicator
       ctx.font = '11px monospace'
-      ctx.fillStyle = `rgba(200, 180, 255, ${v.alpha * 0.06})`
       ctx.textAlign = 'center'
-      ctx.fillText(`${v.freq.toFixed(0)}Hz`, v.x, v.y + 22)
+      if (v.isGhost) {
+        ctx.fillStyle = `rgba(150, 170, 255, ${v.alpha * 0.05})`
+        ctx.fillText(`${v.freq.toFixed(0)}Hz ~`, v.x, v.y + 22)
+      } else {
+        ctx.fillStyle = `rgba(200, 180, 255, ${v.alpha * 0.06})`
+        ctx.fillText(`${v.freq.toFixed(0)}Hz`, v.x, v.y + 22)
+      }
 
       // Draw wave connections from voices to resonance zones they're in
       for (let zi = 0; zi < resonanceZones.length; zi++) {
@@ -475,7 +948,8 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(200, 180, 255, 0.06)'
     ctx.textAlign = 'left'
-    ctx.fillText(`${voices.length} voices`, 12, h - 30)
+    const ghostCount = voices.filter(v => v.isGhost).length
+    ctx.fillText(`${voices.length} voices${ghostCount > 0 ? ` (${ghostCount} echoes)` : ''}`, 12, h - 30)
     ctx.fillText(`${totalVoices} total`, 12, h - 18)
 
     // Pitch guide (very faint)
@@ -531,6 +1005,62 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     }
   }
 
+  /** Clean up all audio nodes (shared between deactivate and destroy) */
+  function cleanupAudio() {
+    // Stop all voices
+    for (const v of voices) {
+      try {
+        v.osc?.stop()
+        v.vibrato?.stop()
+        v.osc?.disconnect()
+        v.gain?.disconnect()
+        v.vibrato?.disconnect()
+        v.filter?.disconnect()
+      } catch {}
+    }
+    voices = []
+
+    // Stop ambient pad
+    for (const osc of padOscs) {
+      try { osc.stop(); osc.disconnect() } catch {}
+    }
+    for (const g of padGains) {
+      try { g.disconnect() } catch {}
+    }
+    padOscs = []
+    padGains = []
+    try { padFilter?.disconnect() } catch {}
+    try { padMasterGain?.disconnect() } catch {}
+    try { padLfoOsc?.stop(); padLfoOsc?.disconnect() } catch {}
+    try { padLfoGain?.disconnect() } catch {}
+    padFilter = null
+    padMasterGain = null
+    padLfoOsc = null
+    padLfoGain = null
+
+    // Disconnect delay lines
+    for (const dl of delayLines) {
+      try {
+        dl.delay.disconnect()
+        dl.feedback.disconnect()
+        dl.output.disconnect()
+      } catch {}
+    }
+    delayLines = []
+
+    // Disconnect reverb
+    try { reverb?.disconnect() } catch {}
+    try { masterGain?.disconnect() } catch {}
+    reverb = null
+    masterGain = null
+
+    // Stop ghost timer
+    if (ghostTimer !== null) {
+      clearInterval(ghostTimer)
+      ghostTimer = null
+    }
+  }
+
   return {
     name: 'choir',
     label: 'the choir',
@@ -567,6 +1097,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
         if (canvas) {
           canvas.width = window.innerWidth
           canvas.height = window.innerHeight
+          initCandles() // re-scatter candles on resize
         }
       }
       window.addEventListener('resize', onResize)
@@ -580,37 +1111,29 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       // Reset resonance on re-entry
       for (const z of resonanceZones) z.resonance = 0
       await initAudio()
+      initCandles()
       seedVoices()
+
+      // Ghost voice timer: check every 8-15 seconds after 5+ voices have been placed
+      ghostTimer = setInterval(() => {
+        if (totalVoices >= 5 && Math.random() < 0.4) {
+          spawnGhostVoice()
+        }
+      }, 8000 + Math.random() * 7000)
+
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
-      // Stop all voices
-      for (const v of voices) {
-        try {
-          v.osc?.stop()
-          v.vibrato?.stop()
-          v.osc?.disconnect()
-          v.gain?.disconnect()
-          v.vibrato?.disconnect()
-          v.filter?.disconnect()
-        } catch {}
-      }
-      voices = []
+      cleanupAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
-      for (const v of voices) {
-        try {
-          v.osc?.stop()
-          v.vibrato?.stop()
-        } catch {}
-      }
-      voices = []
+      cleanupAudio()
       overlay?.remove()
     },
   }

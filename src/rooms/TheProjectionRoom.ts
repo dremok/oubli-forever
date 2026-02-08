@@ -11,7 +11,17 @@
  * Between memories, the projector shows "leader" — countdown numbers,
  * alignment marks, the artifacts of cinema's mechanical substrate.
  *
+ * CUTTING ROOM MODE — inspired by Alejandro González Iñárritu's
+ * "SUEÑO PERRO" at LACMA (Feb 22, 2026): over a million feet of
+ * film left on the cutting room floor from Amores Perros (2000),
+ * projected as fragments "stripped of all narrative." After viewing
+ * 3+ memories, press 'C' to enter a mode where 3-5 memory fragments
+ * overlap simultaneously at different positions, rotations, opacities —
+ * the detritus of remembering, the scenes that didn't make the cut.
+ *
  * Inspired by:
+ * - Iñárritu's "SUEÑO PERRO" (LACMA, 2026) — excavated cutting
+ *   room floor footage, fragments stripped of narrative context
  * - Baz Luhrmann's EPiC (Feb 2026) — 68 boxes of Elvis footage found
  *   in a Kansas salt mine vault, thought permanently lost, restored
  *   over 2 years. Lost footage in liminal state: "new" to us but
@@ -32,6 +42,7 @@
  * Audio: projector rattle (18Hz mechanical pulse), film grain hiss
  * (high-pass white noise), frame advance clicks, degradation artifacts
  * (pops, crackle, silence drops). Reel changes trigger SMPTE leaders.
+ * Cutting Room adds: 24Hz motor hum (24fps), splice pops, gate rattle.
  *
  * USES MEMORIES. Cinematic. Destructive viewing.
  */
@@ -76,6 +87,16 @@ interface FilmScratchParticle {
   birth: number   // time when spawned
   lifetime: number // 0.1-0.3 seconds
   width: number
+}
+
+interface CuttingRoomFragment {
+  frameIndex: number    // index into frames[]
+  xOffset: number       // normalized -0.3 to 0.3 relative to center
+  yOffset: number       // normalized -0.2 to 0.2 relative to center
+  rotation: number      // degrees, -5 to +5
+  opacity: number       // 0.2 to 0.6
+  cycleDuration: number // 3-8 seconds before switching to new memory
+  cycleTime: number     // current time within cycle
 }
 
 export function createProjectionRoom(deps: ProjectionDeps): Room {
@@ -136,6 +157,18 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
   let navLeaderTime = 0
   let navLeaderTarget = ''
   let navLeaderLabel = ''
+
+  // --- Cutting Room Floor mode ---
+  let cuttingRoomActive = false
+  let memoriesViewed = 0 // count of distinct memories viewed (for unlock)
+  let cuttingRoomFragments: CuttingRoomFragment[] = []
+  // Cutting Room audio nodes
+  let crMotorOsc: OscillatorNode | null = null
+  let crMotorOsc2: OscillatorNode | null = null
+  let crMotorOsc3: OscillatorNode | null = null
+  let crMotorGain: GainNode | null = null
+  let crSpliceInterval: ReturnType<typeof setTimeout> | null = null
+  let crRattleInterval: ReturnType<typeof setTimeout> | null = null
 
   function buildFrames() {
     const memories = deps.getMemories()
@@ -465,6 +498,7 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     inReelChange = true
     reelChangeTime = 0
     reelChangeSmpteNum = 3 + Math.floor(Math.random() * 5) // random countdown start 3-7
+    memoriesViewed++
     // Trigger audio effect
     if (audioInitialized) {
       getAudioContext().then(ac => playReelChangeAudio(ac))
@@ -619,6 +653,7 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     if (leaderTime > leaderCount + 0.5) {
       inLeader = false
       frameTime = 0
+      memoriesViewed++ // first memory viewed
     }
   }
 
@@ -820,6 +855,305 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     }
   }
 
+  // --- Cutting Room Floor mode functions ---
+  function initCuttingRoomFragments() {
+    const count = 3 + Math.floor(Math.random() * 3) // 3-5 fragments
+    cuttingRoomFragments = []
+    for (let i = 0; i < count; i++) {
+      cuttingRoomFragments.push({
+        frameIndex: Math.floor(Math.random() * Math.max(1, frames.length)),
+        xOffset: (Math.random() - 0.5) * 0.6,  // -0.3 to 0.3
+        yOffset: (Math.random() - 0.5) * 0.4,  // -0.2 to 0.2
+        rotation: (Math.random() - 0.5) * 10,   // -5 to +5 degrees
+        opacity: 0.2 + Math.random() * 0.4,     // 0.2 to 0.6
+        cycleDuration: 3 + Math.random() * 5,   // 3-8 seconds
+        cycleTime: Math.random() * 5,           // stagger start times
+      })
+    }
+  }
+
+  async function startCuttingRoomAudio() {
+    try {
+      const ac = await getAudioContext()
+      if (!audioMaster) return
+
+      // 24Hz motor hum (24fps projector motor) with harmonics at 48Hz and 72Hz
+      crMotorGain = ac.createGain()
+      crMotorGain.gain.value = 0
+      crMotorGain.connect(audioMaster)
+      // Fade in
+      crMotorGain.gain.linearRampToValueAtTime(0.015, ac.currentTime + 0.8)
+
+      crMotorOsc = ac.createOscillator()
+      crMotorOsc.type = 'sine'
+      crMotorOsc.frequency.value = 24
+      const motorFilter1 = ac.createBiquadFilter()
+      motorFilter1.type = 'lowpass'
+      motorFilter1.frequency.value = 80
+      crMotorOsc.connect(motorFilter1)
+      motorFilter1.connect(crMotorGain)
+      crMotorOsc.start()
+
+      crMotorOsc2 = ac.createOscillator()
+      crMotorOsc2.type = 'sine'
+      crMotorOsc2.frequency.value = 48
+      const motor2Gain = ac.createGain()
+      motor2Gain.gain.value = 0.5 // quieter harmonic
+      crMotorOsc2.connect(motor2Gain)
+      motor2Gain.connect(crMotorGain)
+      crMotorOsc2.start()
+
+      crMotorOsc3 = ac.createOscillator()
+      crMotorOsc3.type = 'sine'
+      crMotorOsc3.frequency.value = 72
+      const motor3Gain = ac.createGain()
+      motor3Gain.gain.value = 0.25 // even quieter
+      crMotorOsc3.connect(motor3Gain)
+      motor3Gain.connect(crMotorGain)
+      crMotorOsc3.start()
+
+      // Splice pops: brief noise bursts (50ms) every 2-5 seconds
+      function scheduleSplicePop() {
+        if (!cuttingRoomActive || !active) return
+        const delay = 2000 + Math.random() * 3000
+        crSpliceInterval = setTimeout(async () => {
+          if (!cuttingRoomActive || !active || !audioMaster) return
+          const a = await getAudioContext()
+          const popLen = Math.floor(a.sampleRate * 0.05) // 50ms
+          const popBuf = a.createBuffer(1, popLen, a.sampleRate)
+          const popData = popBuf.getChannelData(0)
+          for (let i = 0; i < popLen; i++) {
+            const env = Math.exp(-i / (a.sampleRate * 0.015))
+            popData[i] = (Math.random() * 2 - 1) * env
+          }
+          const src = a.createBufferSource()
+          src.buffer = popBuf
+          const spliceGain = a.createGain()
+          spliceGain.gain.value = 0.07
+          src.connect(spliceGain)
+          spliceGain.connect(audioMaster!)
+          src.start()
+          scheduleSplicePop()
+        }, delay)
+      }
+      scheduleSplicePop()
+
+      // Film gate rattle: highpass-filtered noise bursts at 4kHz, periodic
+      function scheduleGateRattle() {
+        if (!cuttingRoomActive || !active) return
+        const delay = 1500 + Math.random() * 3000
+        crRattleInterval = setTimeout(async () => {
+          if (!cuttingRoomActive || !active || !audioMaster) return
+          const a = await getAudioContext()
+          const rattleLen = Math.floor(a.sampleRate * 0.04) // 40ms
+          const rattleBuf = a.createBuffer(1, rattleLen, a.sampleRate)
+          const rattleData = rattleBuf.getChannelData(0)
+          for (let i = 0; i < rattleLen; i++) {
+            const env = Math.exp(-i / (a.sampleRate * 0.01))
+            rattleData[i] = (Math.random() * 2 - 1) * env
+          }
+          const src = a.createBufferSource()
+          src.buffer = rattleBuf
+          const hp = a.createBiquadFilter()
+          hp.type = 'highpass'
+          hp.frequency.value = 4000
+          hp.Q.value = 1.0
+          const rattleG = a.createGain()
+          rattleG.gain.value = 0.04
+          src.connect(hp)
+          hp.connect(rattleG)
+          rattleG.connect(audioMaster!)
+          src.start()
+          scheduleGateRattle()
+        }, delay)
+      }
+      scheduleGateRattle()
+    } catch {
+      // Audio not available
+    }
+  }
+
+  function stopCuttingRoomAudio() {
+    if (crMotorGain) {
+      const ac = crMotorGain.context as AudioContext
+      const now = ac.currentTime
+      crMotorGain.gain.cancelScheduledValues(now)
+      crMotorGain.gain.setValueAtTime(crMotorGain.gain.value, now)
+      crMotorGain.gain.linearRampToValueAtTime(0, now + 0.3)
+    }
+    if (crSpliceInterval) { clearTimeout(crSpliceInterval); crSpliceInterval = null }
+    if (crRattleInterval) { clearTimeout(crRattleInterval); crRattleInterval = null }
+    setTimeout(() => {
+      try { crMotorOsc?.stop() } catch { /* */ }
+      try { crMotorOsc2?.stop() } catch { /* */ }
+      try { crMotorOsc3?.stop() } catch { /* */ }
+      crMotorOsc?.disconnect(); crMotorOsc = null
+      crMotorOsc2?.disconnect(); crMotorOsc2 = null
+      crMotorOsc3?.disconnect(); crMotorOsc3 = null
+      crMotorGain?.disconnect(); crMotorGain = null
+    }, 400)
+  }
+
+  function drawCuttingRoom(c: CanvasRenderingContext2D, w: number, h: number) {
+    const screenX = 30
+    const screenW = w - 60
+    const screenH = h
+
+    // Dark base
+    c.fillStyle = 'rgba(5, 4, 3, 1)'
+    c.fillRect(0, 0, w, h)
+
+    // Heavy film grain base for the whole screen (sepia-tinted)
+    c.fillStyle = `rgba(18, 14, 8, ${0.92 * projectorFlicker})`
+    c.fillRect(screenX, 0, screenW, screenH)
+
+    // Update and draw each fragment
+    for (const frag of cuttingRoomFragments) {
+      frag.cycleTime += 0.016
+
+      // Cycle to new memory when timer expires
+      if (frag.cycleTime > frag.cycleDuration) {
+        frag.cycleTime = 0
+        frag.frameIndex = Math.floor(Math.random() * Math.max(1, frames.length))
+        // Slightly shift position/rotation on each cycle
+        frag.xOffset = (Math.random() - 0.5) * 0.6
+        frag.yOffset = (Math.random() - 0.5) * 0.4
+        frag.rotation = (Math.random() - 0.5) * 10
+        frag.opacity = 0.2 + Math.random() * 0.4
+        frag.cycleDuration = 3 + Math.random() * 5
+      }
+
+      if (frames.length === 0) continue
+      const frame = frames[frag.frameIndex % frames.length]
+      const text = frame.memory.currentText
+      const words = text.split(' ')
+
+      // Compute fragment center position
+      const cx = w / 2 + frag.xOffset * screenW
+      const cy = h / 2 + frag.yOffset * screenH
+
+      c.save()
+      c.translate(cx, cy)
+      c.rotate((frag.rotation * Math.PI) / 180)
+
+      // Warm sepia text color
+      const sepiaR = 200 + Math.floor(Math.random() * 20)
+      const sepiaG = 160 + Math.floor(Math.random() * 20)
+      const sepiaB = 100 + Math.floor(Math.random() * 15)
+
+      // Fade in/out at start/end of cycle
+      let fadeAlpha = frag.opacity
+      if (frag.cycleTime < 0.5) {
+        fadeAlpha *= frag.cycleTime / 0.5
+      } else if (frag.cycleTime > frag.cycleDuration - 0.5) {
+        fadeAlpha *= (frag.cycleDuration - frag.cycleTime) / 0.5
+      }
+      fadeAlpha *= projectorFlicker
+
+      c.font = '15px "Cormorant Garamond", serif'
+      c.textAlign = 'center'
+      c.fillStyle = `rgba(${sepiaR}, ${sepiaG}, ${sepiaB}, ${fadeAlpha})`
+
+      // Word wrap — narrower for fragments
+      const maxWidth = screenW * 0.35
+      let line = ''
+      let lineY = -40
+
+      for (const word of words) {
+        const test = line + (line ? ' ' : '') + word
+        if (c.measureText(test).width > maxWidth && line) {
+          // Occasional jitter
+          const jitter = Math.random() < 0.15 ? (Math.random() - 0.5) * 6 : 0
+          c.fillText(line, jitter, lineY)
+          line = word
+          lineY += 22
+        } else {
+          line = test
+        }
+      }
+      if (line) c.fillText(line, 0, lineY)
+
+      // Extra scratches per fragment
+      const numScratches = 2 + Math.floor(Math.random() * 4)
+      for (let s = 0; s < numScratches; s++) {
+        const sx = (Math.random() - 0.5) * maxWidth * 1.2
+        c.strokeStyle = `rgba(${sepiaR}, ${sepiaG}, ${sepiaB}, ${fadeAlpha * 0.3})`
+        c.lineWidth = 0.5 + Math.random()
+        c.beginPath()
+        c.moveTo(sx, -60)
+        c.lineTo(sx + (Math.random() - 0.5) * 3, 60)
+        c.stroke()
+      }
+
+      c.restore()
+    }
+
+    // Heavy overall film grain — apply more frequently in cutting room
+    if (Math.random() < 0.6) {
+      drawFilmGrain(c, w, h, 0.6 + Math.random() * 0.3)
+    }
+
+    // Additional frame skip jitter for the whole image
+    if (Math.random() < 0.08) {
+      const jx = (Math.random() - 0.5) * 12
+      const jy = (Math.random() - 0.5) * 6
+      c.drawImage(canvas!, jx, jy)
+    }
+
+    // Warm sepia wash over entire screen
+    c.fillStyle = `rgba(40, 25, 8, 0.08)`
+    c.fillRect(screenX, 0, screenW, screenH)
+
+    // Vignette — heavier in cutting room
+    const vignette = c.createRadialGradient(w / 2, h / 2, h * 0.2, w / 2, h / 2, h * 0.75)
+    vignette.addColorStop(0, 'transparent')
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.55)')
+    c.fillStyle = vignette
+    c.fillRect(0, 0, w, h)
+
+    // Sprocket holes
+    drawSprocketHoles(c, w, h)
+
+    // Reset transform
+    c.setTransform(1, 0, 0, 1, 0, 0)
+
+    // "cutting room floor" text at bottom
+    c.font = '10px monospace'
+    c.fillStyle = 'rgba(180, 150, 100, 0.08)'
+    c.textAlign = 'center'
+    c.fillText('cutting room floor', w / 2, h - 12)
+
+    // Timecode
+    c.font = '11px monospace'
+    c.fillStyle = 'rgba(200, 180, 140, 0.06)'
+    c.textAlign = 'left'
+    const fakeTimecode = `${String(Math.floor(time / 60)).padStart(2, '0')}:${String(Math.floor(time) % 60).padStart(2, '0')}:${String(Math.floor((time * 24) % 24)).padStart(2, '0')}`
+    c.fillText(`TC ${fakeTimecode}`, 32, h - 28)
+    c.fillText(`fragments: ${cuttingRoomFragments.length}`, 32, h - 40)
+
+    // Title
+    c.font = '12px "Cormorant Garamond", serif'
+    c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
+    c.textAlign = 'center'
+    c.fillText('the projection room', w / 2, 25)
+
+    // Iñárritu quote
+    c.font = '11px "Cormorant Garamond", serif'
+    c.fillStyle = `rgba(200, 180, 140, ${0.03 + Math.sin(time * 0.1) * 0.01})`
+    c.fillText('stripped of all narrative — after Iñárritu, SUEÑO PERRO', w / 2, h - 52)
+
+    // "[C] return to projection" hint
+    c.font = '9px monospace'
+    c.fillStyle = 'rgba(200, 180, 140, 0.06)'
+    c.fillText('[C] return to projection', w / 2, 42)
+
+    // Film canister shelf navigation
+    if (deps.switchTo) drawShelfAndCanisters(c, w, h)
+
+    // Nav leader overlay
+    if (navLeaderActive) drawNavLeader(c, w, h)
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -838,6 +1172,12 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
 
     // Layout canisters for current canvas size
     layoutCanisters(w)
+
+    // Cutting Room Floor mode — overlapping fragments
+    if (cuttingRoomActive) {
+      drawCuttingRoom(c, w, h)
+      return
+    }
 
     if (inLeader) {
       drawLeader(c, w, h)
@@ -1021,6 +1361,16 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     c.fillStyle = `rgba(200, 180, 140, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText(quotes[quoteIdx], w / 2, h - 4)
 
+    // "[C] cutting room" hint — appears after 3+ memories viewed
+    if (memoriesViewed >= 3 && !inReelChange) {
+      const hintAlpha = 0.04 + Math.sin(time * 0.5) * 0.015
+      c.font = '9px monospace'
+      c.fillStyle = `rgba(200, 180, 140, ${hintAlpha})`
+      c.textAlign = 'right'
+      c.fillText('[C] cutting room', w - 34, h - 18)
+      c.textAlign = 'left' // reset
+    }
+
     // Reel change overlay (dark + SMPTE leader between memories)
     if (inReelChange) drawReelChange(c, w, h)
 
@@ -1097,6 +1447,24 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
         canvas.style.cursor = anyCursorChange ? 'pointer' : 'default'
       })
 
+      // 'C' key handler for Cutting Room Floor mode
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (!active) return
+        if (e.key === 'c' || e.key === 'C') {
+          if (cuttingRoomActive) {
+            // Exit cutting room mode
+            cuttingRoomActive = false
+            stopCuttingRoomAudio()
+          } else if (memoriesViewed >= 3 && frames.length > 0) {
+            // Enter cutting room mode
+            cuttingRoomActive = true
+            initCuttingRoomFragments()
+            if (audioInitialized) startCuttingRoomAudio()
+          }
+        }
+      }
+      window.addEventListener('keydown', onKeyDown)
+
       const onResize = () => {
         if (canvas) {
           canvas.width = window.innerWidth
@@ -1106,6 +1474,9 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
+
+      // Store handlers for cleanup
+      ;(overlay as any)._projectionCleanup = { onResize, onKeyDown }
 
       return overlay
     },
@@ -1120,6 +1491,9 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       frameTime = 0
       scratchParticles = []
       lastScratchSpawn = 0
+      cuttingRoomActive = false
+      memoriesViewed = 0
+      cuttingRoomFragments = []
       buildFrames()
       initAudio()
       render()
@@ -1128,13 +1502,25 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      if (cuttingRoomActive) stopCuttingRoomAudio()
+      cuttingRoomActive = false
       destroyAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      if (cuttingRoomActive) stopCuttingRoomAudio()
+      cuttingRoomActive = false
       destroyAudio()
+      // Clean up event listeners
+      if (overlay) {
+        const cleanup = (overlay as any)._projectionCleanup
+        if (cleanup) {
+          window.removeEventListener('resize', cleanup.onResize)
+          window.removeEventListener('keydown', cleanup.onKeyDown)
+        }
+      }
       overlay?.remove()
     },
   }

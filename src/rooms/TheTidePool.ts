@@ -25,7 +25,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
-import { getAudioContext } from '../sound/AudioBus'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface TidePoolDeps {
   getMemories: () => StoredMemory[]
@@ -65,6 +65,42 @@ interface PortalCreature {
   hovered: boolean
 }
 
+/** Water crisis data fragment drifting on the surface */
+interface CrisisFragment {
+  text: string
+  x: number
+  y: number
+  alpha: number
+  fadeDir: 'in' | 'hold' | 'out'
+  life: number
+  maxLife: number
+  speed: number
+  drift: number
+}
+
+const WATER_CRISIS_FACTS = [
+  'fifty percent of large lakes have shrunk since 1990',
+  'seventy percent of major aquifers in long-term decline',
+  'wetlands the size of the EU have vanished',
+  'glaciers have shrunk thirty percent since 1970',
+  'mexico city sinks twenty inches per year',
+  'kabul may be the first city to run out of water',
+  'the aral sea has lost ninety percent of its water',
+  'lake chad has shrunk ninety-five percent since the 1960s',
+  'the colorado river no longer reaches the sea',
+  'groundwater depletion accelerates globally',
+  'two billion people lack safe drinking water',
+  'the dead sea drops one meter per year',
+  'cape town nearly reached day zero in 2018',
+  'the ogallala aquifer will be seventy percent depleted by 2060',
+  'forty percent of the world\'s rivers are severely polluted',
+  'the ganges carries more plastic than any other river',
+  'three point six billion people face water scarcity',
+  'global water demand will exceed supply by forty percent by 2030',
+  'one in four children will live in water-stressed areas',
+  'the UN declared global water bankruptcy in january 2026',
+]
+
 type TimeOfDay = 'night' | 'preDawn' | 'dawn' | 'morning' | 'midday' | 'afternoon' | 'dusk' | 'postDusk'
 
 const CACHE_KEY = 'oubli_tidepool_sundata'
@@ -81,6 +117,18 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
   let audioCtx: AudioContext | null = null
   let noiseSource: AudioBufferSourceNode | null = null
   let noiseGain: GainNode | null = null
+
+  // Water crisis overlay
+  let crisisFragments: CrisisFragment[] = []
+  let lastCrisisSpawn = 0
+  let nextCrisisInterval = 20 + Math.random() * 20 // 20-40s
+  let crisisFactIndex = 0
+  let sessionStartTime = 0
+  let recedingShown = false
+
+  // Crisis audio timers
+  let foghornTimer: ReturnType<typeof setTimeout> | null = null
+  let dripTimer: ReturnType<typeof setTimeout> | null = null
 
   // Sun data
   let sunData: SunData | null = null
@@ -766,12 +814,161 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
     }
   }
 
+  // ── Water crisis data overlay ──────────────────────────────
+
+  function spawnCrisisFragment(w: number, h: number) {
+    const text = WATER_CRISIS_FACTS[crisisFactIndex % WATER_CRISIS_FACTS.length]
+    crisisFactIndex++
+
+    const fadeInFrames = Math.floor((8 + Math.random() * 4) * 60) // 8-12 seconds total
+    crisisFragments.push({
+      text,
+      x: Math.random() * w * 0.6 + w * 0.2, // center 60% of screen
+      y: h * (0.56 + Math.random() * 0.12), // in the water zone
+      alpha: 0,
+      fadeDir: 'in',
+      life: 0,
+      maxLife: fadeInFrames,
+      speed: 0.1 + Math.random() * 0.15,
+      drift: (Math.random() - 0.5) * 0.3,
+    })
+  }
+
+  function updateAndDrawCrisisFragments(w: number, h: number, colors: SkyColors) {
+    if (!ctx) return
+
+    // Check if it's time to spawn a new fragment
+    const elapsed = time - lastCrisisSpawn
+    if (elapsed > nextCrisisInterval) {
+      spawnCrisisFragment(w, h)
+      lastCrisisSpawn = time
+      nextCrisisInterval = 20 + Math.random() * 20 // 20-40s
+    }
+
+    for (let i = crisisFragments.length - 1; i >= 0; i--) {
+      const frag = crisisFragments[i]
+      frag.life++
+
+      // Fade phases: first 30% fading in, middle 40% hold, last 30% fading out
+      const lifeRatio = frag.life / frag.maxLife
+      if (lifeRatio < 0.3) {
+        frag.fadeDir = 'in'
+        frag.alpha = (lifeRatio / 0.3) * (0.08 + Math.random() * 0.07) // 0.08-0.15
+      } else if (lifeRatio < 0.7) {
+        frag.fadeDir = 'hold'
+        frag.alpha = 0.08 + Math.random() * 0.04 // subtle flicker in hold
+      } else {
+        frag.fadeDir = 'out'
+        frag.alpha = ((1 - lifeRatio) / 0.3) * 0.12
+      }
+
+      // Drift with the tide
+      frag.x += frag.drift + Math.sin(time * 0.3) * 0.2
+      frag.y += Math.sin(time * 0.5 + frag.x * 0.01) * 0.15
+
+      // Remove when done
+      if (frag.life > frag.maxLife) {
+        crisisFragments.splice(i, 1)
+        continue
+      }
+
+      // Draw the fragment
+      ctx.save()
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      ctx.globalAlpha = Math.max(0, Math.min(frag.alpha, 0.15))
+      ctx.fillStyle = `rgba(${colors.textColor}, 1)`
+      ctx.fillText(frag.text, frag.x, frag.y)
+      ctx.restore()
+    }
+  }
+
+  // ── Session drift — water receding ────────────────────────
+
+  /** Returns a 0-1 value representing how much the water has dropped this session.
+   *  Drops ~1-2% per minute. After 10 minutes, noticeably lower. */
+  function getSessionDrift(): number {
+    if (sessionStartTime === 0) return 0
+    const elapsedMs = Date.now() - sessionStartTime
+    const elapsedMinutes = elapsedMs / 60000
+    // 1.5% drop per minute, capped at ~20% after ~13 minutes
+    return Math.min(0.20, elapsedMinutes * 0.015)
+  }
+
+  // ── Crisis audio — foghorn and dripping ───────────────────
+
+  function playFoghorn() {
+    if (!audioCtx || !active) return
+    try {
+      const dest = getAudioDestination()
+      const osc = audioCtx.createOscillator()
+      const gain = audioCtx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = 65
+      gain.gain.setValueAtTime(0, audioCtx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 0.5)
+      gain.gain.linearRampToValueAtTime(0.03, audioCtx.currentTime + 1.5)
+      gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 2.0)
+      osc.connect(gain)
+      gain.connect(dest)
+      osc.start(audioCtx.currentTime)
+      osc.stop(audioCtx.currentTime + 2.2)
+    } catch {
+      // audio failed — ignore
+    }
+  }
+
+  function playDrip() {
+    if (!audioCtx || !active) return
+    try {
+      const dest = getAudioDestination()
+      const osc = audioCtx.createOscillator()
+      const gain = audioCtx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = 3000 + Math.random() * 5000 // 3-8kHz
+      gain.gain.setValueAtTime(0, audioCtx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.015, audioCtx.currentTime + 0.01)
+      gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.06)
+      osc.connect(gain)
+      gain.connect(dest)
+      osc.start(audioCtx.currentTime)
+      osc.stop(audioCtx.currentTime + 0.08)
+    } catch {
+      // audio failed — ignore
+    }
+  }
+
+  function scheduleFoghorn() {
+    if (!active) return
+    const delay = (45 + Math.random() * 45) * 1000 // 45-90s
+    foghornTimer = setTimeout(() => {
+      playFoghorn()
+      scheduleFoghorn()
+    }, delay)
+  }
+
+  function scheduleDrip() {
+    if (!active) return
+    const delay = (10 + Math.random() * 10) * 1000 // 10-20s
+    dripTimer = setTimeout(() => {
+      playDrip()
+      scheduleDrip()
+    }, delay)
+  }
+
+  function stopCrisisAudio() {
+    if (foghornTimer !== null) { clearTimeout(foghornTimer); foghornTimer = null }
+    if (dripTimer !== null) { clearTimeout(dripTimer); dripTimer = null }
+  }
+
   // ── Wave calculation (now uses real tide level) ─────────────
 
   function getWaveY(x: number, w: number, h: number): number {
     // Real tide shifts water level ±10% of height
     const tide = getRealTideLevel() * 0.1
-    const baseY = h * (0.55 + tide)
+    // Session drift: water level drops over time (water crisis metaphor)
+    const drift = getSessionDrift()
+    const baseY = h * (0.55 + tide + drift)
 
     const wave1 = Math.sin(x * 0.008 + time * 0.7) * 15
     const wave2 = Math.sin(x * 0.015 + time * 1.1 + 1) * 8
@@ -865,6 +1062,24 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
 
     // Bioluminescent plankton (night & twilight)
     updateAndDrawPlankton(w, h, colors.bioLuminAlpha, time)
+
+    // Water crisis data overlay — drifting fragments
+    updateAndDrawCrisisFragments(w, h, colors)
+
+    // "the water is receding" message after 10 minutes
+    const drift = getSessionDrift()
+    if (drift > 0.14 && !recedingShown) {
+      recedingShown = true
+    }
+    if (recedingShown) {
+      const recedingAlpha = Math.min(0.08, (drift - 0.14) * 0.8)
+      ctx.save()
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = `rgba(${colors.textColor}, ${recedingAlpha})`
+      ctx.fillText('the water is receding', w / 2, h * 0.50)
+      ctx.restore()
+    }
 
     // Draw flotsam
     for (const f of flotsam) {
@@ -1050,10 +1265,17 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
 
     activate() {
       active = true
+      sessionStartTime = Date.now()
+      recedingShown = false
+      crisisFragments = []
+      lastCrisisSpawn = 0
+      crisisFactIndex = Math.floor(Math.random() * WATER_CRISIS_FACTS.length)
       buildFlotsam()
       buildPortals()
       startOceanSound()
       fetchSunData() // fire-and-forget — will update colors when ready
+      scheduleFoghorn()
+      scheduleDrip()
       render()
     },
 
@@ -1061,15 +1283,19 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       stopOceanSound()
+      stopCrisisAudio()
       plankton = []
+      crisisFragments = []
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
       stopOceanSound()
+      stopCrisisAudio()
       overlay?.remove()
       plankton = []
+      crisisFragments = []
     },
   }
 }
