@@ -100,6 +100,35 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
   let mouseY = 0
   let mouseOverTape = false
 
+  // --- Interactive controls state ---
+  // Playback speed: 0=slow(0.25x), 1=normal(1x), 2=fast(4x)
+  let speedMode = 1
+  const speedMultipliers = [0.25, 1, 4]
+  const speedLabels = ['0.25x — crawling', '1x', '4x — urgent']
+  let speedIndicatorAlpha = 0 // fades in on change, then fades out
+
+  // Selective degradation by touch/drag
+  let isDragging = false
+  let touchDegradationMap: Map<number, number> = new Map() // char index -> extra degradation
+
+  // Reverse/rewind
+  let reverseActive = false
+  let reverseTimer = 0 // counts down from ~2-3 seconds
+  let reverseSnapshot = '' // text snapshot before reverse to restore
+  let reverseGlitchOsc: OscillatorNode | null = null
+  let reverseGlitchGain: GainNode | null = null
+
+  // Cultural inscription
+  const inscriptions = [
+    'william basinski watched the tapes crumble. that was the art.',
+    'disintegration is not destruction. it is transformation into something simpler.',
+    'every copy loses something. every generation drifts further from the source.',
+    'the polar vortex splits. one piece for each hemisphere. symmetry forgotten.',
+  ]
+  let inscriptionIndex = 0
+  let inscriptionCharReveal = 0
+  let inscriptionCycleTimer = 0
+
   function buildLoops() {
     const memories = deps.getMemories()
     loops = memories.slice(0, 8).map(mem => ({
@@ -111,7 +140,7 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     }))
   }
 
-  function degradeText(text: string, intensity: number): { text: string; lost: string[] } {
+  function degradeText(text: string, intensity: number, perCharExtra?: Map<number, number>): { text: string; lost: string[] } {
     const chars = text.split('')
     const lost: string[] = []
 
@@ -119,7 +148,9 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       if (chars[i] === ' ') continue
 
       // Probability of degradation increases with intensity
-      const chance = intensity * 0.15
+      // Add per-character extra degradation from touch
+      const touchExtra = perCharExtra?.get(i) ?? 0
+      const chance = (intensity + touchExtra) * 0.15
       if (Math.random() < chance) {
         // Degradation types
         const r = Math.random()
@@ -295,6 +326,36 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       gain.connect(dest)
       osc.start()
       osc.stop(audioCtx.currentTime + 0.4)
+    } catch {}
+  }
+
+  function startReverseGlitch() {
+    if (!audioCtx) return
+    try {
+      const dest = getAudioDestination()
+
+      // Descending pitch sweep — sounds like tape rewinding
+      reverseGlitchOsc = audioCtx.createOscillator()
+      reverseGlitchOsc.type = 'sawtooth'
+      reverseGlitchOsc.frequency.setValueAtTime(800, audioCtx.currentTime)
+      reverseGlitchOsc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 2)
+
+      const glitchFilter = audioCtx.createBiquadFilter()
+      glitchFilter.type = 'bandpass'
+      glitchFilter.frequency.value = 400
+      glitchFilter.Q.value = 2
+
+      reverseGlitchGain = audioCtx.createGain()
+      reverseGlitchGain.gain.setValueAtTime(0.015, audioCtx.currentTime)
+      reverseGlitchGain.gain.linearRampToValueAtTime(0.008, audioCtx.currentTime + 1)
+      reverseGlitchGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.5)
+
+      reverseGlitchOsc.connect(glitchFilter)
+      glitchFilter.connect(reverseGlitchGain)
+      reverseGlitchGain.connect(dest)
+
+      reverseGlitchOsc.start()
+      reverseGlitchOsc.stop(audioCtx.currentTime + 3)
     } catch {}
   }
 
@@ -513,9 +574,70 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
 
     const loop = loops[activeLoop % loops.length]
 
-    // Advance tape position
-    const speed = 0.003
-    loop.position += speed
+    // --- Reverse/rewind effect ---
+    if (reverseActive) {
+      reverseTimer -= 0.016
+      if (reverseTimer <= 0) {
+        // Snap back — reverse is over
+        reverseActive = false
+        loop.degradedText = reverseSnapshot
+        reverseSnapshot = ''
+        // Stop reverse audio glitch
+        try {
+          reverseGlitchOsc?.stop()
+          reverseGlitchOsc?.disconnect()
+          reverseGlitchGain?.disconnect()
+        } catch {}
+        reverseGlitchOsc = null
+        reverseGlitchGain = null
+      } else {
+        // During reverse: tape moves backward, slight visual restoration
+        loop.position = Math.max(0, loop.position - 0.006 * speedMultipliers[speedMode])
+      }
+    }
+
+    // Advance tape position (not during reverse)
+    if (!reverseActive) {
+      const speed = 0.003 * speedMultipliers[speedMode]
+      loop.position += speed
+    }
+
+    // --- Selective degradation by touch ---
+    // If dragging on the tape, map mouse position to character indices and accumulate damage
+    if (isDragging && mouseOverTape && loops.length > 0) {
+      const text = loop.degradedText
+      const charWidth = 14
+      const totalWidth = text.length * charWidth
+      const scrollX = -loop.position * totalWidth
+      // Find which character index the mouse is near
+      const relX = mouseX - w * 0.1 - scrollX
+      const charIdx = Math.floor(relX / charWidth)
+      // Apply damage in a radius of ~5 chars around touch point
+      const radius = 5
+      for (let di = -radius; di <= radius; di++) {
+        const idx = charIdx + di
+        if (idx >= 0 && idx < text.length) {
+          const falloff = 1 - Math.abs(di) / (radius + 1)
+          const current = touchDegradationMap.get(idx) ?? 0
+          touchDegradationMap.set(idx, current + falloff * 0.08)
+        }
+      }
+    }
+
+    // --- Cultural inscription cycling ---
+    inscriptionCycleTimer += 0.016
+    inscriptionCharReveal += 0.4 * speedMultipliers[speedMode] // reveal chars faster at high speed
+    const currentInscription = inscriptions[inscriptionIndex]
+    if (inscriptionCycleTimer > 12) { // 12 seconds per inscription
+      inscriptionCycleTimer = 0
+      inscriptionCharReveal = 0
+      inscriptionIndex = (inscriptionIndex + 1) % inscriptions.length
+    }
+
+    // --- Speed indicator fade ---
+    if (speedIndicatorAlpha > 0) {
+      speedIndicatorAlpha = Math.max(0, speedIndicatorAlpha - 0.005)
+    }
 
     // Loop completed — degrade and restart
     if (loop.position >= 1) {
@@ -526,9 +648,9 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       // Pass chime — tape head crossing splice point
       playPassChime()
 
-      // Degrade the text
+      // Degrade the text (including per-character touch damage)
       const degradation = loop.memory.degradation + loop.pass * 0.1
-      const result = degradeText(loop.degradedText, degradation)
+      const result = degradeText(loop.degradedText, degradation, touchDegradationMap.size > 0 ? touchDegradationMap : undefined)
       loop.degradedText = result.text
 
       // Spawn particles from lost characters — enhanced with drift and rotation
@@ -555,6 +677,8 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       if (loop.pass >= 20 || loop.degradedText.trim().length === 0) {
         activeLoop++
         if (activeLoop >= loops.length) activeLoop = 0
+        // Reset touch degradation map for the new loop
+        touchDegradationMap.clear()
       }
     }
 
@@ -799,6 +923,99 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       c.fillRect(0, sy, w, 1)
     }
 
+    // --- Touch degradation fingerprint visualization ---
+    // Show faint reddish marks where the user has touched the tape
+    if (touchDegradationMap.size > 0 && loops.length > 0) {
+      const tLoop = loops[activeLoop % loops.length]
+      const tCharWidth = 14
+      const tTotalWidth = tLoop.degradedText.length * tCharWidth
+      const tScrollX = -tLoop.position * tTotalWidth
+      const tDisplayY = h * 0.45
+
+      touchDegradationMap.forEach((dmg, idx) => {
+        if (dmg < 0.02) return
+        const cx = w * 0.1 + tScrollX + idx * tCharWidth
+        if (cx < -20 || cx > w + 20) return
+        const intensity = Math.min(dmg * 0.3, 0.15)
+        // Fingerprint smudge — soft oval
+        const grad = c.createRadialGradient(cx, tDisplayY, 0, cx, tDisplayY, 12)
+        grad.addColorStop(0, `rgba(180, 60, 30, ${intensity})`)
+        grad.addColorStop(0.5, `rgba(120, 40, 20, ${intensity * 0.4})`)
+        grad.addColorStop(1, 'rgba(80, 20, 10, 0)')
+        c.fillStyle = grad
+        c.fillRect(cx - 12, tDisplayY - 12, 24, 24)
+      })
+    }
+
+    // --- Reverse visual effect ---
+    if (reverseActive) {
+      // Full-screen tint and flicker during reverse
+      const reverseFlicker = Math.random() * 0.04
+      c.fillStyle = `rgba(100, 140, 200, ${0.03 + reverseFlicker})`
+      c.fillRect(0, 0, w, h)
+
+      // "REVERSING" text
+      c.font = '10px monospace'
+      c.fillStyle = `rgba(100, 160, 220, ${0.15 + Math.sin(time * 12) * 0.08})`
+      c.textAlign = 'center'
+      c.fillText('< < < reversing < < <', w / 2, h * 0.58)
+
+      // Horizontal glitch lines
+      const glitchCount = 2 + Math.floor(Math.random() * 3)
+      for (let gi = 0; gi < glitchCount; gi++) {
+        const gy = Math.random() * h
+        const gw = 40 + Math.random() * 120
+        const gx = Math.random() * w
+        c.fillStyle = `rgba(100, 160, 220, ${0.02 + Math.random() * 0.03})`
+        c.fillRect(gx, gy, gw, 1)
+      }
+    }
+
+    // --- Speed indicator ---
+    if (speedIndicatorAlpha > 0) {
+      c.font = '10px monospace'
+      c.fillStyle = `rgba(200, 180, 140, ${speedIndicatorAlpha * 0.5})`
+      c.textAlign = 'right'
+      c.fillText(speedLabels[speedMode], w - 14, 25)
+    }
+
+    // --- Speed click zones (subtle visual hint) ---
+    // Three zones at very top of canvas
+    const zoneW = w / 3
+    const zoneH = 18
+    const zoneLabels = ['slow', '', 'fast']
+    for (let zi = 0; zi < 3; zi++) {
+      if (zi === 1) continue // don't label normal
+      const zx = zi * zoneW
+      // Only show on hover proximity
+      const zoneCenterX = zx + zoneW / 2
+      const distToZone = Math.abs(mouseX - zoneCenterX)
+      const zoneProximity = mouseY < zoneH + 20 ? Math.max(0, 1 - distToZone / (zoneW * 0.6)) : 0
+      if (zoneProximity > 0.1) {
+        c.font = '8px monospace'
+        c.fillStyle = `rgba(160, 130, 90, ${zoneProximity * 0.08})`
+        c.textAlign = 'center'
+        c.fillText(zoneLabels[zi], zoneCenterX, zoneH * 0.7)
+      }
+    }
+
+    // --- Cultural inscription ---
+    if (currentInscription) {
+      const revealedLen = Math.min(Math.floor(inscriptionCharReveal), currentInscription.length)
+      if (revealedLen > 0) {
+        const revealed = currentInscription.slice(0, revealedLen)
+        // Position: low on the screen, very faint
+        c.font = '10px "Cormorant Garamond", serif'
+        const inscAlpha = 0.04 + Math.sin(time * 0.2 + inscriptionIndex) * 0.01
+        // Fade out near end of cycle
+        const cycleRemaining = 12 - inscriptionCycleTimer
+        const fadeOut = cycleRemaining < 2 ? cycleRemaining / 2 : 1
+        c.fillStyle = `rgba(160, 140, 110, ${inscAlpha * fadeOut})`
+        c.textAlign = 'center'
+        c.fillText(revealed, w / 2, h * 0.88)
+      }
+    }
+
     // Tape tears — navigation through rips in the tape
     if (deps.switchTo) {
       updateTears()
@@ -835,11 +1052,24 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click: navigate tear, advance tape, or switch loop
+      // Click: navigate tear, speed zone, advance tape, or switch loop
       canvas.addEventListener('click', (e) => {
         const rect = canvas!.getBoundingClientRect()
         const cx = (e.clientX - rect.left) * (canvas!.width / rect.width)
         const cy = (e.clientY - rect.top) * (canvas!.height / rect.height)
+
+        // Speed zone click — top 18px of canvas
+        const zoneH = 18
+        if (cy < zoneH + 10) {
+          const zoneW = canvas!.width / 3
+          const zoneIdx = Math.floor(cx / zoneW)
+          if (zoneIdx >= 0 && zoneIdx <= 2) {
+            speedMode = zoneIdx
+            speedIndicatorAlpha = 1
+            return
+          }
+        }
+
         const tear = hitTestTears(cx, cy)
         if (tear && deps.switchTo) {
           deps.switchTo(tear.room)
@@ -857,6 +1087,87 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
         // Default: advance to next loop
         activeLoop++
         if (loops.length > 0 && activeLoop >= loops.length) activeLoop = 0
+      })
+
+      // Double-click: reverse/rewind effect
+      canvas.addEventListener('dblclick', (e) => {
+        e.preventDefault()
+        if (reverseActive || loops.length === 0) return
+
+        const loop = loops[activeLoop % loops.length]
+        reverseActive = true
+        reverseTimer = 2 + Math.random() // 2-3 seconds
+        reverseSnapshot = loop.degradedText
+
+        // During reverse, briefly "restore" some characters from original
+        const original = loop.memory.currentText
+        const current = loop.degradedText.split('')
+        let restorations = 0
+        for (let i = 0; i < current.length && i < original.length; i++) {
+          if (current[i] === ' ' && original[i] !== ' ' && Math.random() < 0.3) {
+            current[i] = original[i]
+            restorations++
+          }
+          // Replace static characters back
+          if ('░▒▓·~'.includes(current[i]) && original[i] && Math.random() < 0.4) {
+            current[i] = original[i]
+            restorations++
+          }
+        }
+        if (restorations > 0) {
+          loop.degradedText = current.join('')
+        }
+
+        // Audio glitch: reversed pitch sweep
+        startReverseGlitch()
+      })
+
+      // Mouse down on tape: start drag-to-degrade
+      canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas!.getBoundingClientRect()
+        const cy = (e.clientY - rect.top) * (canvas!.height / rect.height)
+        const ch = canvas!.height
+        const tapeTop = ch * 0.45 - 30
+        const tapeBottom = ch * 0.45 + 15
+        if (cy >= tapeTop && cy <= tapeBottom) {
+          isDragging = true
+        }
+      })
+
+      canvas.addEventListener('mouseup', () => {
+        isDragging = false
+      })
+
+      canvas.addEventListener('mouseleave', () => {
+        isDragging = false
+      })
+
+      // Touch support for drag-to-degrade
+      canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 0) {
+          const rect = canvas!.getBoundingClientRect()
+          const cy = (e.touches[0].clientY - rect.top) * (canvas!.height / rect.height)
+          const ch = canvas!.height
+          const tapeTop = ch * 0.45 - 30
+          const tapeBottom = ch * 0.45 + 15
+          if (cy >= tapeTop && cy <= tapeBottom) {
+            isDragging = true
+          }
+          mouseX = (e.touches[0].clientX - rect.left) * (canvas!.width / rect.width)
+          mouseY = cy
+        }
+      }, { passive: true })
+
+      canvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) {
+          const rect = canvas!.getBoundingClientRect()
+          mouseX = (e.touches[0].clientX - rect.left) * (canvas!.width / rect.width)
+          mouseY = (e.touches[0].clientY - rect.top) * (canvas!.height / rect.height)
+        }
+      }, { passive: true })
+
+      canvas.addEventListener('touchend', () => {
+        isDragging = false
       })
 
       // Track mouse for tear hover effects
@@ -896,6 +1207,17 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      isDragging = false
+      reverseActive = false
+      touchDegradationMap.clear()
+      try {
+        // Stop reverse glitch audio
+        reverseGlitchOsc?.stop()
+        reverseGlitchOsc?.disconnect()
+        reverseGlitchGain?.disconnect()
+      } catch {}
+      reverseGlitchOsc = null
+      reverseGlitchGain = null
       try {
         // Fade out audio before stopping
         if (audioCtx && droneGain) {
@@ -939,12 +1261,20 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      isDragging = false
+      reverseActive = false
+      touchDegradationMap.clear()
       try {
+        reverseGlitchOsc?.stop()
+        reverseGlitchOsc?.disconnect()
+        reverseGlitchGain?.disconnect()
         droneOsc?.stop()
         hissSource?.stop()
         rumbleOsc?.stop()
         rumbleLfo?.stop()
       } catch {}
+      reverseGlitchOsc = null
+      reverseGlitchGain = null
       droneOsc = null
       droneGain = null
       hissSource = null

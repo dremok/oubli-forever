@@ -29,6 +29,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface WeatherData {
   temperature: number
@@ -106,14 +107,60 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
   let vaneTargetAngle = 0
   let vaneOscillation = 0
 
-  // Audio
-  let audioCtx: AudioContext | null = null
-  let windGain: GainNode | null = null
+  // Audio — shared AudioContext from AudioBus
+  let sharedAudioCtx: AudioContext | null = null
+  let audioDestination: AudioNode | null = null
+  let audioInitialized = false
+
+  // Wind synthesis nodes
+  let windNoiseSource: AudioBufferSourceNode | null = null
   let windFilter: BiquadFilterNode | null = null
+  let windGain: GainNode | null = null
+  let windFilterLFO: OscillatorNode | null = null
+  let windLFOGain: GainNode | null = null
+
+  // Rain synthesis nodes
+  let rainGain: GainNode | null = null
+  let rainFilter: BiquadFilterNode | null = null
+  let rainNoiseSource: AudioBufferSourceNode | null = null
+  let rainDropTimer = 0
+  let rainDropGain: GainNode | null = null
+
+  // Thunder synthesis nodes
+  let thunderGain: GainNode | null = null
+  let thunderFilter: BiquadFilterNode | null = null
+  let thunderNoiseSource: AudioBufferSourceNode | null = null
+  let thunderTimer = 0
+  let thunderActive = false
+
+  // Temperature drone nodes
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneOsc2: OscillatorNode | null = null
+  let droneGain2: GainNode | null = null
+
+  // Cursor wind whoosh
+  let cursorWhooshGain: GainNode | null = null
+  let cursorWhooshFilter: BiquadFilterNode | null = null
+  let cursorWhooshSource: AudioBufferSourceNode | null = null
 
   // Lightning flash
   let lightningAlpha = 0
   let lightningTimer = 0
+
+  // Cultural inscription
+  const inscriptions = [
+    'the atmosphere remembers summer at the wrong time',
+    'warm rain on mountain passes. the aquifers will feel this in july.',
+    'olafur eliasson built a sun inside the tate. nature forgot how.',
+    'the jet stream forgets its shape. arctic air spills south.',
+  ]
+  let inscriptionIndex = 0
+  let inscriptionTimer = 0
+  let inscriptionAlpha = 0
+
+  // Cursor speed tracking
+  let cursorSpeed = 0
 
   // Navigation portals
   const portals: PortalDef[] = []
@@ -287,47 +334,285 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     }
   }
 
-  function initAudio() {
-    if (audioCtx) return
+  function createNoiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
+    const bufferSize = ctx.sampleRate * seconds
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.5
+    }
+    return buffer
+  }
+
+  async function initAudio() {
+    if (audioInitialized) return
+    audioInitialized = true
     try {
-      audioCtx = new AudioContext()
+      sharedAudioCtx = await getAudioContext()
+      audioDestination = getAudioDestination()
+      const ctx = sharedAudioCtx
+      const dest = audioDestination
+      const noiseBuffer = createNoiseBuffer(ctx, 2)
 
-      // Wind noise via looped noise buffer
-      const bufferSize = audioCtx.sampleRate * 2
-      const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
-      const buf = noiseBuffer.getChannelData(0)
-      for (let i = 0; i < bufferSize; i++) {
-        buf[i] = (Math.random() * 2 - 1) * 0.4
-      }
-      const noise = audioCtx.createBufferSource()
-      noise.buffer = noiseBuffer
-      noise.loop = true
+      // === WIND SYNTHESIS ===
+      // Bandpass-filtered noise, LFO modulates filter frequency
+      windNoiseSource = ctx.createBufferSource()
+      windNoiseSource.buffer = noiseBuffer
+      windNoiseSource.loop = true
 
-      windFilter = audioCtx.createBiquadFilter()
+      windFilter = ctx.createBiquadFilter()
       windFilter.type = 'bandpass'
-      windFilter.frequency.value = 250
-      windFilter.Q.value = 0.3
+      windFilter.frequency.value = 300
+      windFilter.Q.value = 0.5
 
-      windGain = audioCtx.createGain()
+      // LFO to modulate wind filter frequency for organic movement
+      windFilterLFO = ctx.createOscillator()
+      windFilterLFO.type = 'sine'
+      windFilterLFO.frequency.value = 0.15 // slow modulation
+      windLFOGain = ctx.createGain()
+      windLFOGain.gain.value = 100 // +/- 100Hz modulation range
+      windFilterLFO.connect(windLFOGain)
+      windLFOGain.connect(windFilter.frequency)
+      windFilterLFO.start()
+
+      windGain = ctx.createGain()
       windGain.gain.value = 0
 
-      noise.connect(windFilter)
+      windNoiseSource.connect(windFilter)
       windFilter.connect(windGain)
-      windGain.connect(audioCtx.destination)
-      noise.start()
+      windGain.connect(dest)
+      windNoiseSource.start()
 
-      windGain.gain.linearRampToValueAtTime(0.02, audioCtx.currentTime + 2)
+      // Fade in wind over 2 seconds
+      windGain.gain.linearRampToValueAtTime(0.015, ctx.currentTime + 2)
+
+      // === RAIN SYNTHESIS ===
+      // Continuous filtered noise for rain backdrop
+      rainNoiseSource = ctx.createBufferSource()
+      rainNoiseSource.buffer = noiseBuffer
+      rainNoiseSource.loop = true
+
+      rainFilter = ctx.createBiquadFilter()
+      rainFilter.type = 'highpass'
+      rainFilter.frequency.value = 3000
+      rainFilter.Q.value = 0.7
+
+      rainGain = ctx.createGain()
+      rainGain.gain.value = 0
+
+      rainNoiseSource.connect(rainFilter)
+      rainFilter.connect(rainGain)
+      rainGain.connect(dest)
+      rainNoiseSource.start()
+
+      // Rain droplet burst channel (short enveloped noise hits)
+      rainDropGain = ctx.createGain()
+      rainDropGain.gain.value = 0
+      rainDropGain.connect(dest)
+
+      // === THUNDER SYNTHESIS ===
+      // Very low-freq filtered noise for rumble
+      thunderNoiseSource = ctx.createBufferSource()
+      thunderNoiseSource.buffer = noiseBuffer
+      thunderNoiseSource.loop = true
+
+      thunderFilter = ctx.createBiquadFilter()
+      thunderFilter.type = 'lowpass'
+      thunderFilter.frequency.value = 60
+      thunderFilter.Q.value = 1.0
+
+      thunderGain = ctx.createGain()
+      thunderGain.gain.value = 0
+
+      thunderNoiseSource.connect(thunderFilter)
+      thunderFilter.connect(thunderGain)
+      thunderGain.connect(dest)
+      thunderNoiseSource.start()
+
+      // === TEMPERATURE DRONE ===
+      // Base sine, frequency mapped to temperature
+      droneOsc = ctx.createOscillator()
+      droneOsc.type = 'sine'
+      droneOsc.frequency.value = 55 // default A1
+      droneGain = ctx.createGain()
+      droneGain.gain.value = 0
+      droneOsc.connect(droneGain)
+      droneGain.connect(dest)
+      droneOsc.start()
+
+      // Second overtone — adds warmth for high temps, silent for cold
+      droneOsc2 = ctx.createOscillator()
+      droneOsc2.type = 'triangle'
+      droneOsc2.frequency.value = 110
+      droneGain2 = ctx.createGain()
+      droneGain2.gain.value = 0
+      droneOsc2.connect(droneGain2)
+      droneGain2.connect(dest)
+      droneOsc2.start()
+
+      // === CURSOR WIND WHOOSH ===
+      cursorWhooshSource = ctx.createBufferSource()
+      cursorWhooshSource.buffer = noiseBuffer
+      cursorWhooshSource.loop = true
+
+      cursorWhooshFilter = ctx.createBiquadFilter()
+      cursorWhooshFilter.type = 'bandpass'
+      cursorWhooshFilter.frequency.value = 800
+      cursorWhooshFilter.Q.value = 1.2
+
+      cursorWhooshGain = ctx.createGain()
+      cursorWhooshGain.gain.value = 0
+
+      cursorWhooshSource.connect(cursorWhooshFilter)
+      cursorWhooshFilter.connect(cursorWhooshGain)
+      cursorWhooshGain.connect(dest)
+      cursorWhooshSource.start()
     } catch {
       // Audio not available
+      audioInitialized = false
     }
   }
 
+  function triggerRainDrop() {
+    if (!sharedAudioCtx || !audioDestination) return
+    const ctx = sharedAudioCtx
+    try {
+      // Short burst of high-freq filtered noise — sounds like a droplet
+      const dropBuf = createNoiseBuffer(ctx, 0.05)
+      const src = ctx.createBufferSource()
+      src.buffer = dropBuf
+
+      const filt = ctx.createBiquadFilter()
+      filt.type = 'bandpass'
+      filt.frequency.value = 2000 + Math.random() * 4000
+      filt.Q.value = 2 + Math.random() * 3
+
+      const gain = ctx.createGain()
+      const vol = 0.005 + Math.random() * 0.015
+      gain.gain.setValueAtTime(vol, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.06)
+
+      src.connect(filt)
+      filt.connect(gain)
+      gain.connect(audioDestination)
+      src.start()
+      src.stop(ctx.currentTime + 0.08)
+    } catch {
+      // drop failed — no big deal
+    }
+  }
+
+  function triggerThunder() {
+    if (!sharedAudioCtx || !thunderGain || !thunderFilter) return
+    const ctx = sharedAudioCtx
+    thunderActive = true
+    // Rumble: ramp up, sustain, decay
+    thunderFilter.frequency.setValueAtTime(40 + Math.random() * 40, ctx.currentTime)
+    thunderGain.gain.setValueAtTime(0, ctx.currentTime)
+    thunderGain.gain.linearRampToValueAtTime(0.03 + Math.random() * 0.02, ctx.currentTime + 0.3)
+    thunderGain.gain.linearRampToValueAtTime(0.02, ctx.currentTime + 1.0)
+    thunderGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 2.5)
+    setTimeout(() => { thunderActive = false }, 2500)
+  }
+
   function updateAudio() {
-    if (!windGain || !audioCtx || !weather || !windFilter) return
-    const vol = 0.01 + Math.min(weather.windSpeed / 50, 1) * 0.05
-    windGain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 1)
-    const freq = 150 + Math.max(0, weather.temperature) * 10
-    windFilter.frequency.linearRampToValueAtTime(freq, audioCtx.currentTime + 1)
+    if (!sharedAudioCtx || !weather) return
+    const ctx = sharedAudioCtx
+
+    // === Wind: volume + filter modulated by actual wind speed ===
+    if (windGain && windFilter && windLFOGain) {
+      const windNorm = Math.min(weather.windSpeed / 50, 1)
+      const vol = 0.01 + windNorm * 0.03
+      windGain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 1)
+      // Higher wind = higher center frequency + wider LFO sweep
+      const freq = 200 + windNorm * 400 + Math.max(0, weather.temperature) * 5
+      windFilter.frequency.linearRampToValueAtTime(freq, ctx.currentTime + 1)
+      windLFOGain.gain.linearRampToValueAtTime(80 + windNorm * 200, ctx.currentTime + 1)
+      // Faster LFO with stronger wind
+      if (windFilterLFO) {
+        windFilterLFO.frequency.linearRampToValueAtTime(0.1 + windNorm * 0.4, ctx.currentTime + 1)
+      }
+    }
+
+    // === Rain: continuous high-freq wash when raining ===
+    if (rainGain && rainFilter) {
+      const category = weatherCodeCategory(weather.weatherCode)
+      const isRaining = weather.rain > 0 || category === 'rain' || category === 'drizzle'
+      if (isRaining) {
+        const intensity = Math.min((weather.rain + (category === 'drizzle' ? 0.3 : 0.5)) / 5, 1)
+        rainGain.gain.linearRampToValueAtTime(0.005 + intensity * 0.025, ctx.currentTime + 1)
+        // Heavier rain = lower filter = broader spectrum
+        rainFilter.frequency.linearRampToValueAtTime(4000 - intensity * 2000, ctx.currentTime + 1)
+      } else {
+        rainGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1)
+      }
+    }
+
+    // === Temperature drone ===
+    if (droneOsc && droneGain && droneOsc2 && droneGain2) {
+      // Cold -> low pure sine. Warm -> higher pitch + overtone
+      const tempNorm = Math.max(0, Math.min(1, (weather.temperature + 10) / 45))
+      const baseFreq = 40 + tempNorm * 40 // 40Hz at -10C, 80Hz at 35C
+      droneOsc.frequency.linearRampToValueAtTime(baseFreq, ctx.currentTime + 2)
+      droneGain.gain.linearRampToValueAtTime(0.012, ctx.currentTime + 2)
+
+      // Overtone: silent in cold, present in warm
+      const overtoneVol = tempNorm > 0.4 ? (tempNorm - 0.4) * 0.03 : 0
+      droneOsc2.frequency.linearRampToValueAtTime(baseFreq * 2, ctx.currentTime + 2)
+      droneGain2.gain.linearRampToValueAtTime(overtoneVol, ctx.currentTime + 2)
+    }
+  }
+
+  function updateAudioPerFrame(dt: number) {
+    if (!sharedAudioCtx || !weather) return
+    const ctx = sharedAudioCtx
+
+    // === Rain droplets at random intervals ===
+    const category = weatherCodeCategory(weather.weatherCode)
+    const isRaining = weather.rain > 0 || category === 'rain' || category === 'drizzle'
+    if (isRaining) {
+      rainDropTimer -= dt
+      if (rainDropTimer <= 0) {
+        triggerRainDrop()
+        // Heavier rain = more frequent drops
+        const intensity = Math.min((weather.rain + 0.5) / 5, 1)
+        rainDropTimer = 0.02 + (1 - intensity) * 0.15 + Math.random() * 0.1
+      }
+    }
+
+    // === Thunder during storms ===
+    if (category === 'storm') {
+      thunderTimer -= dt
+      if (thunderTimer <= 0 && !thunderActive) {
+        triggerThunder()
+        thunderTimer = 4 + Math.random() * 12 // 4-16 seconds between rumbles
+      }
+    }
+
+    // === Cursor whoosh modulation ===
+    if (cursorWhooshGain && cursorWhooshFilter) {
+      // cursorSpeed is set in handleMouseMove
+      const whooshVol = Math.min(cursorSpeed * 0.0003, 0.035)
+      cursorWhooshGain.gain.linearRampToValueAtTime(whooshVol, ctx.currentTime + 0.05)
+      // Faster cursor = higher whoosh frequency
+      const whooshFreq = 600 + Math.min(cursorSpeed, 40) * 30
+      cursorWhooshFilter.frequency.linearRampToValueAtTime(whooshFreq, ctx.currentTime + 0.05)
+    }
+
+    // === Cultural inscription cycling ===
+    inscriptionTimer += dt
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIndex = (inscriptionIndex + 1) % inscriptions.length
+    }
+    // Fade: in for first 2s, visible for 21s, out for last 2s
+    if (inscriptionTimer < 2) {
+      inscriptionAlpha = inscriptionTimer / 2
+    } else if (inscriptionTimer > 23) {
+      inscriptionAlpha = (25 - inscriptionTimer) / 2
+    } else {
+      inscriptionAlpha = 1
+    }
   }
 
   function initParticles() {
@@ -408,6 +693,9 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     mouseVX = (mouseX - prevMouseX) * 0.3
     mouseVY = (mouseY - prevMouseY) * 0.3
 
+    // Track cursor speed for audio modulation
+    cursorSpeed = Math.hypot(mouseX - prevMouseX, mouseY - prevMouseY)
+
     // Portal hover detection
     for (const p of portals) {
       p.hovered = Math.hypot(mouseX - p.x, mouseY - p.y) < p.r + 12
@@ -418,12 +706,39 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     }
   }
 
-  function handleClick() {
+  function handleClick(e: MouseEvent) {
+    // Check portal clicks first
     for (const p of portals) {
       if (p.hovered && deps.switchTo) {
         deps.switchTo(p.name)
         return
       }
+    }
+
+    // Gust burst — scatter particles outward from click point
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const clickX = (e.clientX - rect.left) * (canvas.width / rect.width)
+    const clickY = (e.clientY - rect.top) * (canvas.height / rect.height)
+    const burstRadius = 200
+    const burstForce = 4
+
+    for (const p of particles) {
+      const dx = p.x - clickX
+      const dy = p.y - clickY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < burstRadius && dist > 0) {
+        const strength = (1 - dist / burstRadius) * burstForce
+        p.vx += (dx / dist) * strength
+        p.vy += (dy / dist) * strength
+      }
+    }
+
+    // Brief whoosh burst on click
+    if (cursorWhooshGain && sharedAudioCtx) {
+      const ctx = sharedAudioCtx
+      cursorWhooshGain.gain.setValueAtTime(0.03, ctx.currentTime)
+      cursorWhooshGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
     }
   }
 
@@ -650,12 +965,16 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     const h = canvas.height
     const c = ctx
 
-    // Decay cursor velocity
+    // Decay cursor velocity and speed
     mouseVX *= 0.95
     mouseVY *= 0.95
+    cursorSpeed *= 0.9
 
     // Update lightning
     updateLightning(dt)
+
+    // Per-frame audio updates (rain drops, thunder timing, cursor whoosh)
+    updateAudioPerFrame(dt)
 
     // Background — temperature-tinted
     if (weather) {
@@ -707,14 +1026,20 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i]
 
-        // Cursor wind influence
+        // Cursor wind influence — dramatic gusts
         const dx = p.x - mouseX
         const dy = p.y - mouseY
         const dist = Math.sqrt(dx * dx + dy * dy)
         if (dist < gustRadius && dist > 0) {
-          const force = (1 - dist / gustRadius) * 0.5
-          p.vx += mouseVX * force
-          p.vy += mouseVY * force
+          const falloff = 1 - dist / gustRadius
+          // Directional push from cursor velocity
+          const pushForce = falloff * 0.8
+          p.vx += mouseVX * pushForce
+          p.vy += mouseVY * pushForce
+          // Radial scatter — particles near cursor get pushed outward too
+          const radialForce = falloff * cursorSpeed * 0.02
+          p.vx += (dx / dist) * radialForce
+          p.vy += (dy / dist) * radialForce
         }
 
         // Lightning particles: limited lifespan
@@ -889,6 +1214,16 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
       c.fillText('the sky is unreachable.', w / 2, h / 2)
     }
 
+    // Cultural inscription — near-invisible cycling text at bottom
+    if (inscriptionAlpha > 0.01) {
+      const inscColor = weather ? tempToColor(weather.temperature) : { r: 140, g: 160, b: 200 }
+      c.font = '11px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(${inscColor.r}, ${inscColor.g}, ${inscColor.b}, ${inscriptionAlpha * 0.04})`
+      c.textAlign = 'center'
+      c.textBaseline = 'alphabetic'
+      c.fillText(inscriptions[inscriptionIndex], w / 2, h - 6)
+    }
+
     // Title
     c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 160, 200, ${0.06 + Math.sin(time * 0.3) * 0.02})`
@@ -954,18 +1289,79 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
-      if (windGain && audioCtx) {
-        windGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1)
+      // Fade out all audio gracefully (shared context — don't close it)
+      if (sharedAudioCtx) {
+        const t = sharedAudioCtx.currentTime
+        if (windGain) windGain.gain.linearRampToValueAtTime(0, t + 1)
+        if (rainGain) rainGain.gain.linearRampToValueAtTime(0, t + 1)
+        if (thunderGain) thunderGain.gain.linearRampToValueAtTime(0, t + 0.5)
+        if (droneGain) droneGain.gain.linearRampToValueAtTime(0, t + 1.5)
+        if (droneGain2) droneGain2.gain.linearRampToValueAtTime(0, t + 1.5)
+        if (cursorWhooshGain) cursorWhooshGain.gain.linearRampToValueAtTime(0, t + 0.3)
       }
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
-      if (audioCtx) {
-        audioCtx.close().catch(() => {})
-        audioCtx = null
+
+      // Disconnect and stop all audio nodes (shared context — never close it)
+      const stopSource = (src: AudioBufferSourceNode | OscillatorNode | null) => {
+        if (src) {
+          try { src.stop() } catch { /* already stopped */ }
+          try { src.disconnect() } catch { /* already disconnected */ }
+        }
       }
+      stopSource(windNoiseSource)
+      stopSource(windFilterLFO)
+      stopSource(rainNoiseSource)
+      stopSource(thunderNoiseSource)
+      stopSource(droneOsc)
+      stopSource(droneOsc2)
+      stopSource(cursorWhooshSource)
+
+      const disconnectNode = (node: AudioNode | null) => {
+        if (node) {
+          try { node.disconnect() } catch { /* already disconnected */ }
+        }
+      }
+      disconnectNode(windFilter)
+      disconnectNode(windGain)
+      disconnectNode(windLFOGain)
+      disconnectNode(rainFilter)
+      disconnectNode(rainGain)
+      disconnectNode(rainDropGain)
+      disconnectNode(thunderFilter)
+      disconnectNode(thunderGain)
+      disconnectNode(droneGain)
+      disconnectNode(droneGain2)
+      disconnectNode(cursorWhooshFilter)
+      disconnectNode(cursorWhooshGain)
+
+      // Null out references
+      windNoiseSource = null
+      windFilter = null
+      windGain = null
+      windFilterLFO = null
+      windLFOGain = null
+      rainNoiseSource = null
+      rainFilter = null
+      rainGain = null
+      rainDropGain = null
+      thunderNoiseSource = null
+      thunderFilter = null
+      thunderGain = null
+      droneOsc = null
+      droneGain = null
+      droneOsc2 = null
+      droneGain2 = null
+      cursorWhooshSource = null
+      cursorWhooshFilter = null
+      cursorWhooshGain = null
+      sharedAudioCtx = null
+      audioDestination = null
+      audioInitialized = false
+
       canvas?.removeEventListener('mousemove', handleMouseMove)
       canvas?.removeEventListener('click', handleClick)
       overlay?.remove()

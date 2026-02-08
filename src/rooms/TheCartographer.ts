@@ -34,6 +34,53 @@ interface MapNode {
   visited: boolean
 }
 
+// Poetic descriptions for each room (2-3 words)
+const ROOM_POEMS: Record<string, string> = {
+  void: 'where everything begins',
+  study: 'ink remembers you',
+  library: 'infinite shelves dreaming',
+  cipher: 'meaning hides here',
+  instrument: 'sound made visible',
+  choir: 'voices without bodies',
+  radio: 'static between worlds',
+  observatory: 'counting dead stars',
+  satellite: 'orbit of longing',
+  asteroids: 'debris of creation',
+  seance: 'the veil thins',
+  oracle: 'futures already written',
+  madeleine: 'taste triggers time',
+  rememory: 'what the body knows',
+  garden: 'growing in reverse',
+  terrarium: 'worlds under glass',
+  tidepool: 'small ocean, vast',
+  well: 'depth speaks back',
+  glacarium: 'frozen midsentence',
+  furnace: 'where memories burn',
+  disintegration: 'beauty in decay',
+  clocktower: 'time made visible',
+  datepaintings: 'each day a mark',
+  darkroom: 'light leaves traces',
+  projection: 'ghosts on walls',
+  palimpsestgallery: 'layers beneath layers',
+  sketchpad: 'lines seeking form',
+  loom: 'threads of thought',
+  automaton: 'clockwork dreaming',
+  seismograph: 'tremors of feeling',
+  pendulum: 'gravity keeps time',
+  weathervane: 'wind knows direction',
+  cartographer: 'the map breathes',
+  labyrinth: 'lost by design',
+  archive: 'everything kept, nothing found',
+  lighthouse: 'light against dark',
+  catacombs: 'buried whispers',
+  roots: 'beneath the garden',
+  ossuary: 'bones remember shape',
+  between: 'neither here nor there',
+  aquifer: 'deep water rising',
+  midnight: 'the hour between',
+  mirror: 'self looking back',
+}
+
 interface MapDeps {
   switchTo: (name: string) => void
   getActiveRoom: () => string
@@ -77,6 +124,32 @@ export function createCartographerRoom(deps: MapDeps): Room {
   // Path highlighting
   let highlightedPath: string[] = []
 
+  // Zoom/focus state
+  let zoomTarget: MapNode | null = null
+  let zoomStartTime = 0
+  let zoomDuration = 1.5 // seconds before navigating
+  let zoomProgress = 0
+  let zoomOriginX = 0
+  let zoomOriginY = 0
+  let zoomScale = 1
+  let focusedConnections: Set<string> = new Set()
+
+  // Connection line animation (flowing dots)
+  let connectionDots: { fromName: string; toName: string; t: number; speed: number }[] = []
+  let dotsInitialized = false
+
+  // Cultural inscription state
+  const INSCRIPTIONS = [
+    'the clearest picture of dark matter looks like a neural network',
+    'dark matter filaments: the scaffold everything visible grew on',
+    'voids in the dark matter map \u2014 places where nothing chose to be',
+    'borges dreamed a library of every possible book. this is a map of every possible room.',
+  ]
+  let inscriptionIndex = 0
+  let inscriptionFade = 0
+  let inscriptionTimer = 0
+  const INSCRIPTION_CYCLE = 8 // seconds per inscription
+
   // Audio state
   let audioInitialized = false
   let audioMaster: GainNode | null = null
@@ -85,6 +158,12 @@ export function createCartographerRoom(deps: MapDeps): Room {
   let hoverOsc: OscillatorNode | null = null
   let hoverGain: GainNode | null = null
   let ac: AudioContext | null = null
+
+  // Cartographic audio state
+  let quillNoiseSource: AudioBufferSourceNode | null = null
+  let quillFilter: BiquadFilterNode | null = null
+  let quillGain: GainNode | null = null
+  let unfoldInterval: ReturnType<typeof setInterval> | null = null
 
   // ═══════════════════════════════════════
   // AUDIO
@@ -124,6 +203,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
       hoverOsc.start()
 
       audioInitialized = true
+      initCartographicAudio()
     } catch (_) {
       // Audio not available — silent mode
     }
@@ -171,6 +251,88 @@ export function createCartographerRoom(deps: MapDeps): Room {
     source.start()
   }
 
+  function playClickChime(node: MapNode) {
+    if (!ac || !audioMaster) return
+    // Soft bell/chime — sine at 400-800Hz based on position, short envelope
+    const normalizedY = node.y / (canvas?.height || 800)
+    const freq = 400 + (1 - normalizedY) * 400
+    const osc = ac.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    const g = ac.createGain()
+    g.gain.setValueAtTime(0.2, ac.currentTime)
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.8)
+    osc.connect(g)
+    g.connect(audioMaster)
+    osc.start()
+    osc.stop(ac.currentTime + 0.8)
+    // Second harmonic for bell quality
+    const osc2 = ac.createOscillator()
+    osc2.type = 'sine'
+    osc2.frequency.value = freq * 2.02 // slight detuning
+    const g2 = ac.createGain()
+    g2.gain.setValueAtTime(0.08, ac.currentTime)
+    g2.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.5)
+    osc2.connect(g2)
+    g2.connect(audioMaster)
+    osc2.start()
+    osc2.stop(ac.currentTime + 0.5)
+  }
+
+  function initCartographicAudio() {
+    if (!ac || !audioMaster) return
+    // Quill on parchment — filtered noise at very low gain
+    const bufferLen = ac.sampleRate * 4 // 4-second loop
+    const buffer = ac.createBuffer(1, bufferLen, ac.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < bufferLen; i++) {
+      // Scratchy noise with amplitude variation
+      const scratch = Math.sin(i * 0.002) * 0.5 + 0.5
+      data[i] = (Math.random() * 2 - 1) * (0.3 + scratch * 0.7)
+    }
+    quillNoiseSource = ac.createBufferSource()
+    quillNoiseSource.buffer = buffer
+    quillNoiseSource.loop = true
+    quillFilter = ac.createBiquadFilter()
+    quillFilter.type = 'highpass'
+    quillFilter.frequency.value = 3000
+    quillFilter.Q.value = 0.5
+    quillGain = ac.createGain()
+    quillGain.gain.value = 0
+    quillNoiseSource.connect(quillFilter)
+    quillFilter.connect(quillGain)
+    quillGain.connect(audioMaster)
+    quillNoiseSource.start()
+    // Fade in slowly
+    quillGain.gain.setTargetAtTime(0.01, ac.currentTime, 2.0)
+
+    // Occasional map-unfolding sounds (broader noise burst at 0.015)
+    unfoldInterval = setInterval(() => {
+      if (!ac || !audioMaster || !active) return
+      // Random chance ~20% every 3 seconds
+      if (Math.random() > 0.2) return
+      const unfoldLen = ac.sampleRate * 0.3
+      const unfoldBuf = ac.createBuffer(1, unfoldLen, ac.sampleRate)
+      const uData = unfoldBuf.getChannelData(0)
+      for (let i = 0; i < unfoldLen; i++) {
+        const env = Math.exp(-i / (unfoldLen * 0.3)) * Math.min(1, i / (unfoldLen * 0.05))
+        uData[i] = (Math.random() * 2 - 1) * env
+      }
+      const src = ac.createBufferSource()
+      src.buffer = unfoldBuf
+      const filt = ac.createBiquadFilter()
+      filt.type = 'bandpass'
+      filt.frequency.value = 1200 + Math.random() * 800
+      filt.Q.value = 0.8
+      const uGain = ac.createGain()
+      uGain.gain.value = 0.015
+      src.connect(filt)
+      filt.connect(uGain)
+      uGain.connect(audioMaster!)
+      src.start()
+    }, 3000)
+  }
+
   function cleanupAudio() {
     if (ambientGain && ac) {
       ambientGain.gain.setTargetAtTime(0, ac.currentTime, 0.3)
@@ -178,16 +340,27 @@ export function createCartographerRoom(deps: MapDeps): Room {
     if (hoverGain && ac) {
       hoverGain.gain.setTargetAtTime(0, ac.currentTime, 0.1)
     }
+    if (quillGain && ac) {
+      quillGain.gain.setTargetAtTime(0, ac.currentTime, 0.2)
+    }
+    if (unfoldInterval !== null) {
+      clearInterval(unfoldInterval)
+      unfoldInterval = null
+    }
     // Delayed cleanup to allow fade-out
     setTimeout(() => {
       try {
         ambientOsc?.stop()
         hoverOsc?.stop()
+        quillNoiseSource?.stop()
       } catch (_) { /* already stopped */ }
       ambientOsc = null
       ambientGain = null
       hoverOsc = null
       hoverGain = null
+      quillNoiseSource = null
+      quillFilter = null
+      quillGain = null
       audioMaster = null
       ac = null
       audioInitialized = false
@@ -360,6 +533,29 @@ export function createCartographerRoom(deps: MapDeps): Room {
 
     // Reset animation
     animProgress = 0
+  }
+
+  function initConnectionDots() {
+    connectionDots = []
+    const seen = new Set<string>()
+    for (const node of nodes) {
+      for (const connName of node.connections) {
+        const key = [node.name, connName].sort().join('--')
+        if (seen.has(key)) continue
+        seen.add(key)
+        // 1-2 dots per connection
+        const count = 1 + (Math.random() > 0.6 ? 1 : 0)
+        for (let i = 0; i < count; i++) {
+          connectionDots.push({
+            fromName: node.name,
+            toName: connName,
+            t: Math.random(), // position along line [0,1]
+            speed: 0.03 + Math.random() * 0.04, // units per second
+          })
+        }
+      }
+    }
+    dotsInitialized = true
   }
 
   function findNode(name: string): MapNode | undefined {
@@ -659,6 +855,11 @@ export function createCartographerRoom(deps: MapDeps): Room {
     frameId = requestAnimationFrame(render)
     time += 0.016
 
+    // Initialize connection dots once nodes are ready
+    if (!dotsInitialized && nodes.length > 0) {
+      initConnectionDots()
+    }
+
     // Animate unfolding: nodes move from center to their target positions
     if (animProgress < 1) {
       animProgress = Math.min(1, animProgress + 0.012)
@@ -680,14 +881,57 @@ export function createCartographerRoom(deps: MapDeps): Room {
       }
     }
 
+    // Update zoom/focus animation
+    if (zoomTarget) {
+      zoomProgress = Math.min(1, (time - zoomStartTime) / zoomDuration)
+      const ease = 1 - Math.pow(1 - zoomProgress, 2)
+      // Zoom toward target node
+      const targetScale = 1.8
+      zoomScale = 1 + (targetScale - 1) * ease
+      zoomOriginX = zoomTarget.x
+      zoomOriginY = zoomTarget.y
+
+      // Navigate after zoom completes
+      if (zoomProgress >= 1) {
+        const targetName = zoomTarget.name
+        zoomTarget = null
+        zoomScale = 1
+        zoomProgress = 0
+        focusedConnections.clear()
+        deps.switchTo(targetName)
+      }
+    }
+
+    // Update connection dots
+    for (const dot of connectionDots) {
+      dot.t += dot.speed * 0.016
+      if (dot.t > 1) dot.t -= 1
+    }
+
+    // Update cultural inscription
+    inscriptionTimer += 0.016
+    const cyclePos = inscriptionTimer % INSCRIPTION_CYCLE
+    if (cyclePos < 1.5) {
+      // Fade in
+      inscriptionFade = Math.min(1, cyclePos / 1.5)
+    } else if (cyclePos > INSCRIPTION_CYCLE - 1.5) {
+      // Fade out
+      inscriptionFade = Math.max(0, (INSCRIPTION_CYCLE - cyclePos) / 1.5)
+    } else {
+      inscriptionFade = 1
+    }
+    if (cyclePos < 0.016 && inscriptionTimer > 0.1) {
+      inscriptionIndex = (inscriptionIndex + 1) % INSCRIPTIONS.length
+    }
+
     const w = canvas.width
     const h = canvas.height
     const currentRoom = deps.getActiveRoom()
 
-    // Compute highlighted path
-    if (hoveredNode && hoveredNode.name !== currentRoom) {
+    // Compute highlighted path (only when not zooming)
+    if (!zoomTarget && hoveredNode && hoveredNode.name !== currentRoom) {
       highlightedPath = findShortestPath(currentRoom, hoveredNode.name)
-    } else {
+    } else if (!zoomTarget) {
       highlightedPath = []
     }
 
@@ -707,6 +951,14 @@ export function createCartographerRoom(deps: MapDeps): Room {
     ctx.fillStyle = 'rgba(5, 3, 10, 1)'
     ctx.fillRect(0, 0, w, h)
 
+    // Apply zoom transform if active
+    if (zoomTarget && zoomScale > 1) {
+      ctx.save()
+      ctx.translate(zoomOriginX, zoomOriginY)
+      ctx.scale(zoomScale, zoomScale)
+      ctx.translate(-zoomOriginX, -zoomOriginY)
+    }
+
     // Draw connections first
     for (const node of nodes) {
       for (const connName of node.connections) {
@@ -717,11 +969,18 @@ export function createCartographerRoom(deps: MapDeps): Room {
         const anyHidden = node.hidden || target.hidden
         const edgeKey = `${node.name}--${connName}`
         const isHighlighted = highlightEdges.has(edgeKey)
+        const isFocused = focusedConnections.has(node.name) && focusedConnections.has(connName)
 
         // Pulse on the connection
         const pulse = Math.sin(time * 1.5 + node.x * 0.01) * 0.02
 
-        if (isHighlighted) {
+        if (isFocused && zoomTarget) {
+          // Glowing lines for focused connections during zoom
+          const glowPulse = Math.sin(time * 6) * 0.15 + 0.85
+          ctx.strokeStyle = `rgba(255, 200, 100, ${0.5 * glowPulse})`
+          ctx.setLineDash([])
+          ctx.lineWidth = 3
+        } else if (isHighlighted) {
           // Gold glowing path
           const glowPulse = Math.sin(time * 4) * 0.1 + 0.9
           ctx.strokeStyle = `rgba(255, 215, 0, ${0.35 * glowPulse})`
@@ -733,10 +992,12 @@ export function createCartographerRoom(deps: MapDeps): Room {
           ctx.setLineDash([3, 6])
           ctx.lineWidth = 1
         } else if (bothVisited) {
+          // Warmer gold for visited connections
           ctx.strokeStyle = `rgba(255, 215, 0, ${0.1 + pulse})`
           ctx.setLineDash([])
           ctx.lineWidth = 1.5
         } else {
+          // Cooler purple for unvisited
           ctx.strokeStyle = `rgba(120, 100, 140, ${0.06 + pulse})`
           ctx.setLineDash([2, 4])
           ctx.lineWidth = 1
@@ -750,6 +1011,27 @@ export function createCartographerRoom(deps: MapDeps): Room {
       }
     }
 
+    // Draw flowing dots on connections
+    for (const dot of connectionDots) {
+      const fromNode = findNode(dot.fromName)
+      const toNode = findNode(dot.toName)
+      if (!fromNode || !toNode) continue
+
+      const px = fromNode.x + (toNode.x - fromNode.x) * dot.t
+      const py = fromNode.y + (toNode.y - fromNode.y) * dot.t
+      const bothVisited = fromNode.visited && toNode.visited
+      // Warmer dots for visited paths, cooler for unvisited
+      const dotAlpha = bothVisited ? 0.08 : 0.04
+      const dotColor = bothVisited
+        ? `rgba(255, 215, 100, ${dotAlpha})`
+        : `rgba(150, 130, 180, ${dotAlpha})`
+
+      ctx.beginPath()
+      ctx.arc(px, py, 1.5, 0, Math.PI * 2)
+      ctx.fillStyle = dotColor
+      ctx.fill()
+    }
+
     // Draw thread trail (Shiota-inspired red threads)
     drawThreadTrail(ctx)
 
@@ -758,6 +1040,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
       const isActive = node.name === currentRoom
       const isHovered = node === hoveredNode
       const isOnPath = highlightNodes.has(node.name) && !isActive && !isHovered
+      const isFocusNode = focusedConnections.has(node.name) && zoomTarget !== null
       const breathe = Math.sin(time * 0.8 + node.x * 0.01 + node.y * 0.01) * 0.5 + 0.5
 
       // Node size and appearance
@@ -786,11 +1069,17 @@ export function createCartographerRoom(deps: MapDeps): Room {
         radius += 2
         alpha = Math.min(1, alpha + 0.15 * pathPulse)
       }
+      if (isFocusNode) {
+        radius += 2
+        alpha = Math.min(1, alpha + 0.3)
+      }
 
       // Node glow
       const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, radius * 3)
       if (isActive) {
         glow.addColorStop(0, `rgba(255, 20, 147, ${alpha * 0.4 * (0.8 + breathe * 0.2)})`)
+      } else if (isFocusNode) {
+        glow.addColorStop(0, `rgba(255, 200, 100, ${alpha * 0.5})`)
       } else if (isOnPath) {
         glow.addColorStop(0, `rgba(255, 215, 0, ${alpha * 0.5})`)
       } else if (node.hidden) {
@@ -807,6 +1096,8 @@ export function createCartographerRoom(deps: MapDeps): Room {
       // Node core
       if (isActive) {
         ctx.fillStyle = `rgba(255, 20, 147, ${alpha})`
+      } else if (isFocusNode) {
+        ctx.fillStyle = `rgba(255, 200, 100, ${alpha})`
       } else if (isOnPath) {
         ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`
       } else if (node.hidden && !node.visited) {
@@ -826,14 +1117,19 @@ export function createCartographerRoom(deps: MapDeps): Room {
         ctx.fillStyle = `rgba(100, 80, 140, ${0.04 + breathe * 0.01})`
         ctx.fillText('?', node.x, node.y + radius + 16)
       } else {
-        const labelAlpha = isHovered ? 0.5 : isActive ? 0.35 : isOnPath ? 0.3 : node.visited ? 0.15 : 0.08
+        const labelAlpha = isHovered ? 0.5 : isActive ? 0.35 : isFocusNode ? 0.4 : isOnPath ? 0.3 : node.visited ? 0.15 : 0.08
         ctx.fillStyle = `rgba(200, 190, 180, ${labelAlpha})`
         ctx.fillText(node.label, node.x, node.y + radius + 16)
       }
     }
 
+    // Restore zoom transform
+    if (zoomTarget && zoomScale > 1) {
+      ctx.restore()
+    }
+
     // Path hop count near hovered node
-    if (hoveredNode && highlightedPath.length > 1) {
+    if (hoveredNode && highlightedPath.length > 1 && !zoomTarget) {
       const hops = highlightedPath.length - 1
       ctx.font = '11px monospace'
       ctx.fillStyle = 'rgba(255, 215, 0, 0.25)'
@@ -841,12 +1137,58 @@ export function createCartographerRoom(deps: MapDeps): Room {
       ctx.fillText(`${hops} hop${hops !== 1 ? 's' : ''}`, hoveredNode.x + 14, hoveredNode.y - 8)
     }
 
+    // Hover tooltip — room label, visit status, poetic description
+    if (hoveredNode && !zoomTarget) {
+      const visits = deps.getRoomVisits()
+      const visitCount = visits.get(hoveredNode.name) || 0
+      const visitLabel = visitCount > 0 ? `visited ${visitCount}x` : 'unexplored'
+      const poem = ROOM_POEMS[hoveredNode.name] || ''
+
+      const ttX = hoveredNode.x
+      const ttY = hoveredNode.y - 22
+
+      // Tooltip background
+      ctx.font = '11px "Cormorant Garamond", serif'
+      const labelWidth = ctx.measureText(hoveredNode.label).width
+      const visitWidth = ctx.measureText(visitLabel).width
+      const poemWidth = poem ? ctx.measureText(poem).width : 0
+      const bgWidth = Math.max(labelWidth, visitWidth, poemWidth) + 16
+      const bgHeight = poem ? 46 : 32
+      const bgX = ttX - bgWidth / 2
+      const bgY = ttY - bgHeight + 4
+
+      ctx.fillStyle = 'rgba(10, 8, 18, 0.85)'
+      ctx.strokeStyle = 'rgba(200, 180, 140, 0.1)'
+      ctx.lineWidth = 0.5
+      ctx.beginPath()
+      ctx.roundRect(bgX, bgY, bgWidth, bgHeight, 3)
+      ctx.fill()
+      ctx.stroke()
+
+      // Room label
+      ctx.textAlign = 'center'
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.5)'
+      ctx.fillText(hoveredNode.label, ttX, ttY - (poem ? 20 : 8))
+
+      // Visit status
+      ctx.font = '9px monospace'
+      ctx.fillStyle = visitCount > 0 ? 'rgba(200, 190, 180, 0.3)' : 'rgba(120, 100, 140, 0.3)'
+      ctx.fillText(visitLabel, ttX, ttY - (poem ? 8 : -2))
+
+      // Poetic description
+      if (poem) {
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.fillStyle = 'rgba(200, 180, 140, 0.2)'
+        ctx.fillText(poem, ttX, ttY + 4)
+      }
+    }
+
     // Section labels
     ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(120, 100, 140, 0.06)'
     ctx.textAlign = 'center'
-    ctx.fillText('— surface rooms —', w / 2, 50)
-    ctx.fillText('— hidden rooms —', w / 2, h * 0.58)
+    ctx.fillText('\u2014 surface rooms \u2014', w / 2, 50)
+    ctx.fillText('\u2014 hidden rooms \u2014', w / 2, h * 0.58)
 
     // Title
     ctx.font = '12px "Cormorant Garamond", serif'
@@ -854,11 +1196,20 @@ export function createCartographerRoom(deps: MapDeps): Room {
     ctx.textAlign = 'center'
     ctx.fillText('the cartographer', w / 2, 25)
 
+    // Cultural inscription (cycling at low alpha)
+    const insAlpha = inscriptionFade * 0.06
+    if (insAlpha > 0.002) {
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(200, 180, 140, ${insAlpha})`
+      ctx.textAlign = 'center'
+      ctx.fillText(INSCRIPTIONS[inscriptionIndex], w / 2, 42)
+    }
+
     // Stats
-    const visits = deps.getRoomVisits()
-    const visitedCount = [...visits.values()].filter(v => v > 0).length
+    const statsVisits = deps.getRoomVisits()
+    const visitedCount = [...statsVisits.values()].filter(v => v > 0).length
     const totalRooms = ROOM_GRAPH.length
-    const hiddenFound = ROOM_GRAPH.filter(r => r.hidden && (visits.get(r.name) || 0) > 0).length
+    const hiddenFound = ROOM_GRAPH.filter(r => r.hidden && (statsVisits.get(r.name) || 0) > 0).length
     const hiddenTotal = ROOM_GRAPH.filter(r => r.hidden).length
 
     ctx.font = '12px monospace'
@@ -880,17 +1231,26 @@ export function createCartographerRoom(deps: MapDeps): Room {
     drawLegend(ctx, w, h)
 
     // Detail panel (if hovering for >1 second)
-    if (hoveredNode && showDetailPanel) {
+    if (hoveredNode && showDetailPanel && !zoomTarget) {
       drawDetailPanel(ctx, hoveredNode, w, h)
     }
   }
 
-  function handleClick(e: MouseEvent) {
-    if (!hoveredNode) return
+  function handleClick(_e: MouseEvent) {
+    if (!hoveredNode || zoomTarget) return
     // Navigate to the clicked room (only if visited or not hidden)
     if (!hoveredNode.hidden || hoveredNode.visited) {
-      playWhoosh()
-      deps.switchTo(hoveredNode.name)
+      playClickChime(hoveredNode)
+      // Start zoom/focus animation
+      zoomTarget = hoveredNode
+      zoomStartTime = time
+      zoomProgress = 0
+      // Build focused connections set — the target and its neighbors
+      focusedConnections.clear()
+      focusedConnections.add(hoveredNode.name)
+      for (const conn of hoveredNode.connections) {
+        focusedConnections.add(conn)
+      }
     }
   }
 
@@ -898,11 +1258,23 @@ export function createCartographerRoom(deps: MapDeps): Room {
     mouseX = e.clientX
     mouseY = e.clientY
 
+    // Don't update hover during zoom
+    if (zoomTarget) return
+
     const prevHovered = hoveredNode
     hoveredNode = null
+
+    // Inverse-transform mouse coordinates if zoomed
+    let mx = e.clientX
+    let my = e.clientY
+    if (zoomScale > 1) {
+      mx = zoomOriginX + (e.clientX - zoomOriginX) / zoomScale
+      my = zoomOriginY + (e.clientY - zoomOriginY) / zoomScale
+    }
+
     for (const node of nodes) {
-      const dx = e.clientX - node.x
-      const dy = e.clientY - node.y
+      const dx = mx - node.x
+      const dy = my - node.y
       if (dx * dx + dy * dy < 625) { // 25px radius
         if (!node.hidden || node.visited) {
           hoveredNode = node
@@ -970,6 +1342,13 @@ export function createCartographerRoom(deps: MapDeps): Room {
 
     activate() {
       active = true
+      zoomTarget = null
+      zoomScale = 1
+      zoomProgress = 0
+      focusedConnections.clear()
+      dotsInitialized = false
+      inscriptionTimer = 0
+      inscriptionIndex = 0
       initNodes()
       initAudio()
       render()
@@ -979,12 +1358,18 @@ export function createCartographerRoom(deps: MapDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       cleanupAudio()
+      zoomTarget = null
+      zoomScale = 1
+      focusedConnections.clear()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
       cleanupAudio()
+      zoomTarget = null
+      zoomScale = 1
+      focusedConnections.clear()
       overlay?.remove()
     },
   }

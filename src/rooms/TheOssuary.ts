@@ -39,6 +39,20 @@ interface GlyphHit {
   size: number
   memId: string
   originalText: string
+  // Rendered position after magnetic pull offset
+  renderX: number
+  renderY: number
+}
+
+// Click-expand animation state
+interface ExpandAnim {
+  glyphIdx: number
+  progress: number // 0..1
+  memId: string
+  originalText: string
+  x: number
+  y: number
+  size: number
 }
 
 // Bone dust particle
@@ -58,6 +72,14 @@ const INSCRIPTIONS = [
   'here rest the words that were',
   'dust returns to dust',
   'what was remembered is here released',
+]
+
+// Cultural inscriptions — real-world grounding, cycling at near-invisible alpha
+const CULTURAL_INSCRIPTIONS = [
+  '788 species on the seafloor, most unnamed. mining cut their numbers by a third.',
+  'the seabed grows one thousandth of a millimeter per year. we scarred it in an afternoon.',
+  'christian boltanski archived the dead. what are we archiving?',
+  'felix gonzalez-torres let the candy pile shrink. the viewer takes a piece of someone\u2019s weight.',
 ]
 
 export function createOssuaryRoom(deps: OssuaryDeps): Room {
@@ -89,6 +111,22 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
   let inscriptionAlpha = 0
   let inscriptionFading: 'in' | 'hold' | 'out' = 'in'
   let inscriptionTimer = 0
+
+  // Cultural inscription state (separate cycle from main inscriptions)
+  let culturalIdx = 0
+  let culturalAlpha = 0
+  let culturalFading: 'in' | 'hold' | 'out' = 'in'
+  let culturalTimer = 0
+
+  // Click-expand animation
+  let expandAnim: ExpandAnim | null = null
+
+  // Hover rattle audio state
+  let rattleGain: GainNode | null = null
+  let rattleSource: AudioBufferSourceNode | null = null
+  let rattleFilter: BiquadFilterNode | null = null
+  let isRattling = false
+  let lastHoveredIdx = -1
 
   // Audio state
   let audioInitialized = false
@@ -383,6 +421,140 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
     } catch { /* ignore */ }
   }
 
+  // Bone-crack/chime: noise burst through high bandpass + sine tone, very short
+  function playBoneCrackChime() {
+    if (!audioCtxRef || !audioMaster) return
+    try {
+      const ac = audioCtxRef
+      const now = ac.currentTime
+
+      // Noise burst through high bandpass (2000-4000Hz)
+      const crackLen = 0.06
+      const noiseBuf = ac.createBuffer(1, Math.ceil(ac.sampleRate * crackLen), ac.sampleRate)
+      const nd = noiseBuf.getChannelData(0)
+      for (let i = 0; i < nd.length; i++) {
+        const env = 1 - i / nd.length // decaying envelope
+        nd[i] = (Math.random() * 2 - 1) * env * env
+      }
+      const noiseSrc = ac.createBufferSource()
+      noiseSrc.buffer = noiseBuf
+
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 3000 // center of 2000-4000Hz
+      bp.Q.value = 1.5
+
+      const noiseGain = ac.createGain()
+      noiseGain.gain.setValueAtTime(0.12, now)
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + crackLen)
+
+      noiseSrc.connect(bp)
+      bp.connect(noiseGain)
+      noiseGain.connect(audioMaster!)
+      noiseSrc.start(now)
+      noiseSrc.stop(now + crackLen)
+      noiseSrc.onended = () => {
+        noiseSrc.disconnect(); bp.disconnect(); noiseGain.disconnect()
+      }
+
+      // Sine chime at 400-600Hz range
+      const freq = 400 + Math.random() * 200
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+
+      const chimeGain = ac.createGain()
+      chimeGain.gain.setValueAtTime(0.04, now)
+      chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25)
+
+      osc.connect(chimeGain)
+      chimeGain.connect(audioMaster!)
+      osc.start(now)
+      osc.stop(now + 0.25)
+      osc.onended = () => {
+        osc.disconnect(); chimeGain.disconnect()
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Start hover rattle: very fast filtered noise at low gain
+  function startRattle() {
+    if (!audioCtxRef || !audioMaster || isRattling) return
+    try {
+      const ac = audioCtxRef
+      // Create a looping short noise buffer
+      const bufLen = Math.ceil(ac.sampleRate * 0.5)
+      const buf = ac.createBuffer(1, bufLen, ac.sampleRate)
+      const d = buf.getChannelData(0)
+      for (let i = 0; i < bufLen; i++) {
+        // Rapid amplitude modulation for rattling effect
+        const mod = Math.sin(i / ac.sampleRate * Math.PI * 2 * 40) // 40Hz modulation
+        d[i] = (Math.random() * 2 - 1) * Math.abs(mod)
+      }
+
+      rattleSource = ac.createBufferSource()
+      rattleSource.buffer = buf
+      rattleSource.loop = true
+
+      rattleFilter = ac.createBiquadFilter()
+      rattleFilter.type = 'bandpass'
+      rattleFilter.frequency.value = 2500
+      rattleFilter.Q.value = 2
+
+      rattleGain = ac.createGain()
+      rattleGain.gain.value = 0
+      rattleGain.gain.setTargetAtTime(0.015, ac.currentTime, 0.05)
+
+      rattleSource.connect(rattleFilter)
+      rattleFilter.connect(rattleGain)
+      rattleGain.connect(audioMaster!)
+      rattleSource.start()
+      isRattling = true
+    } catch { /* ignore */ }
+  }
+
+  function stopRattle() {
+    if (!isRattling) return
+    try {
+      if (rattleGain && audioCtxRef) {
+        rattleGain.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.05)
+      }
+      setTimeout(() => {
+        try { rattleSource?.stop() } catch { /* already stopped */ }
+        rattleSource?.disconnect()
+        rattleFilter?.disconnect()
+        rattleGain?.disconnect()
+        rattleSource = null
+        rattleFilter = null
+        rattleGain = null
+        isRattling = false
+      }, 150)
+    } catch {
+      rattleSource = null
+      rattleFilter = null
+      rattleGain = null
+      isRattling = false
+    }
+  }
+
+  // Spawn bone-dust particles at click point (8-15 drifting downward)
+  function spawnClickDust(cx: number, cy: number) {
+    const count = 8 + Math.floor(Math.random() * 8) // 8-15
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const spread = Math.random() * 6
+      dustParticles.push({
+        x: cx + Math.cos(angle) * spread,
+        y: cy + Math.sin(angle) * spread,
+        vy: 0.3 + Math.random() * 0.5, // drift downward
+        alpha: 0.06 + Math.random() * 0.06,
+        size: 0.5 + Math.random() * 2,
+        life: 0,
+        maxLife: 120 + Math.random() * 60, // 2-3 seconds at 60fps
+      })
+    }
+  }
+
   function fadeAudioIn() {
     if (audioMaster && audioCtxRef) {
       audioMaster.gain.setTargetAtTime(1, audioCtxRef.currentTime, 0.5)
@@ -400,6 +572,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       clearTimeout(dripTimeout)
       dripTimeout = null
     }
+    stopRattle()
     try { windSource?.stop() } catch { /* already stopped */ }
     windSource?.disconnect()
     windGain?.disconnect()
@@ -550,6 +723,112 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
     ctx.fillText(INSCRIPTIONS[inscriptionIdx], w / 2, h - 22)
   }
 
+  // Cultural inscription — separate cycle, positioned higher, even fainter
+  function updateCulturalInscription(dt: number) {
+    culturalTimer += dt
+    const fadeSpeed = 0.25 // slower fade than main inscriptions
+
+    if (culturalFading === 'in') {
+      culturalAlpha = Math.min(1, culturalAlpha + dt * fadeSpeed)
+      if (culturalAlpha >= 1) {
+        culturalFading = 'hold'
+        culturalTimer = 0
+      }
+    } else if (culturalFading === 'hold') {
+      if (culturalTimer >= 20) {
+        culturalFading = 'out'
+      }
+    } else if (culturalFading === 'out') {
+      culturalAlpha = Math.max(0, culturalAlpha - dt * fadeSpeed)
+      if (culturalAlpha <= 0) {
+        culturalIdx = (culturalIdx + 1) % CULTURAL_INSCRIPTIONS.length
+        culturalFading = 'in'
+      }
+    }
+  }
+
+  function renderCulturalInscription(w: number, h: number) {
+    if (!ctx) return
+    const a = culturalAlpha * 0.035 // even fainter than main inscriptions
+    if (a < 0.001) return
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(200, 190, 170, ${a})`
+    ctx.textAlign = 'center'
+    ctx.fillText(CULTURAL_INSCRIPTIONS[culturalIdx], w / 2, h - 42)
+  }
+
+  // Render the expand animation overlay
+  function renderExpandAnim(w: number, _h: number) {
+    if (!ctx || !expandAnim) return
+    const ea = expandAnim
+    // Ease-out curve
+    const t = ea.progress
+    const ease = 1 - (1 - t) * (1 - t)
+
+    // Scale from 1x to 1.8x then back to 1x
+    const scalePhase = t < 0.4 ? t / 0.4 : 1 - (t - 0.4) / 0.6
+    const scale = 1 + scalePhase * 0.8
+
+    // Glow radius grows and fades
+    const glowAlpha = (1 - t) * 0.15
+    const glowR = ea.size * scale * 1.5
+
+    // Background glow
+    const grad = ctx.createRadialGradient(ea.x, ea.y, 0, ea.x, ea.y, glowR)
+    grad.addColorStop(0, `rgba(220, 210, 190, ${glowAlpha})`)
+    grad.addColorStop(0.5, `rgba(220, 210, 190, ${glowAlpha * 0.3})`)
+    grad.addColorStop(1, 'rgba(220, 210, 190, 0)')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(ea.x, ea.y, glowR, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Draw scaled glyph
+    const hash = ea.memId.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0)
+    ctx.save()
+    ctx.translate(ea.x, ea.y)
+    ctx.scale(scale, scale)
+    ctx.translate(-ea.x, -ea.y)
+    drawGlyph(ea.x, ea.y, hash, ea.size, 0.2 * (1 - t * 0.5))
+    ctx.restore()
+
+    // Show full memory text (fading in then out)
+    const textAlpha = t < 0.15 ? t / 0.15 : t > 0.7 ? (1 - t) / 0.3 : 1
+    if (textAlpha > 0.01) {
+      const fullText = ea.originalText
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(220, 210, 190, ${textAlpha * 0.4})`
+      ctx.textAlign = 'center'
+
+      // Word-wrap the full text into lines
+      const maxLineWidth = Math.min(w - 80, 400)
+      const words = fullText.split(' ')
+      const lines: string[] = []
+      let currentLine = ''
+      for (const word of words) {
+        const test = currentLine ? currentLine + ' ' + word : word
+        if (ctx.measureText(test).width > maxLineWidth && currentLine) {
+          lines.push(currentLine)
+          currentLine = word
+        } else {
+          currentLine = test
+        }
+      }
+      if (currentLine) lines.push(currentLine)
+
+      const lineHeight = 18
+      const startY = ea.y + ea.size * scale * 0.6 + 14
+      for (let li = 0; li < lines.length; li++) {
+        // Faint background behind text for readability
+        const tw = ctx.measureText(lines[li]).width
+        ctx.fillStyle = `rgba(8, 6, 5, ${textAlpha * 0.6})`
+        ctx.fillRect(ea.x - tw / 2 - 4, startY + li * lineHeight - 11, tw + 8, 15)
+        ctx.fillStyle = `rgba(220, 210, 190, ${textAlpha * 0.4})`
+        ctx.fillText(lines[li], ea.x, startY + li * lineHeight)
+      }
+    }
+  }
+
   // Glyph shapes for dead memories — abstract bone-like forms
   function drawGlyph(x: number, y: number, seed: number, size: number, alpha: number) {
     if (!ctx) return
@@ -622,7 +901,23 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       const x = offsetX + col * cellW + Math.sin(time * 0.2 + i) * 1
       const y = offsetY + row * cellH + Math.cos(time * 0.15 + i * 0.7) * 1
       const size = 15 + (mem.originalText.length % 20)
-      hits.push({ x, y, size, memId: mem.id, originalText: mem.originalText })
+
+      // Magnetic pull toward cursor when hovered
+      let renderX = x
+      let renderY = y
+      const dx = mouseX - x
+      const dy = mouseY - y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const hitRadius = size * 0.6
+      if (dist < hitRadius * 2.5 && dist > 0.1) {
+        // Stronger pull when closer, max 4px shift
+        const pullStrength = Math.max(0, 1 - dist / (hitRadius * 2.5))
+        const pullPx = pullStrength * 4
+        renderX += (dx / dist) * pullPx
+        renderY += (dy / dist) * pullPx
+      }
+
+      hits.push({ x, y, size, memId: mem.id, originalText: mem.originalText, renderX, renderY })
     }
     return hits
   }
@@ -687,15 +982,37 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
         }
       }
 
+      // Manage hover rattle audio
+      if (hoveredGlyphIdx >= 0 && hoveredGlyphIdx !== lastHoveredIdx) {
+        startRattle()
+        lastHoveredIdx = hoveredGlyphIdx
+      } else if (hoveredGlyphIdx < 0 && lastHoveredIdx >= 0) {
+        stopRattle()
+        lastHoveredIdx = -1
+      }
+
       for (let i = 0; i < dead.length; i++) {
         const mem = dead[i]
         const gh = glyphHits[i]
         const hash = mem.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
         let alpha = 0.03 + (1 - mem.degradation) * 0.15
+        const rx = gh.renderX
+        const ry = gh.renderY
 
-        // Hover brightening
+        // Hover brightening + glow
         if (i === hoveredGlyphIdx) {
           alpha = Math.min(1, alpha + 0.12)
+
+          // Subtle hover glow around the element
+          const hoverGlowR = gh.size * 1.0
+          const hoverGrad = ctx.createRadialGradient(rx, ry, 0, rx, ry, hoverGlowR)
+          hoverGrad.addColorStop(0, 'rgba(220, 210, 190, 0.06)')
+          hoverGrad.addColorStop(0.6, 'rgba(220, 210, 190, 0.02)')
+          hoverGrad.addColorStop(1, 'rgba(220, 210, 190, 0)')
+          ctx.fillStyle = hoverGrad
+          ctx.beginPath()
+          ctx.arc(rx, ry, hoverGlowR, 0, Math.PI * 2)
+          ctx.fill()
         }
 
         // Honored warm glow (permanent)
@@ -703,12 +1020,12 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
         if (isHonored) {
           // Faint warm glow behind the glyph
           const glowR = gh.size * 0.8
-          const grad = ctx.createRadialGradient(gh.x, gh.y, 0, gh.x, gh.y, glowR)
+          const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, glowR)
           grad.addColorStop(0, 'rgba(180, 120, 60, 0.04)')
           grad.addColorStop(1, 'rgba(180, 120, 60, 0)')
           ctx.fillStyle = grad
           ctx.beginPath()
-          ctx.arc(gh.x, gh.y, glowR, 0, Math.PI * 2)
+          ctx.arc(rx, ry, glowR, 0, Math.PI * 2)
           ctx.fill()
           // Slightly warmer tint on the glyph
           alpha = Math.min(1, alpha + 0.03)
@@ -719,24 +1036,24 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
         if (glowTime !== undefined) {
           const glowAlpha = glowTime / 2 // fades over 2 seconds
           const glowR = gh.size * 1.5 * (1 - glowTime / 2) + gh.size * 0.5
-          const grad = ctx.createRadialGradient(gh.x, gh.y, 0, gh.x, gh.y, glowR)
+          const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, glowR)
           grad.addColorStop(0, `rgba(220, 170, 80, ${0.15 * glowAlpha})`)
           grad.addColorStop(0.5, `rgba(200, 140, 60, ${0.06 * glowAlpha})`)
           grad.addColorStop(1, 'rgba(180, 120, 40, 0)')
           ctx.fillStyle = grad
           ctx.beginPath()
-          ctx.arc(gh.x, gh.y, glowR, 0, Math.PI * 2)
+          ctx.arc(rx, ry, glowR, 0, Math.PI * 2)
           ctx.fill()
         }
 
-        drawGlyph(gh.x, gh.y, hash, gh.size, alpha)
+        drawGlyph(rx, ry, hash, gh.size, alpha)
 
-        // Memory text fragment below glyph
+        // Memory text fragment below glyph (use renderX/Y for magnetic offset)
         if (mem.degradation < 0.9) {
           ctx.font = '11px "Cormorant Garamond", serif'
           ctx.fillStyle = `rgba(220, 210, 190, ${alpha * 0.4})`
           ctx.textAlign = 'center'
-          ctx.fillText(mem.currentText.slice(0, 20), gh.x, gh.y + gh.size * 0.6 + 8)
+          ctx.fillText(mem.currentText.slice(0, 20), rx, ry + gh.size * 0.6 + 8)
         }
       }
 
@@ -764,12 +1081,26 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       ctx.fillText(`${dead.length} memories at rest`, w / 2, h - 50)
     }
 
+    // Update and render expand animation
+    if (expandAnim) {
+      expandAnim.progress += dt / 1.5 // 1.5 second total duration
+      if (expandAnim.progress >= 1) {
+        expandAnim = null
+      } else {
+        renderExpandAnim(w, h)
+      }
+    }
+
     // Bone dust on top of everything
     renderDust()
 
     // Inscription at the bottom
     updateInscription(dt)
     renderInscription(w, h)
+
+    // Cultural inscription — separate cycle, positioned above main inscription
+    updateCulturalInscription(dt)
+    renderCulturalInscription(w, h)
 
     // Title
     ctx.font = '13px "Cormorant Garamond", serif'
@@ -881,14 +1212,27 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
           return
         }
 
-        // Check if clicking a glyph to honor it
+        // Check if clicking a glyph to honor it + expand + crack sound + dust
         if (hoveredGlyphIdx >= 0) {
           const gh = glyphHits[hoveredGlyphIdx]
           honoredIds.add(gh.memId)
           saveHonored()
           honorGlows.set(gh.memId, 2) // 2-second glow animation
-          spawnHonorBurst(gh.x, gh.y)
+          spawnHonorBurst(gh.renderX, gh.renderY)
+          spawnClickDust(gh.renderX, gh.renderY) // bone dust drifting down
+          playBoneCrackChime() // bone-crack + chime sound
           playBoneResonance()
+
+          // Trigger expand animation showing full text
+          expandAnim = {
+            glyphIdx: hoveredGlyphIdx,
+            progress: 0,
+            memId: gh.memId,
+            originalText: gh.originalText,
+            x: gh.renderX,
+            y: gh.renderY,
+            size: gh.size,
+          }
           return
         }
       })
@@ -964,6 +1308,9 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       fadeAudioOut()
+      stopRattle()
+      expandAnim = null
+      lastHoveredIdx = -1
       if (dripTimeout !== null) {
         clearTimeout(dripTimeout)
         dripTimeout = null
