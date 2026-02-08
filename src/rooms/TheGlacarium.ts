@@ -117,6 +117,8 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
     'the doomsday clock reads 85 seconds to midnight. the closest it has ever been.',
     '7,000 atoms placed in quantum superposition \u2014 the largest schr\u00F6dinger\u2019s cat ever observed',
     'in some materials, electrons stop being particles. topology persists after identity dissolves.',
+    'february 17, 2026: a ring of fire over antarctica. an eclipse that only penguins will witness.',
+    'snow drought: colorado and utah at record-low snowpack. the mountains forgot how to hold winter.',
   ]
   let inscriptionIndex = 0
   let inscriptionTimer = 0
@@ -825,6 +827,79 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
 
     // Aurora borealis — driven by Kp
     renderAurora(c, w, waterY)
+
+    // Eclipse awareness — ring of fire approaching Feb 17, 2026
+    {
+      const eclipseDate = new Date('2026-02-17T12:12:00Z').getTime()
+      const now = Date.now()
+      const daysUntil = (eclipseDate - now) / (1000 * 60 * 60 * 24)
+
+      // Visible within 14 days before and 3 days after
+      if (daysUntil > -3 && daysUntil < 14) {
+        // Intensity: grows as eclipse approaches, peaks on the day
+        const proximity = daysUntil <= 0
+          ? Math.max(0, 1 - Math.abs(daysUntil) / 3)  // fading after
+          : Math.max(0, 1 - daysUntil / 14)            // growing before
+        const intensity = proximity * proximity // quadratic — accelerates near the event
+
+        // Position: upper-right sky area
+        const ecx = w * 0.75
+        const ecy = waterY * 0.25
+
+        // The ring of fire — annular eclipse (dark center, bright ring)
+        const ringR = 18 + intensity * 8
+        const ringWidth = 2 + intensity * 3
+
+        // Outer glow
+        const glowR = ringR + 15 + intensity * 20
+        const glowGrad = c.createRadialGradient(ecx, ecy, ringR * 0.5, ecx, ecy, glowR)
+        glowGrad.addColorStop(0, `rgba(255, 140, 40, 0)`)
+        glowGrad.addColorStop(0.4, `rgba(255, 100, 20, ${0.02 * intensity})`)
+        glowGrad.addColorStop(0.7, `rgba(255, 60, 10, ${0.015 * intensity})`)
+        glowGrad.addColorStop(1, 'rgba(255, 40, 0, 0)')
+        c.fillStyle = glowGrad
+        c.beginPath()
+        c.arc(ecx, ecy, glowR, 0, Math.PI * 2)
+        c.fill()
+
+        // The ring itself — pulsing slightly
+        const pulse = 1 + Math.sin(time * 0.8) * 0.1 * intensity
+        c.strokeStyle = `rgba(255, 120, 30, ${0.08 + intensity * 0.15})`
+        c.lineWidth = ringWidth * pulse
+        c.beginPath()
+        c.arc(ecx, ecy, ringR, 0, Math.PI * 2)
+        c.stroke()
+
+        // Inner bright edge
+        c.strokeStyle = `rgba(255, 200, 100, ${0.04 + intensity * 0.1})`
+        c.lineWidth = 1
+        c.beginPath()
+        c.arc(ecx, ecy, ringR - ringWidth * 0.5, 0, Math.PI * 2)
+        c.stroke()
+
+        // Dark center (the moon's shadow)
+        const centerGrad = c.createRadialGradient(ecx, ecy, 0, ecx, ecy, ringR - ringWidth)
+        centerGrad.addColorStop(0, `rgba(3, 5, 15, ${0.5 * intensity})`)
+        centerGrad.addColorStop(1, `rgba(3, 5, 15, ${0.2 * intensity})`)
+        c.fillStyle = centerGrad
+        c.beginPath()
+        c.arc(ecx, ecy, ringR - ringWidth, 0, Math.PI * 2)
+        c.fill()
+
+        // Label
+        if (intensity > 0.1) {
+          c.font = '10px "Cormorant Garamond", serif'
+          c.textAlign = 'center'
+          const daysText = daysUntil <= 0
+            ? 'ring of fire \u2014 antarctica'
+            : daysUntil < 1
+              ? 'eclipse imminent'
+              : `eclipse in ${Math.ceil(daysUntil)} days`
+          c.fillStyle = `rgba(255, 140, 60, ${0.06 + intensity * 0.08})`
+          c.fillText(daysText, ecx, ecy + ringR + 18)
+        }
+      }
+    }
 
     // Stars
     for (let i = 0; i < 50; i++) {
