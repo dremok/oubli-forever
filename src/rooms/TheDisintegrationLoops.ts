@@ -75,7 +75,22 @@ interface TapeTear {
   labelDriftY: number
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'basinski finished recording on sept 11, 2001. the tapes crumbled as the towers fell.',
+  'iGluSnFR4: molecular sensor that eavesdrops on synaptic whispers. catching signals before they decay.',
+  'the great meme reset of 2026: collective amnesia as cultural strategy.',
+  'alois alzheimer dissected auguste deter\'s brain in 1906. plaques and tangles. memory as matter.',
+  'CRISPR memory reversal: silenced genes reactivated in aging brains. the loop restored.',
+  'the voyager golden record: 40 billion miles away and still playing. the loop that escaped.',
+  'cassette tape deterioration: oxide sheds with each play. the medium consumes itself.',
+  'consciousness agnosticism: we may never know if AI is conscious. the loop that questions itself.',
+  'the ship of theseus: if every plank is replaced, is it the same ship? if every note degrades?',
+  'fennell\'s wuthering heights (2026): love that disintegrates and reforms. gothic decay.',
+]
+
 export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1031,6 +1046,30 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
         if (canvas) canvas.style.cursor = 'default'
       }
       drawTears(c, w, h)
+    }
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(160, 140, 120, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 50 + li * 14)
     }
   }
 

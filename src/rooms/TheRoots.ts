@@ -127,7 +127,22 @@ function buildRootSystem(mem: StoredMemory, startX: number, startY: number): Roo
   return root
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the wood wide web: fungal mycorrhizal networks connecting trees underground. roots that speak.',
+  'hosnedlova echo at white cube (2026): living fungal art that mutates in real time.',
+  'CRISPR memory reversal: silenced genes reactivated in aging brains. roots regrown.',
+  'the 3600-year alerce trees of patagonia: root systems older than most civilizations.',
+  'rhizome (deleuze & guattari): knowledge without hierarchy. roots going everywhere at once.',
+  'the trembling giant: pando, a single aspen connected by roots. 80,000 years old.',
+  'iGluSnFR4: molecular sensor catching synaptic whispers. eavesdropping on neural roots.',
+  'peter wohlleben: "trees remember." root networks pass warnings, nutrients, memories.',
+  'episodic and semantic memory: the same brain networks. roots sharing the same soil.',
+  'defiantly analog: milan 2026 olympics planted real trees. roots instead of screens.',
+]
+
 export function createRootsRoom(deps: RootsDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1120,6 +1135,30 @@ export function createRootsRoom(deps: RootsDeps): Room {
       for (const tendril of tendrils) {
         if (tendril.visible) drawTendril(tendril, w, h)
       }
+    }
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(100, 140, 80, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
     }
   }
 

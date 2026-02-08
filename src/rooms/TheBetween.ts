@@ -76,7 +76,22 @@ function parseDoorColor(color: string): { r: number; g: number; b: number } {
   return { r: parseInt(m[1]), g: parseInt(m[2]), b: parseInt(m[3]) }
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the bardo: tibetan intermediate state between death and rebirth. liminal consciousness.',
+  'isaac julien\'s five-screen metamorphosis (2026): identity fragmenting across parallel views.',
+  'backrooms: internet folklore about infinite liminal spaces behind reality.',
+  'mark fisher\'s hauntology: the present haunted by futures that never arrived.',
+  'the great meme reset of 2026: culture caught between irony and sincerity.',
+  'jon hamm dissociation trend (2026): the aesthetics of being between yourself and yourself.',
+  'victor turner: liminality is the threshold between what was and what will be.',
+  'fennel\'s wuthering heights (2026): love caught between life and death, moor and manor.',
+  'consciousness agnosticism (cambridge 2026): the space between knowing and not knowing if AI thinks.',
+  'the wind telephone in otsuchi: speaking between the living and the dead.',
+]
+
 export function createBetweenRoom(deps: BetweenDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1064,6 +1079,30 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 170, ${flicker * 0.05})`
     ctx.fillText('click a door to enter \u00b7 scroll to walk', w / 2, h * 0.92)
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 22) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(200, 190, 170, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
   }
 
   return {

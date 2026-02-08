@@ -1304,6 +1304,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
     if (canvas) {
       canvas.style.cursor = hoveredNode ? 'pointer' : 'default'
     }
+
   }
 
   return {

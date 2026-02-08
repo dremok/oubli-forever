@@ -1065,6 +1065,7 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       ctx.textBaseline = 'alphabetic'
       ctx.fillText('no memories to erode', w / 2, h - 48)
     }
+
   }
 
   return {

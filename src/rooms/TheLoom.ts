@@ -61,7 +61,22 @@ function seededRandom(seed: number): () => number {
   }
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the jacquard loom (1804): punch cards controlling thread patterns. the first binary programming.',
+  'ada lovelace saw the analytical engine as a jacquard loom weaving algebraic patterns. code as textile.',
+  'anni albers at the bauhaus: weaving as a language parallel to painting. thread as line, fabric as field.',
+  'the bayeux tapestry: 70 meters of embroidered history. conquest remembered in wool and linen.',
+  'penelope wove by day and unwove by night. twenty years of deliberate forgetting, disguised as patience.',
+  'navajo weavers intentionally leave a spirit line — a deliberate flaw — so the weaver\'s soul can escape.',
+  'chiharu shiota fills galleries with webs of red thread. beds, shoes, keys — all tangled in connection.',
+  'the fates spin, measure, and cut the thread of life. memory as textile, destiny as weaving.',
+  'shape-shifting molecular devices: matter that remembers, thinks, learns. each thread a computing element.',
+  'the great meme reset of 2026: culture trying to unweave the brainrot pattern and start fresh.',
+]
+
 export function createLoomRoom(deps: LoomDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -836,6 +851,30 @@ export function createLoomRoom(deps: LoomDeps): Room {
         ctx.textAlign = 'center'
         ctx.fillText(nt.label, looseEndX, looseEndY + 16)
       }
+    }
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(180, 140, 100, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
     }
   }
 

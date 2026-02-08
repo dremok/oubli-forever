@@ -1241,6 +1241,7 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     if ((Date.now() - cacheTimestamp) > CACHE_DURATION && !loading) {
       fetchWeather()
     }
+
   }
 
   return {

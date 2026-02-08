@@ -47,7 +47,22 @@ const PATTERNS = {
   ],
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'conway died of covid in 2020. the game of life outlived its creator.',
+  'rule 110 is turing-complete. simple rules contain infinite computation.',
+  'italian brainrot 2026: AI-generated nonsense as folk art. emergence from noise.',
+  'gliders: the simplest self-propagating pattern. five cells that walk forever.',
+  'wolfram claims the universe is a cellular automaton. rules all the way down.',
+  'the doomsday clock: 85 seconds to midnight. a simple counter for complex annihilation.',
+  'methuselah patterns: small seeds that take thousands of generations to stabilize.',
+  'garden of eden: patterns with no predecessor. states that could not have evolved.',
+  'block cellular automaton: time is discrete, space is discrete, life is quantized.',
+  'perseverance AI drive: first rover drive planned entirely by AI. automata on mars.',
+]
+
 export function createAutomatonRoom(deps?: AutomatonDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -778,6 +793,30 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     // Auto-reseed if everything dies
     if (liveCells === 0 && !paused) {
       seedRandom(0.05)
+    }
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(200, 120, 180, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
     }
   }
 

@@ -66,7 +66,22 @@ interface FallingObject {
   splashed: boolean
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the cenotes of yucatan: sacred wells to the maya underworld. offerings dropped, never retrieved.',
+  'artesian pressure: water that rises on its own. memory surfacing uninvited.',
+  'the ogallala aquifer: 6 million years to fill, decades to drain. depth as time.',
+  'wishing wells: coins thrown into darkness. desire exchanged for depth.',
+  'joseph beuys performed in a well. art descending into the earth.',
+  'the aquifer beneath mexico city collapses. the city sinks into its own memory.',
+  'transcranial ultrasound (MIT 2026): probing consciousness through the skull. sound dropped into the well of the mind.',
+  'the wind telephone in otsuchi: words dropped into the disconnect. no echo, only speaking.',
+  'self-destructing plastic (rutgers 2026): even the bucket decays. the well outlasts the rope.',
+  'the great meme reset: culture dropped into a well of collective forgetting.',
+]
+
 export function createWellRoom(deps: WellDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -750,6 +765,30 @@ export function createWellRoom(deps: WellDeps): Room {
 
     // Condensation droplets on screen edges — moisture in the air
     updateAndDrawCondensation()
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 23) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(100, 140, 200, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
   }
 
   function wrapText(text: string, maxChars: number): string[] {

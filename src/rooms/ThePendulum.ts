@@ -32,7 +32,22 @@ interface PendulumState {
   decay: number
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'foucault\'s pendulum proves the earth rotates. the floor turns, the pendulum stays true.',
+  'lissajous figures: the visual signature of two frequencies in conversation.',
+  'polar vortex split, feb 2026: the atmosphere\'s pendulum swinging to extremes.',
+  'the pit and the pendulum: poe\'s blade swings closer with each pass. time as threat.',
+  'harmonograph: victorian drawing machines that made ephemeral art from coupled oscillations.',
+  'huygens\' clocks: two pendulums on the same wall synchronize. sympathy between machines.',
+  '7000-atom schrödinger\'s cat: the largest quantum pendulum ever, swinging in two states at once.',
+  'the metronome: tempo is just a pendulum counting time. music is regulated swing.',
+  'galileo watched a chandelier swing in pisa cathedral. isochronism: big swings and small take the same time.',
+  'hidden quantum geometry: the quantum metric bends electrons like pendulums bend space.',
+]
+
 export function createPendulumRoom(deps?: PendulumDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -763,6 +778,30 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     ctx.fillStyle = 'rgba(180, 160, 200, 0.04)'
     ctx.textAlign = 'center'
     ctx.fillText('each pattern is temporary. you cannot save them.', w / 2, h - 8)
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 22) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(180, 160, 200, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
   }
 
   return {

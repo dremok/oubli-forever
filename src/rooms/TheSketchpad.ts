@@ -43,7 +43,22 @@ interface SketchpadDeps {
   switchTo?: (name: string) => void
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'anti-AI movement: 45% of creative directors now reject AI images. guaranteed human premium.',
+  'cy twombly drew in the dark during army service. scribbles became high art.',
+  'the etch-a-sketch was invented in 1960. shake to erase. no undo, no layers.',
+  'wabi-sabi TikTok 2026: imperfection as beauty, decay as aesthetic, the sketch over the painting.',
+  'agnes martin drew pencil grids on canvas for forty years. trembling lines. the hand is honest.',
+  'basquiat covered his paintings with words then crossed them out. erasure as emphasis.',
+  'charli XCX "the moment" (2026): capturing what can\'t be captured. the drawing dissolves.',
+  'cave paintings at lascaux: 17,000 years of drawings that were never meant to last.',
+  'the great meme reset: culture sketching itself, erasing itself, starting over in 2026.',
+  'henri matisse: "drawing is like making an expressive gesture with the advantage of permanence." but here, no permanence.',
+]
+
 export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -690,6 +705,30 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     c.textAlign = 'center'
     c.fillText('draw with light \u00B7 scroll to change color \u00B7 shift+scroll for width \u00B7 S for symmetry \u00B7 double-click to clear', w / 2, h - 8)
     c.fillText('trace a sigil below to travel', w / 2, h - 4 + 14)
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(180, 160, 200, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 70 + li * 14)
+    }
   }
 
   function startStroke(x: number, y: number) {

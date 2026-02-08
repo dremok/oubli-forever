@@ -79,7 +79,22 @@ interface CurrentParticle {
   size: number
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'episodic and semantic memory share the same brain networks. all water mingles in the aquifer.',
+  'cenário: shape-shifting molecular devices. matter that remembers its former shape beneath the surface.',
+  'the ogallala aquifer took 6 million years to fill. we are draining it in decades.',
+  'phreatic zone: the saturated layer where all pore spaces are filled. memories compressed into water.',
+  'karst topography: limestone dissolved by water creates caves, sinkholes, underground rivers.',
+  'archimedes in the bath. eureka rising through water. knowledge surfacing from below.',
+  'the aquifer beneath mexico city is collapsing. the city sinks 50cm per year into its own memory.',
+  'cenotes: sacred wells of the maya. portals to xibalba, the underworld where the dead dissolve.',
+  'artesian wells: water under pressure rises on its own. memory that surfaces uninvited.',
+  'the great meme reset: collective culture trying to wash itself clean, forgetting what it was.',
+]
+
 export function createAquiferRoom(deps: AquiferDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -993,6 +1008,30 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     // Update audio based on cursor depth and speed
     updateAudioForDepth()
     updateSwish()
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 23) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(60, 140, 160, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
   }
 
   // Draw a single fragment with its glow
