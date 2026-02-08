@@ -44,6 +44,7 @@ export class PresenceHeatmap {
   private animating = false
   private frameId = 0
   private roomCheck: (() => string) | null = null
+  private typingCheck: (() => boolean) | null = null
 
   constructor() {
     this.canvas = document.createElement('canvas')
@@ -68,6 +69,7 @@ export class PresenceHeatmap {
           document.activeElement?.tagName !== 'INPUT' &&
           document.activeElement?.tagName !== 'TEXTAREA') {
         if (this.roomCheck && this.roomCheck() !== 'void') return
+        if (this.typingCheck?.()) return
         this.toggle()
       }
     })
@@ -96,6 +98,10 @@ export class PresenceHeatmap {
   /** Set a function that returns the current room name */
   setRoomCheck(check: () => string) {
     this.roomCheck = check
+  }
+
+  setTypingCheck(check: () => boolean) {
+    this.typingCheck = check
   }
 
   start() {

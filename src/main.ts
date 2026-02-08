@@ -150,6 +150,9 @@ const forgettingMachine = new ForgettingMachine(
   (text) => processNewMemory(text),
 )
 
+// Wire typing checks — features a/m/h/t don't toggle while typing
+asciiVoid.setTypingCheck(() => forgettingMachine.hasActiveInput())
+
 // Connect the heartbeat to the void and drone
 heartbeat.onPulse((intensity) => {
   drone.pulse(intensity * 0.5)
@@ -205,6 +208,7 @@ extinction.start()
 
 // Presence Heatmap — your attention mapped, slowly cooling (press 'h' to see)
 const heatmap = new PresenceHeatmap()
+heatmap.setTypingCheck(() => forgettingMachine.hasActiveInput())
 heatmap.start()
 
 // Session Clock — time that forgets itself
@@ -296,6 +300,7 @@ const resonance = new ResonanceMap()
 // Particle Trails — press 't' for comet-like afterimages
 const trails = new ParticleTrails()
 trails.setSource(canvas)
+trails.setTypingCheck(() => forgettingMachine.hasActiveInput())
 
 // Circadian Void — the void breathes with the Earth's day/night cycle
 const circadian = new CircadianVoid()
