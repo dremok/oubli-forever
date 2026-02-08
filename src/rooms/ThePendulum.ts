@@ -129,6 +129,24 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
   let catalogFadeStart = 0
   let lastFreqRatio: [number, number] = [1, 1] // store for classification
 
+  // Pattern gallery — thumbnails of completed patterns
+  interface GalleryEntry {
+    imageData: ImageData
+    ratio: [number, number]
+    label: string
+    hue: number
+  }
+  const patternGallery: GalleryEntry[] = []
+  const MAX_GALLERY = 6
+
+  // Resonance discovery — special ratios produce a brief visual/audio reward
+  const GOLDEN_RATIOS: [number, number][] = [[1, 1], [2, 3], [3, 4], [5, 8]]
+  let resonanceFlash = 0
+  let resonanceLabel = ''
+
+  // Pattern counter
+  let patternsCreated = 0
+
   // --- Audio ---
 
   async function initAudio() {
@@ -619,6 +637,36 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
           ghostAlpha = 0.08 // start very faint
           ghostCaptured = true
 
+          // Save to pattern gallery (small thumbnail)
+          const thumbSize = 64
+          const thumbCanvas = document.createElement('canvas')
+          thumbCanvas.width = thumbSize
+          thumbCanvas.height = thumbSize
+          const thumbCtx = thumbCanvas.getContext('2d')
+          if (thumbCtx) {
+            thumbCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, thumbSize, thumbSize)
+            const imgData = thumbCtx.getImageData(0, 0, thumbSize, thumbSize)
+            const label = classifyPattern(lastFreqRatio)
+            patternGallery.push({
+              imageData: imgData,
+              ratio: [...lastFreqRatio] as [number, number],
+              label,
+              hue,
+            })
+            if (patternGallery.length > MAX_GALLERY) patternGallery.shift()
+          }
+          patternsCreated++
+
+          // Check for golden ratio resonance
+          for (const [ga, gb] of GOLDEN_RATIOS) {
+            if (lastFreqRatio[0] === ga && lastFreqRatio[1] === gb) {
+              resonanceFlash = 1.0
+              resonanceLabel = ga === gb ? 'unison — perfect circle' :
+                `${ga}:${gb} — ${ga === 5 && gb === 8 ? 'golden section' : 'harmonic resonance'}`
+              break
+            }
+          }
+
           // Show pattern catalog label
           catalogLabel = classifyPattern(lastFreqRatio)
           catalogAlpha = 0.5
@@ -801,6 +849,67 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     if (insLine) insLines.push(insLine)
     for (let li = 0; li < insLines.length; li++) {
       ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
+
+    // === RESONANCE FLASH ===
+    if (resonanceFlash > 0.01) {
+      // Golden ring expanding from center
+      const ringR = (1 - resonanceFlash) * Math.min(w, h) * 0.5
+      const ringAlpha = resonanceFlash * 0.3
+      ctx.strokeStyle = `hsla(45, 70%, 70%, ${ringAlpha})`
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(cx, cy, ringR, 0, Math.PI * 2)
+      ctx.stroke()
+      // Label
+      ctx.font = '14px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(255, 215, 0, ${resonanceFlash * 0.5})`
+      ctx.textAlign = 'center'
+      ctx.fillText(resonanceLabel, cx, cy + 50)
+      resonanceFlash *= 0.985
+    }
+
+    // === PATTERN GALLERY (top-left thumbnails) ===
+    if (patternGallery.length > 0) {
+      const thumbSize = 48
+      const pad = 6
+      const startX = 12
+      const startY = 40
+
+      for (let gi = 0; gi < patternGallery.length; gi++) {
+        const entry = patternGallery[gi]
+        const gx = startX
+        const gy = startY + gi * (thumbSize + pad)
+
+        // Draw thumbnail
+        const tempCanvas = document.createElement('canvas')
+        tempCanvas.width = 64
+        tempCanvas.height = 64
+        const tempCtx = tempCanvas.getContext('2d')
+        if (tempCtx) {
+          tempCtx.putImageData(entry.imageData, 0, 0)
+          ctx.globalAlpha = 0.15
+          ctx.drawImage(tempCanvas, gx, gy, thumbSize, thumbSize)
+          ctx.globalAlpha = 1.0
+        }
+
+        // Border
+        ctx.strokeStyle = `hsla(${entry.hue}, 30%, 50%, 0.06)`
+        ctx.lineWidth = 0.5
+        ctx.strokeRect(gx, gy, thumbSize, thumbSize)
+
+        // Label
+        ctx.font = '8px monospace'
+        ctx.fillStyle = `hsla(${entry.hue}, 30%, 60%, 0.08)`
+        ctx.textAlign = 'left'
+        ctx.fillText(entry.label, gx, gy + thumbSize + 8)
+      }
+
+      // Pattern count
+      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.fillStyle = 'rgba(180, 160, 200, 0.05)'
+      ctx.textAlign = 'left'
+      ctx.fillText(`${patternsCreated} patterns created`, startX, startY - 8)
     }
   }
 
