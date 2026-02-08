@@ -124,7 +124,7 @@ export class MemoryArchive {
         <div style="font-size: 14px; color: rgba(255, 20, 147, 0.4); font-weight: 300; letter-spacing: 2px;">
           memory archive
         </div>
-        <div style="font-size: 11px; color: rgba(255, 215, 0, 0.15); margin-top: 4px; font-style: italic;">
+        <div style="font-size: 13px; color: rgba(255, 215, 0, 0.15); margin-top: 4px; font-style: italic;">
           ${this.memories.length} memories
         </div>
       </div>
@@ -159,7 +159,7 @@ export class MemoryArchive {
             display: flex;
             justify-content: space-between;
             margin-top: 5px;
-            font-size: 10px;
+            font-size: 12px;
             color: rgba(255, 255, 255, 0.12);
           ">
             <span>${date.toLocaleDateString()}</span>

@@ -77,7 +77,7 @@ export class SessionClock {
 
     // Add a label below that also degrades
     const label = this.degradeText('time in the void', degradation * 0.7)
-    this.element.innerHTML += `<br><span style="font-size: 9px; font-family: 'Cormorant Garamond', serif; letter-spacing: 2px; opacity: 0.6;">${label}</span>`
+    this.element.innerHTML += `<br><span style="font-size: 12px; font-family: 'Cormorant Garamond', serif; letter-spacing: 2px; opacity: 0.6;">${label}</span>`
   }
 
   private degradeTime(timeStr: string, degradation: number): string {

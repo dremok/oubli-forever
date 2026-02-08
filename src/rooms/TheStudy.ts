@@ -702,7 +702,7 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
     const labelSpan = document.createElement('div')
     labelSpan.style.cssText = `
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 10px;
+      font-weight: 300; font-size: 12px;
       letter-spacing: 2px; text-transform: lowercase;
       font-style: italic;
       color: ${config.baseColor};
@@ -713,7 +713,7 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
     const descSpan = document.createElement('div')
     descSpan.style.cssText = `
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 8px;
+      font-weight: 300; font-size: 11px;
       letter-spacing: 1px;
       color: rgba(255, 255, 255, 0.06);
       margin-top: 4px;
@@ -830,7 +830,7 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
         width: 560px; max-width: 90vw;
         margin-top: 16px;
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 11px;
+        font-weight: 300; font-size: 13px;
       `
 
       countEl = document.createElement('div')
@@ -886,7 +886,7 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       quoteAuthorEl = document.createElement('div')
       quoteAuthorEl.style.cssText = `
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 10px;
+        font-weight: 300; font-size: 12px;
         font-style: italic;
         color: rgba(180, 160, 120, 0.2);
         letter-spacing: 2px;

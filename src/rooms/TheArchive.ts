@@ -673,7 +673,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       const meta = document.createElement('div')
       meta.style.cssText = `
         font-family: 'Courier New', monospace;
-        font-size: 10px;
+        font-size: 12px;
         color: rgba(180, 160, 120, 0.2);
         margin-bottom: 4px;
       `
@@ -689,7 +689,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         const subjectsEl = document.createElement('div')
         subjectsEl.style.cssText = `
           font-family: 'Cormorant Garamond', serif;
-          font-size: 10px; font-style: italic;
+          font-size: 12px; font-style: italic;
           color: rgba(180, 160, 120, 0.15);
           line-height: 1.4;
         `
@@ -845,7 +845,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         const chip = document.createElement('span')
         chip.style.cssText = `
           font-family: 'Courier New', monospace;
-          font-size: 10px;
+          font-size: 12px;
           color: rgba(180, 160, 120, 0.25);
           border: 1px solid rgba(180, 160, 120, 0.08);
           padding: 4px 10px;
@@ -873,7 +873,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       const hint = document.createElement('div')
       hint.style.cssText = `
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 10px; font-style: italic;
+        font-weight: 300; font-size: 12px; font-style: italic;
         color: rgba(180, 160, 120, 0.1);
         margin-bottom: 40px;
         text-align: center;
@@ -913,7 +913,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         const isRestricted = drawer.restricted === true
         el.style.cssText = `
           font-family: 'Courier New', monospace;
-          font-size: 10px;
+          font-size: 12px;
           letter-spacing: 1.5px;
           color: ${isRestricted ? 'rgba(160, 100, 80, 0)' : 'rgba(180, 160, 120, 0.18)'};
           background: ${isRestricted ? 'rgba(60, 20, 15, 0)' : 'rgba(30, 25, 18, 0.6)'};
@@ -934,7 +934,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         const hintEl = document.createElement('span')
         hintEl.style.cssText = `
           font-family: 'Cormorant Garamond', serif;
-          font-size: 9px;
+          font-size: 12px;
           font-style: italic;
           color: rgba(180, 160, 120, 0);
           margin-left: 6px;

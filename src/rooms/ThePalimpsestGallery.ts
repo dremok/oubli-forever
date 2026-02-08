@@ -727,7 +727,7 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
             position: absolute; ${p.pos}
             pointer-events: auto; cursor: pointer;
             font-family: 'Cormorant Garamond', serif;
-            font-size: 8px; letter-spacing: 1.5px;
+            font-size: 11px; letter-spacing: 1.5px;
             text-transform: uppercase;
             color: rgba(${p.color}, 0.05);
             transition: color 0.5s ease, text-shadow 0.5s ease;

@@ -292,7 +292,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
       <div style="font-size: 13px; line-height: 1.5; margin-bottom: 8px; color: rgba(200, 170, 120, 0.6);">
         ${mem.currentText || '<em style="opacity:0.3">dissolved</em>'}
       </div>
-      <div style="font-size: 9px; letter-spacing: 1px; color: rgba(180, 140, 100, 0.25); display: flex; gap: 16px;">
+      <div style="font-size: 12px; letter-spacing: 1px; color: rgba(180, 140, 100, 0.25); display: flex; gap: 16px;">
         <span>${degradPct}% degraded</span>
         <span>${ageDays} day${ageDays !== 1 ? 's' : ''} old</span>
       </div>

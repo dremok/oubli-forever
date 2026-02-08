@@ -47,7 +47,7 @@ export class CircadianVoid {
       position: fixed; top: 16px; left: 16px;
       z-index: 90; pointer-events: none;
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 11px;
+      font-weight: 300; font-size: 13px;
       letter-spacing: 1px;
       transition: color 30s ease, opacity 30s ease;
     `

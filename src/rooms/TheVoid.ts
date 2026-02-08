@@ -116,7 +116,7 @@ export function createVoidRoom(deps?: VoidDeps): Room {
         cursor: pointer;
         font-family: 'Cormorant Garamond', serif;
         font-weight: 300;
-        font-size: 11px;
+        font-size: 13px;
         letter-spacing: 3px;
         text-transform: lowercase;
         color: ${style.color.replace('VAR', '0')};

@@ -73,7 +73,7 @@ export class RoomManager {
       opacity: 0.08;
       transition: opacity 0.8s ease;
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 11px;
+      font-weight: 300; font-size: 13px;
       letter-spacing: 2px; text-transform: lowercase;
     `
     this.passageBar.addEventListener('mouseenter', () => {
@@ -90,7 +90,7 @@ export class RoomManager {
       position: fixed; top: 12px; right: 16px;
       z-index: 700; pointer-events: none;
       font-family: 'Cormorant Garamond', serif;
-      font-weight: 300; font-size: 10px;
+      font-weight: 300; font-size: 12px;
       letter-spacing: 2px; text-transform: lowercase;
       color: rgba(255, 215, 0, 0.12);
     `
@@ -215,7 +215,7 @@ export class RoomManager {
         padding: 4px 6px 4px 4px;
         transition: color 0.4s ease;
         color: rgba(255, 215, 0, 0.2);
-        font-size: 11px;
+        font-size: 13px;
         white-space: nowrap;
       `
       backBtn.textContent = `\u2190 ${getRoomLabel(prevRoom)}`
@@ -249,7 +249,7 @@ export class RoomManager {
           color: rgba(255, 215, 0, 0.08);
           margin: 0 6px;
           pointer-events: none;
-          font-size: 8px;
+          font-size: 11px;
         `
         sep.textContent = '\u00B7'
         this.passageBar.appendChild(sep)
@@ -292,7 +292,7 @@ export class RoomManager {
         padding: 4px 4px;
         transition: color 0.4s ease;
         color: rgba(255, 215, 0, 0.15);
-        font-size: 11px;
+        font-size: 13px;
         white-space: nowrap;
       `
       compass.textContent = '\u25CE map'
@@ -316,7 +316,7 @@ export class RoomManager {
       color: rgba(255, 215, 0, 0.06);
       margin: 0 4px;
       pointer-events: none;
-      font-size: 10px;
+      font-size: 12px;
     `
     div.textContent = '\u2502'
     this.passageBar.appendChild(div)

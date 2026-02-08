@@ -478,7 +478,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       const hint = document.createElement('div')
       hint.style.cssText = `
         font-family: monospace;
-        font-size: 11px;
+        font-size: 13px;
         color: rgba(255, 215, 0, 0.2);
         letter-spacing: 2px;
         margin-bottom: 8px;
@@ -501,7 +501,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
         display: flex; align-items: center; gap: 8px;
         margin-top: 16px;
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 11px;
+        font-weight: 300; font-size: 13px;
         color: rgba(255, 255, 255, 0.15);
         letter-spacing: 1px;
       `
@@ -521,7 +521,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
           border-radius: 2px;
           color: rgba(255, 255, 255, 0.15);
           font-family: monospace;
-          font-size: 11px;
+          font-size: 13px;
           padding: 4px 10px;
           cursor: pointer;
           transition: color 0.3s ease, border-color 0.3s ease;

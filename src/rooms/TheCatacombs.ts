@@ -593,7 +593,7 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
         const depthLabel = document.createElement('div')
         depthLabel.style.cssText = `
           font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 10px; font-style: italic;
+          font-weight: 300; font-size: 12px; font-style: italic;
           color: rgba(180, 160, 120, 0.12);
           letter-spacing: 2px;
         `
@@ -622,7 +622,7 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
           } else if (entry.style === 'code') {
             el.style.cssText += `
               font-family: 'Courier New', monospace;
-              font-size: 11px;
+              font-size: 13px;
               color: rgba(100, 180, 80, 0.25);
               letter-spacing: 0;
               opacity: 0.7;
@@ -630,7 +630,7 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
           } else if (entry.style === 'url') {
             el.style.cssText += `
               font-family: 'Courier New', monospace;
-              font-size: 11px;
+              font-size: 13px;
               color: rgba(100, 140, 200, 0.25);
               text-decoration: line-through;
             `
@@ -690,7 +690,7 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
         const ossuaryLink = document.createElement('div')
         ossuaryLink.style.cssText = `
           font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 11px;
+          font-weight: 300; font-size: 13px;
           color: rgba(220, 210, 190, 0.08);
           letter-spacing: 2px;
           cursor: pointer;
@@ -721,7 +721,7 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
           const el = document.createElement('div')
           el.style.cssText = `
             font-family: 'Cormorant Garamond', serif;
-            font-weight: 300; font-size: 10px;
+            font-weight: 300; font-size: 12px;
             color: rgba(180, 160, 120, 0.06);
             letter-spacing: 2px;
             cursor: pointer;

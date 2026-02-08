@@ -224,7 +224,7 @@ export class TimeCapsule {
     // Escape hint
     const hint = document.createElement('div')
     hint.style.cssText = `
-      font-family: monospace; font-size: 9px;
+      font-family: monospace; font-size: 12px;
       color: rgba(255, 255, 255, 0.08);
       letter-spacing: 2px;
     `

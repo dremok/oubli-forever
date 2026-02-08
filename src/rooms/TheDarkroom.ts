@@ -647,7 +647,7 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
         background: rgba(0, 0, 0, 0.7);
         padding: 6px 8px;
         font-family: 'Cormorant Garamond', serif;
-        font-size: 10px; font-style: italic;
+        font-size: 12px; font-style: italic;
         color: rgba(200, 100, 100, 0.5);
         opacity: 0; transition: opacity 0.3s ease;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1139,7 +1139,7 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
           labelDiv.className = 'tray-label'
           labelDiv.style.cssText = `
             font-family: 'Cormorant Garamond', serif;
-            font-size: 9px; font-style: italic;
+            font-size: 12px; font-style: italic;
             color: rgba(200, 100, 100, 0.15);
             letter-spacing: 1px;
             opacity: 0.3;
@@ -1175,7 +1175,7 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       const galleryLabel = document.createElement('div')
       galleryLabel.style.cssText = `
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 11px;
+        font-weight: 300; font-size: 13px;
         color: rgba(200, 100, 100, 0.2);
         letter-spacing: 3px; text-transform: uppercase;
         margin-bottom: 12px;

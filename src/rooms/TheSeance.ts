@@ -257,7 +257,7 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       if (msg.role === 'user') {
         const label = document.createElement('div')
         label.style.cssText = `
-          font-family: monospace; font-size: 9px;
+          font-family: monospace; font-size: 12px;
           color: rgba(255, 215, 0, 0.15);
           margin-top: 4px;
         `
@@ -266,7 +266,7 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       } else {
         const label = document.createElement('div')
         label.style.cssText = `
-          font-family: monospace; font-size: 9px;
+          font-family: monospace; font-size: 12px;
           color: rgba(180, 160, 220, 0.15);
           margin-top: 4px;
         `
@@ -1166,7 +1166,7 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       title.style.cssText = `
         position: absolute; top: 22%;
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 11px;
+        font-weight: 300; font-size: 13px;
         color: rgba(180, 160, 220, 0.2);
         letter-spacing: 4px;
         text-transform: uppercase;
@@ -1224,7 +1224,7 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       // Hint
       const hint = document.createElement('div')
       hint.style.cssText = `
-        font-family: monospace; font-size: 9px;
+        font-family: monospace; font-size: 12px;
         color: rgba(255, 255, 255, 0.08);
         margin-top: 12px;
         letter-spacing: 2px;
@@ -1297,7 +1297,7 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         betweenLink = document.createElement('div')
         betweenLink.style.cssText = `
           font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 11px; font-style: italic;
+          font-weight: 300; font-size: 13px; font-style: italic;
           color: rgba(180, 160, 220, 0);
           letter-spacing: 2px;
           cursor: pointer;

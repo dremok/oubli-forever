@@ -145,7 +145,7 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       ">${memory.currentText}</div>
       <div style="
         color: rgba(255, 215, 0, 0.25);
-        font-size: 11px;
+        font-size: 13px;
         letter-spacing: 2px;
         line-height: 2;
       ">
@@ -267,7 +267,7 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       countEl.style.cssText = `
         font-family: 'Cormorant Garamond', serif;
         font-weight: 300;
-        font-size: 11px;
+        font-size: 13px;
         color: rgba(255, 255, 255, 0.1);
         letter-spacing: 2px;
         margin-top: 8px;
@@ -497,7 +497,7 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
           label.style.cssText = `
             position: absolute; ${m.labelPos}
             font-family: 'Cormorant Garamond', serif;
-            font-weight: 300; font-size: 10px;
+            font-weight: 300; font-size: 12px;
             letter-spacing: 2px; white-space: nowrap;
             color: rgba(255, 255, 255, 0.5);
             opacity: 0;
@@ -654,7 +654,7 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
           <div style="
             font-family: 'Cormorant Garamond', serif;
             font-weight: 300;
-            font-size: 10px;
+            font-size: 12px;
             color: rgba(200, 210, 255, 0.1);
             margin-top: 6px;
             letter-spacing: 2px;

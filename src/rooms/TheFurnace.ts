@@ -864,7 +864,7 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       const burnBtn = document.createElement('span')
       burnBtn.style.cssText = `
         font-family: monospace;
-        font-size: 9px;
+        font-size: 12px;
         color: rgba(255, 60, 10, 0.25);
         cursor: pointer;
         padding: 2px 8px;
@@ -935,7 +935,7 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       const panelTitle = document.createElement('div')
       panelTitle.style.cssText = `
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 11px;
+        font-weight: 300; font-size: 13px;
         color: rgba(255, 150, 80, 0.2);
         letter-spacing: 3px;
         text-transform: uppercase;
@@ -969,7 +969,7 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
         position: absolute;
         bottom: 20px; left: 0; right: 0;
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 9px;
+        font-weight: 300; font-size: 12px;
         color: rgba(255, 100, 50, 0.08);
         text-align: center;
         z-index: 2;

@@ -1046,7 +1046,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
             position: absolute; ${p.pos}
             pointer-events: auto; cursor: pointer;
             font-family: 'Cormorant Garamond', serif;
-            font-style: italic; font-size: 9px;
+            font-style: italic; font-size: 12px;
             color: rgba(${p.color}, 0.05);
             transition: color 0.6s ease, text-shadow 0.6s ease, background 0.6s ease, border-color 0.6s ease;
             padding: 8px 14px; z-index: 10;
@@ -1060,7 +1060,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
           // Glyph element — doorway icon
           const glyphSpan = document.createElement('span')
           glyphSpan.style.cssText = `
-            font-style: normal; font-size: 11px;
+            font-style: normal; font-size: 13px;
             opacity: 0.6;
           `
           glyphSpan.textContent = p.glyph

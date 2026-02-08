@@ -42,7 +42,7 @@ export class VisitorLog {
       z-index: 90;
       font-family: 'Cormorant Garamond', serif;
       font-weight: 300;
-      font-size: 11px;
+      font-size: 13px;
       color: rgba(255, 215, 0, 0.12);
       line-height: 1.6;
       pointer-events: none;

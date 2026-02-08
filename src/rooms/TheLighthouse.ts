@@ -1134,7 +1134,7 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
           position: absolute; bottom: 40px; left: 50%;
           transform: translateX(-50%);
           font-family: 'Cormorant Garamond', serif;
-          font-size: 10px; font-style: italic;
+          font-size: 12px; font-style: italic;
           letter-spacing: 2px;
           color: rgba(80, 120, 180, 0.4);
           cursor: pointer; pointer-events: none;

@@ -1203,7 +1203,7 @@ export function createWellRoom(deps: WellDeps): Room {
       const panelTitle = document.createElement('div')
       panelTitle.style.cssText = `
         font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 11px;
+        font-weight: 300; font-size: 13px;
         color: rgba(120, 160, 220, 0.15);
         letter-spacing: 3px;
         text-transform: uppercase;
@@ -1237,7 +1237,7 @@ export function createWellRoom(deps: WellDeps): Room {
           position: absolute;
           bottom: 50px; left: 0; right: 0;
           font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 11px; font-style: italic;
+          font-weight: 300; font-size: 13px; font-style: italic;
           color: rgba(60, 120, 200, 0);
           text-align: center;
           cursor: pointer;
