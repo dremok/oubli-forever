@@ -109,10 +109,10 @@ export class GentleGuide {
       this.visible = true
       this.overlay.style.opacity = '1'
 
-      // Auto-hide after 12 seconds
+      // Auto-hide after 20 seconds
       this.timeout = window.setTimeout(() => {
         this.hide()
-      }, 12000)
+      }, 20000)
     }, 5000)
   }
 

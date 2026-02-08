@@ -103,6 +103,12 @@ export class ForgettingMachine {
       if (e.key === 'Escape') {
         this.inputText = ''
         this.showPlaceholder = true
+        // Stop render loop and clear canvas to fully exit typing mode
+        if (this.animating && this.letters.length === 0) {
+          this.animating = false
+          cancelAnimationFrame(this.frameId)
+          this.ctx.clearRect(0, 0, this.width, this.height)
+        }
         return
       }
 
