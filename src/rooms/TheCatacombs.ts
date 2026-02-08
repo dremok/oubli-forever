@@ -22,6 +22,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface CatacombLayer {
   era: string
@@ -122,10 +123,355 @@ interface CatacombsDeps {
   switchTo?: (name: string) => void
 }
 
+// --- Dust particle type ---
+interface DustMote {
+  el: HTMLElement
+  x: number
+  y: number
+  vx: number
+  vy: number
+  opacity: number
+  life: number
+  maxLife: number
+}
+
 export function createCatacombsRoom(deps: CatacombsDeps): Room {
   let overlay: HTMLElement | null = null
   let active = false
   let autoScrollId: number | null = null
+
+  // --- Audio state ---
+  let audioCtxRef: AudioContext | null = null
+  let audioMaster: GainNode | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneFilter: BiquadFilterNode | null = null
+  let dripTimeout: ReturnType<typeof setTimeout> | null = null
+  let dripGain: GainNode | null = null
+  let audioInitialized = false
+
+  // --- Visual state ---
+  let dustMotes: DustMote[] = []
+  let dustContainer: HTMLElement | null = null
+  let depthIndicator: HTMLElement | null = null
+  let depthFill: HTMLElement | null = null
+  let dustFrameId: number | null = null
+  let torchElements: HTMLElement[] = []
+  let layerSections: HTMLElement[] = []
+
+  // --- Scroll tracking ---
+  let lastScrollTop = 0
+  let scrollSpeed = 0
+  let lastLayerIndex = -1
+  let scrollHandler: (() => void) | null = null
+
+  // --- Audio helpers ---
+
+  function getScrollFraction(): number {
+    if (!overlay) return 0
+    const max = overlay.scrollHeight - overlay.clientHeight
+    if (max <= 0) return 0
+    return Math.min(1, Math.max(0, overlay.scrollTop / max))
+  }
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+      audioCtxRef = ac
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // Deep stone drone: sine oscillator through lowpass filter
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'sine'
+      droneOsc.frequency.value = 55 // start ~middle of 40-60Hz range
+
+      droneFilter = ac.createBiquadFilter()
+      droneFilter.type = 'lowpass'
+      droneFilter.frequency.value = 80
+      droneFilter.Q.value = 1
+
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0.02
+
+      droneOsc.connect(droneFilter)
+      droneFilter.connect(droneGain)
+      droneGain.connect(audioMaster)
+      droneOsc.start()
+
+      // Drip gain node (shared by all drip sounds)
+      dripGain = ac.createGain()
+      dripGain.gain.value = 0.015 // base drip volume
+      dripGain.connect(audioMaster)
+
+      audioInitialized = true
+      scheduleDrip()
+    } catch { /* audio not available */ }
+  }
+
+  function scheduleDrip() {
+    if (!active || !audioCtxRef || !audioMaster || !dripGain) return
+    // 3-8 seconds between drips
+    const delay = 3000 + Math.random() * 5000
+    dripTimeout = setTimeout(() => {
+      if (!active || !audioCtxRef || !audioMaster || !dripGain) return
+      try {
+        playDrip()
+      } catch { /* ignore */ }
+      scheduleDrip()
+    }, delay)
+  }
+
+  function playDrip() {
+    if (!audioCtxRef || !dripGain) return
+    const ac = audioCtxRef
+    // Short noise burst (2-5ms) through highpass at 2000Hz
+    const dripLen = 0.002 + Math.random() * 0.003
+    const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * dripLen), ac.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < data.length; i++) {
+      // Decaying noise burst
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length)
+    }
+    const src = ac.createBufferSource()
+    src.buffer = buf
+
+    const hp = ac.createBiquadFilter()
+    hp.type = 'highpass'
+    hp.frequency.value = 2000 + Math.random() * 1000
+    hp.Q.value = 2
+
+    // Volume scales with scroll speed (0.01-0.03 base, up to 0.05 when scrolling fast)
+    const speedBoost = Math.min(0.02, scrollSpeed * 0.002)
+    const g = ac.createGain()
+    g.gain.value = 0.01 + Math.random() * 0.02 + speedBoost
+
+    src.connect(hp)
+    hp.connect(g)
+    g.connect(dripGain)
+    src.start()
+    src.onended = () => {
+      src.disconnect()
+      hp.disconnect()
+      g.disconnect()
+    }
+  }
+
+  function playLayerTransition() {
+    if (!audioCtxRef || !audioMaster) return
+    try {
+      const ac = audioCtxRef
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = 75 + Math.random() * 10 // ~80Hz
+      const g = ac.createGain()
+      g.gain.value = 0.03
+      // Quick fade over ~100ms
+      g.gain.setTargetAtTime(0, ac.currentTime + 0.05, 0.03)
+      osc.connect(g)
+      g.connect(audioMaster)
+      osc.start()
+      osc.stop(ac.currentTime + 0.15)
+      osc.onended = () => {
+        osc.disconnect()
+        g.disconnect()
+      }
+    } catch { /* ignore */ }
+  }
+
+  function updateDroneFrequency() {
+    if (!droneOsc || !audioCtxRef) return
+    // 60Hz at top → 30Hz at bottom
+    const frac = getScrollFraction()
+    const freq = 60 - frac * 30
+    droneOsc.frequency.setTargetAtTime(freq, audioCtxRef.currentTime, 0.3)
+  }
+
+  function fadeAudioIn() {
+    if (audioMaster && audioCtxRef) {
+      audioMaster.gain.setTargetAtTime(1, audioCtxRef.currentTime, 0.5)
+    }
+  }
+
+  function fadeAudioOut() {
+    if (audioMaster && audioCtxRef) {
+      audioMaster.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.3)
+    }
+  }
+
+  function cleanupAudio() {
+    if (dripTimeout !== null) {
+      clearTimeout(dripTimeout)
+      dripTimeout = null
+    }
+    try { droneOsc?.stop() } catch { /* already stopped */ }
+    droneOsc?.disconnect()
+    droneFilter?.disconnect()
+    droneGain?.disconnect()
+    dripGain?.disconnect()
+    audioMaster?.disconnect()
+    droneOsc = null
+    droneFilter = null
+    droneGain = null
+    dripGain = null
+    audioMaster = null
+    audioInitialized = false
+    audioCtxRef = null
+  }
+
+  // --- Scroll handler ---
+
+  function detectCurrentLayer(): number {
+    if (!overlay || layerSections.length === 0) return -1
+    const scrollMid = overlay.scrollTop + overlay.clientHeight / 2
+    for (let i = layerSections.length - 1; i >= 0; i--) {
+      if (layerSections[i].offsetTop <= scrollMid) return i
+    }
+    return 0
+  }
+
+  function onScroll() {
+    if (!overlay || !active) return
+    // Track scroll speed
+    const currentTop = overlay.scrollTop
+    scrollSpeed = Math.abs(currentTop - lastScrollTop)
+    lastScrollTop = currentTop
+
+    // Update drone frequency based on depth
+    updateDroneFrequency()
+
+    // Detect layer transitions
+    const currentLayer = detectCurrentLayer()
+    if (currentLayer !== lastLayerIndex && lastLayerIndex !== -1 && currentLayer >= 0) {
+      playLayerTransition()
+    }
+    lastLayerIndex = currentLayer
+
+    // Update depth indicator
+    updateDepthIndicator()
+  }
+
+  // --- Visual helpers ---
+
+  function updateDepthIndicator() {
+    if (!depthFill || !overlay) return
+    const frac = getScrollFraction()
+    depthFill.style.height = `${frac * 100}%`
+  }
+
+  function createDustMote(): DustMote | null {
+    if (!dustContainer || !overlay) return null
+    const el = document.createElement('div')
+    const size = 1 + Math.random()
+    el.style.cssText = `
+      position: absolute;
+      width: ${size}px; height: ${size}px;
+      border-radius: 50%;
+      background: rgba(180, 160, 120, 1);
+      pointer-events: none;
+    `
+    const x = Math.random() * (overlay.clientWidth - 20) + 10
+    // Spawn near top of visible area
+    const y = overlay.scrollTop + Math.random() * overlay.clientHeight * 0.3
+    el.style.left = `${x}px`
+    el.style.top = `${y}px`
+
+    const opacity = 0.03 + Math.random() * 0.05
+    el.style.opacity = String(opacity)
+
+    dustContainer.appendChild(el)
+
+    const maxLife = 300 + Math.random() * 400 // frames
+    return {
+      el,
+      x,
+      y,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: 0.1 + Math.random() * 0.2,
+      opacity,
+      life: 0,
+      maxLife,
+    }
+  }
+
+  function updateDustMotes() {
+    if (!active || !dustContainer) return
+
+    // Spawn new motes — more when scrolling fast
+    const spawnChance = 0.08 + Math.min(0.15, scrollSpeed * 0.01)
+    if (dustMotes.length < 20 && Math.random() < spawnChance) {
+      const mote = createDustMote()
+      if (mote) dustMotes.push(mote)
+    }
+
+    // Update existing
+    for (let i = dustMotes.length - 1; i >= 0; i--) {
+      const m = dustMotes[i]
+      m.life++
+      m.x += m.vx
+      m.y += m.vy
+
+      // Fade in for first 30 frames, fade out for last 60 frames
+      let alpha = m.opacity
+      if (m.life < 30) {
+        alpha = m.opacity * (m.life / 30)
+      } else if (m.life > m.maxLife - 60) {
+        alpha = m.opacity * ((m.maxLife - m.life) / 60)
+      }
+
+      m.el.style.left = `${m.x}px`
+      m.el.style.top = `${m.y}px`
+      m.el.style.opacity = String(Math.max(0, alpha))
+
+      // Remove dead motes
+      if (m.life >= m.maxLife) {
+        m.el.remove()
+        dustMotes.splice(i, 1)
+      }
+    }
+
+    dustFrameId = requestAnimationFrame(updateDustMotes)
+  }
+
+  function createTorch(section: HTMLElement, layerIndex: number) {
+    // Only add torches to some layers (not the deepest — too far underground)
+    if (layerIndex >= LAYERS.length - 1) return
+
+    const torch = document.createElement('div')
+    // Alternate left/right
+    const side = layerIndex % 2 === 0 ? 'left' : 'right'
+    const warmth = Math.max(0.02, 0.06 - layerIndex * 0.01)
+    torch.style.cssText = `
+      position: absolute;
+      ${side}: 8px;
+      top: 30%;
+      width: 40px; height: 60px;
+      background: radial-gradient(ellipse at center, rgba(200, 140, 50, ${warmth}) 0%, transparent 70%);
+      pointer-events: none;
+      animation: catacombTorchFlicker${layerIndex} ${3 + layerIndex * 0.5}s ease-in-out infinite alternate;
+    `
+    // Each torch needs its own keyframes for variety
+    const style = document.createElement('style')
+    style.textContent = `
+      @keyframes catacombTorchFlicker${layerIndex} {
+        0% { opacity: 0.6; transform: scale(1); }
+        25% { opacity: 0.9; transform: scale(1.05); }
+        50% { opacity: 0.5; transform: scale(0.95); }
+        75% { opacity: 1.0; transform: scale(1.02); }
+        100% { opacity: 0.7; transform: scale(0.98); }
+      }
+    `
+    torch.appendChild(style)
+
+    // Section needs relative positioning for absolute torch
+    section.style.position = 'relative'
+    section.appendChild(torch)
+    torchElements.push(torch)
+  }
 
   return {
     name: 'catacombs',
@@ -154,6 +500,36 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
       overlay.appendChild(style)
       overlay.classList.add('catacombs-scroll')
 
+      // --- Depth indicator (left edge) ---
+      depthIndicator = document.createElement('div')
+      depthIndicator.style.cssText = `
+        position: fixed;
+        left: 4px; top: 10%;
+        width: 1px; height: 80%;
+        background: rgba(180, 160, 120, 0.04);
+        pointer-events: none;
+        z-index: 10;
+      `
+      depthFill = document.createElement('div')
+      depthFill.style.cssText = `
+        width: 100%; height: 0%;
+        background: rgba(180, 160, 120, 0.1);
+        transition: height 0.3s ease;
+      `
+      depthIndicator.appendChild(depthFill)
+      overlay.appendChild(depthIndicator)
+
+      // --- Dust container (absolute positioned within scrollable area) ---
+      dustContainer = document.createElement('div')
+      dustContainer.style.cssText = `
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none;
+        z-index: 5;
+      `
+      overlay.appendChild(dustContainer)
+
       // Entrance text
       const entrance = document.createElement('div')
       entrance.style.cssText = `
@@ -178,13 +554,15 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
         color: rgba(180, 160, 120, 0.1);
         animation: catacombFlicker 4s ease-in-out infinite;
       `
-      arrow.textContent = '▼'
+      arrow.textContent = '\u25BC'
       entrance.appendChild(arrow)
 
       overlay.appendChild(entrance)
 
       // Build layers
-      for (const layer of LAYERS) {
+      layerSections = []
+      for (let li = 0; li < LAYERS.length; li++) {
+        const layer = LAYERS[li]
         const section = document.createElement('div')
         section.style.cssText = `
           padding: 40px 20px;
@@ -270,7 +648,11 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
           section.appendChild(el)
         }
 
+        // Add torch flicker to this layer section
+        createTorch(section, li)
+
         overlay.appendChild(section)
+        layerSections.push(section)
       }
 
       // Bottom void
@@ -293,7 +675,7 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
         cursor: pointer;
         transition: color 0.5s ease;
       `
-      returnLink.textContent = '▲ ascend to the archive'
+      returnLink.textContent = '\u25B2 ascend to the archive'
       returnLink.addEventListener('mouseenter', () => {
         returnLink.style.color = 'rgba(180, 160, 120, 0.5)'
       })
@@ -314,7 +696,7 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
           cursor: pointer;
           transition: color 0.5s ease;
         `
-        ossuaryLink.textContent = '→ the ossuary'
+        ossuaryLink.textContent = '\u2192 the ossuary'
         ossuaryLink.addEventListener('mouseenter', () => {
           ossuaryLink.style.color = 'rgba(220, 210, 190, 0.3)'
         })
@@ -328,8 +710,8 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
       // Navigation portals — carved stone inscriptions to connected rooms
       if (deps.switchTo) {
         const portalData = [
-          { label: '↑ the archive', room: 'archive' },
-          { label: '→ the ossuary', room: 'ossuary' },
+          { label: '\u2191 the archive', room: 'archive' },
+          { label: '\u2192 the ossuary', room: 'ossuary' },
         ]
         const portalRow = document.createElement('div')
         portalRow.style.cssText = `
@@ -365,24 +747,90 @@ export function createCatacombsRoom(deps: CatacombsDeps): Room {
 
     activate() {
       active = true
-      // Slow auto-scroll
+      lastScrollTop = overlay?.scrollTop ?? 0
+      scrollSpeed = 0
+      lastLayerIndex = -1
+
+      // Scroll listener
+      scrollHandler = onScroll
+      overlay?.addEventListener('scroll', scrollHandler, { passive: true })
+
+      // Auto-scroll that slows as you descend
       if (overlay) {
         autoScrollId = window.setInterval(() => {
           if (overlay && active) {
-            overlay.scrollTop += 0.5
+            // Slow down with depth: 0.5 px at top → 0.2 px at bottom
+            const frac = getScrollFraction()
+            const speed = 0.5 - frac * 0.3
+            overlay.scrollTop += speed
           }
         }, 16)
       }
+
+      // Init audio
+      initAudio().then(() => fadeAudioIn())
+
+      // Start dust particle loop
+      dustFrameId = requestAnimationFrame(updateDustMotes)
+
+      // Initial depth indicator update
+      updateDepthIndicator()
     },
 
     deactivate() {
       active = false
       if (autoScrollId) clearInterval(autoScrollId)
+      autoScrollId = null
+
+      // Remove scroll listener
+      if (scrollHandler && overlay) {
+        overlay.removeEventListener('scroll', scrollHandler)
+        scrollHandler = null
+      }
+
+      // Fade audio out
+      fadeAudioOut()
+      if (dripTimeout !== null) {
+        clearTimeout(dripTimeout)
+        dripTimeout = null
+      }
+
+      // Stop dust animation
+      if (dustFrameId !== null) {
+        cancelAnimationFrame(dustFrameId)
+        dustFrameId = null
+      }
     },
 
     destroy() {
       active = false
       if (autoScrollId) clearInterval(autoScrollId)
+      autoScrollId = null
+
+      // Remove scroll listener
+      if (scrollHandler && overlay) {
+        overlay.removeEventListener('scroll', scrollHandler)
+        scrollHandler = null
+      }
+
+      // Full audio cleanup
+      cleanupAudio()
+
+      // Stop dust animation and remove motes
+      if (dustFrameId !== null) {
+        cancelAnimationFrame(dustFrameId)
+        dustFrameId = null
+      }
+      for (const m of dustMotes) {
+        m.el.remove()
+      }
+      dustMotes = []
+      dustContainer = null
+      depthIndicator = null
+      depthFill = null
+      torchElements = []
+      layerSections = []
+
       overlay?.remove()
     },
   }

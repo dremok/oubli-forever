@@ -14,13 +14,14 @@
  * There's a pendulum below the face that swings with a period
  * determined by your total time spent in Oubli across all sessions.
  *
- * Inspired by: Dalí's melting clocks, the Clock of the Long Now,
+ * Inspired by: Dali's melting clocks, the Clock of the Long Now,
  * the doomsday clock, grandfather clocks in empty houses,
  * how dementia patients lose time perception, chronobiology
  */
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface ClockTowerDeps {
   getMemories: () => StoredMemory[]
@@ -57,10 +58,431 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
   // Track glow intensity for each position (0-1, decays over time)
   const handGlow = [0, 0, 0, 0]
 
+  // --- Pendulum trail ---
+  const pendulumTrail: { x: number; y: number }[] = []
+  const TRAIL_LENGTH = 8
+
+  // --- Dust particles (degradation effect) ---
+  interface DustParticle {
+    x: number
+    y: number
+    vy: number
+    alpha: number
+    size: number
+  }
+  const dustParticles: DustParticle[] = []
+
+  // --- Gear shadow rotation ---
+  let gearAngle = 0
+
+  // --- Audio state ---
+  let audioCtxRef: AudioContext | null = null
+  let audioMaster: GainNode | null = null
+  let audioInitialized = false
+
+  // Tower ambience nodes
+  let droneSine: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let windSource: AudioBufferSourceNode | null = null
+  let windGain: GainNode | null = null
+  let windFilter: BiquadFilterNode | null = null
+
+  // Pendulum swoosh
+  let swooshSource: AudioBufferSourceNode | null = null
+  let swooshFilter: BiquadFilterNode | null = null
+  let swooshGain: GainNode | null = null
+
+  // Tick tracking
+  let lastTickSecond = -1
+  let tickInterval: ReturnType<typeof setTimeout> | null = null
+
+  // Creak scheduling
+  let creakTimeout: ReturnType<typeof setTimeout> | null = null
+
+  // Current degradation (updated each frame, read by audio schedulers)
+  let currentAvgDeg = 0
+
+  // --- Audio functions ---
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      audioCtxRef = ac
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // === Tower ambience: low drone ===
+      droneSine = ac.createOscillator()
+      droneSine.type = 'sine'
+      droneSine.frequency.value = 30
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0.01
+      droneSine.connect(droneGain)
+      droneGain.connect(audioMaster)
+      droneSine.start()
+
+      // === Tower ambience: wind noise ===
+      const windDuration = 4
+      const windBufLen = Math.floor(ac.sampleRate * windDuration)
+      const windBuffer = ac.createBuffer(1, windBufLen, ac.sampleRate)
+      const windData = windBuffer.getChannelData(0)
+      for (let i = 0; i < windBufLen; i++) {
+        windData[i] = Math.random() * 2 - 1
+      }
+      windSource = ac.createBufferSource()
+      windSource.buffer = windBuffer
+      windSource.loop = true
+      windFilter = ac.createBiquadFilter()
+      windFilter.type = 'highpass'
+      windFilter.frequency.value = 800
+      windFilter.Q.value = 0.5
+      windGain = ac.createGain()
+      windGain.gain.value = 0.005
+      windSource.connect(windFilter)
+      windFilter.connect(windGain)
+      windGain.connect(audioMaster)
+      windSource.start()
+
+      // === Pendulum swoosh: brown noise through sweeping bandpass ===
+      const swooshDuration = 4
+      const swooshBufLen = Math.floor(ac.sampleRate * swooshDuration)
+      const swooshBuffer = ac.createBuffer(1, swooshBufLen, ac.sampleRate)
+      const swooshData = swooshBuffer.getChannelData(0)
+      // Generate brown noise (integrated white noise)
+      let brownVal = 0
+      for (let i = 0; i < swooshBufLen; i++) {
+        const white = Math.random() * 2 - 1
+        brownVal = (brownVal + 0.02 * white) / 1.02
+        swooshData[i] = brownVal * 3.5
+      }
+      swooshSource = ac.createBufferSource()
+      swooshSource.buffer = swooshBuffer
+      swooshSource.loop = true
+      swooshFilter = ac.createBiquadFilter()
+      swooshFilter.type = 'bandpass'
+      swooshFilter.frequency.value = 300
+      swooshFilter.Q.value = 1.5
+      swooshGain = ac.createGain()
+      swooshGain.gain.value = 0.01
+      swooshSource.connect(swooshFilter)
+      swooshFilter.connect(swooshGain)
+      swooshGain.connect(audioMaster)
+      swooshSource.start()
+
+      // Fade master in
+      audioMaster.gain.setTargetAtTime(1, ac.currentTime, 0.8)
+
+      // Start tick scheduling
+      scheduleTick()
+
+      // Start creak scheduling
+      scheduleCreak()
+
+      audioInitialized = true
+    } catch {
+      /* audio init failed — room still works without sound */
+    }
+  }
+
+  function scheduleTick() {
+    if (!active) return
+    // Check roughly every 50ms for second changes
+    tickInterval = setTimeout(() => {
+      if (!active || !audioCtxRef || !audioMaster) return
+      const now = new Date()
+      const sec = now.getSeconds()
+      if (sec !== lastTickSecond) {
+        lastTickSecond = sec
+
+        const deg = currentAvgDeg
+
+        // At high degradation, irregularly skip ticks
+        if (deg > 0.3 && Math.random() < deg * 0.3) {
+          // Skip this tick
+        } else {
+          playTick()
+          // At high degradation, sometimes double-tick (stutter)
+          if (deg > 0.4 && Math.random() < deg * 0.2) {
+            setTimeout(() => {
+              if (active) playTick()
+            }, 30 + Math.random() * 50)
+          }
+        }
+
+        // Backwards mode: add a subtle second click
+        if (deg > 0.6) {
+          setTimeout(() => {
+            if (active) playTick()
+          }, 80 + Math.random() * 40)
+        }
+      }
+      scheduleTick()
+    }, 50)
+  }
+
+  function playTick() {
+    if (!audioCtxRef || !audioMaster) return
+    const ac = audioCtxRef
+    try {
+      // Very short noise burst through bandpass — mechanical click
+      const tickLen = Math.floor(ac.sampleRate * 0.003)
+      const tickBuf = ac.createBuffer(1, tickLen, ac.sampleRate)
+      const tickData = tickBuf.getChannelData(0)
+      for (let i = 0; i < tickLen; i++) {
+        tickData[i] = (Math.random() * 2 - 1) * (1 - i / tickLen)
+      }
+
+      const src = ac.createBufferSource()
+      src.buffer = tickBuf
+
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 1500
+      bp.Q.value = 3
+
+      const gain = ac.createGain()
+      gain.gain.value = 0.04
+
+      src.connect(bp)
+      bp.connect(gain)
+      gain.connect(audioMaster!)
+      src.start()
+      src.onended = () => {
+        src.disconnect()
+        bp.disconnect()
+        gain.disconnect()
+      }
+    } catch {
+      /* ignore tick errors */
+    }
+  }
+
+  function playChime() {
+    if (!audioCtxRef || !audioMaster) return
+    const ac = audioCtxRef
+    try {
+      // Bell-like tone: fundamental + octave
+      const now = ac.currentTime
+
+      const osc1 = ac.createOscillator()
+      osc1.type = 'sine'
+      osc1.frequency.value = 523 // C5
+
+      const osc2 = ac.createOscillator()
+      osc2.type = 'sine'
+      osc2.frequency.value = 1047 // C6 (octave)
+
+      const chimeGain = ac.createGain()
+      // Quick attack, long decay
+      chimeGain.gain.setValueAtTime(0, now)
+      chimeGain.gain.linearRampToValueAtTime(0.05, now + 0.01)
+      chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 2.0)
+
+      osc1.connect(chimeGain)
+      osc2.connect(chimeGain)
+      chimeGain.connect(audioMaster!)
+
+      osc1.start(now)
+      osc2.start(now)
+      osc1.stop(now + 2.1)
+      osc2.stop(now + 2.1)
+
+      osc1.onended = () => {
+        osc1.disconnect()
+        osc2.disconnect()
+        chimeGain.disconnect()
+      }
+    } catch {
+      /* ignore chime errors */
+    }
+  }
+
+  function scheduleCreak() {
+    if (!active) return
+    const delay = 5000 + Math.random() * 10000 // 5-15 seconds
+    creakTimeout = setTimeout(() => {
+      if (!active || !audioCtxRef || !audioMaster) return
+      if (currentAvgDeg > 0.4) {
+        playCreak()
+      }
+      scheduleCreak()
+    }, delay)
+  }
+
+  function playCreak() {
+    if (!audioCtxRef || !audioMaster) return
+    const ac = audioCtxRef
+    try {
+      // Metallic creak: swept sine from 200->400Hz over 200ms
+      const now = ac.currentTime
+
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(200, now)
+      osc.frequency.linearRampToValueAtTime(400, now + 0.2)
+
+      const creakGain = ac.createGain()
+      creakGain.gain.setValueAtTime(0, now)
+      creakGain.gain.linearRampToValueAtTime(0.02, now + 0.02)
+      creakGain.gain.linearRampToValueAtTime(0, now + 0.22)
+
+      osc.connect(creakGain)
+      creakGain.connect(audioMaster!)
+      osc.start(now)
+      osc.stop(now + 0.25)
+
+      osc.onended = () => {
+        osc.disconnect()
+        creakGain.disconnect()
+      }
+    } catch {
+      /* ignore creak errors */
+    }
+  }
+
+  function updatePendulumAudio() {
+    // Modulate swoosh filter based on pendulum position
+    if (!audioCtxRef || !swooshFilter || !swooshGain) return
+    const t = audioCtxRef.currentTime
+    // Pendulum velocity drives swoosh loudness — louder at center (max velocity)
+    const vel = Math.abs(pendulumVelocity)
+    const maxVel = 0.005 // approximate max velocity
+    const velNorm = Math.min(vel / maxVel, 1)
+
+    // Sweep bandpass frequency: 200Hz at extremes, 400Hz at center
+    const freq = 200 + velNorm * 200
+    swooshFilter.frequency.setTargetAtTime(freq, t, 0.05)
+
+    // Volume tracks velocity
+    swooshGain.gain.setTargetAtTime(0.005 + velNorm * 0.01, t, 0.05)
+  }
+
+  function fadeAudioOut() {
+    if (audioMaster && audioCtxRef) {
+      audioMaster.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.3)
+    }
+    if (tickInterval !== null) {
+      clearTimeout(tickInterval)
+      tickInterval = null
+    }
+    if (creakTimeout !== null) {
+      clearTimeout(creakTimeout)
+      creakTimeout = null
+    }
+  }
+
+  function cleanupAudio() {
+    if (tickInterval !== null) {
+      clearTimeout(tickInterval)
+      tickInterval = null
+    }
+    if (creakTimeout !== null) {
+      clearTimeout(creakTimeout)
+      creakTimeout = null
+    }
+    try { droneSine?.stop() } catch { /* already stopped */ }
+    droneSine?.disconnect()
+    droneGain?.disconnect()
+    try { windSource?.stop() } catch { /* already stopped */ }
+    windSource?.disconnect()
+    windFilter?.disconnect()
+    windGain?.disconnect()
+    try { swooshSource?.stop() } catch { /* already stopped */ }
+    swooshSource?.disconnect()
+    swooshFilter?.disconnect()
+    swooshGain?.disconnect()
+    audioMaster?.disconnect()
+
+    droneSine = null
+    droneGain = null
+    windSource = null
+    windFilter = null
+    windGain = null
+    swooshSource = null
+    swooshFilter = null
+    swooshGain = null
+    audioMaster = null
+    audioCtxRef = null
+    audioInitialized = false
+    lastTickSecond = -1
+  }
+
+  // --- Visual helpers ---
+
+  function spawnDust(cx: number, cy: number, radius: number) {
+    if (dustParticles.length > 40) return
+    const angle = Math.random() * Math.PI * 2
+    const dist = Math.random() * radius * 0.9
+    dustParticles.push({
+      x: cx + Math.cos(angle) * dist,
+      y: cy + Math.sin(angle) * dist,
+      vy: 0.2 + Math.random() * 0.3,
+      alpha: 0.06 + Math.random() * 0.04,
+      size: 0.5 + Math.random() * 1,
+    })
+  }
+
+  function drawGearShadows(
+    drawCtx: CanvasRenderingContext2D,
+    cx: number, cy: number, radius: number
+  ) {
+    drawCtx.save()
+    drawCtx.globalAlpha = 0.03
+
+    // Draw 3 gear-like circles with teeth behind the clock face
+    const gears = [
+      { ox: -radius * 0.35, oy: -radius * 0.3, r: radius * 0.25, teeth: 12, speed: 1 },
+      { ox: radius * 0.3, oy: -radius * 0.2, r: radius * 0.2, teeth: 10, speed: -1.3 },
+      { ox: 0, oy: radius * 0.35, r: radius * 0.18, teeth: 8, speed: 0.8 },
+    ]
+
+    for (const gear of gears) {
+      const gx = cx + gear.ox
+      const gy = cy + gear.oy
+      const rot = gearAngle * gear.speed
+
+      drawCtx.save()
+      drawCtx.translate(gx, gy)
+      drawCtx.rotate(rot)
+
+      // Inner circle
+      drawCtx.beginPath()
+      drawCtx.arc(0, 0, gear.r * 0.7, 0, Math.PI * 2)
+      drawCtx.strokeStyle = 'rgba(180, 160, 120, 1)'
+      drawCtx.lineWidth = 0.5
+      drawCtx.stroke()
+
+      // Teeth
+      for (let t = 0; t < gear.teeth; t++) {
+        const a = (t / gear.teeth) * Math.PI * 2
+        const innerR = gear.r * 0.85
+        const outerR = gear.r
+        const halfTooth = (Math.PI / gear.teeth) * 0.5
+        drawCtx.beginPath()
+        drawCtx.moveTo(Math.cos(a - halfTooth) * innerR, Math.sin(a - halfTooth) * innerR)
+        drawCtx.lineTo(Math.cos(a - halfTooth) * outerR, Math.sin(a - halfTooth) * outerR)
+        drawCtx.lineTo(Math.cos(a + halfTooth) * outerR, Math.sin(a + halfTooth) * outerR)
+        drawCtx.lineTo(Math.cos(a + halfTooth) * innerR, Math.sin(a + halfTooth) * innerR)
+        drawCtx.strokeStyle = 'rgba(180, 160, 120, 1)'
+        drawCtx.lineWidth = 0.5
+        drawCtx.stroke()
+      }
+
+      drawCtx.restore()
+    }
+
+    drawCtx.restore()
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
     time += 0.016
+    gearAngle += 0.0005
 
     const w = canvas.width
     const h = canvas.height
@@ -73,6 +495,9 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     const avgDeg = memories.length > 0
       ? memories.reduce((s, m) => s + m.degradation, 0) / memories.length
       : 0
+
+    // Update shared degradation for audio schedulers
+    currentAvgDeg = avgDeg
 
     ctx.clearRect(0, 0, w, h)
 
@@ -93,7 +518,19 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       ctx.stroke()
     }
 
+    // === GEAR SHADOWS (behind clock face) ===
+    drawGearShadows(ctx, cx, cy, radius)
+
     // === CLOCK FACE ===
+
+    // Apply wobble at high degradation
+    if (avgDeg > 0.5) {
+      ctx.save()
+      const wobbleAmount = (avgDeg - 0.5) * 4 // 0-2 pixels
+      const wobbleX = Math.sin(time * 3.7) * wobbleAmount
+      const wobbleY = Math.cos(time * 2.9) * wobbleAmount
+      ctx.translate(wobbleX, wobbleY)
+    }
 
     // Outer ring
     ctx.beginPath()
@@ -255,6 +692,34 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       tickSound = 0.5
     }
 
+    // === DUST PARTICLES (degradation) ===
+    if (avgDeg > 0.3) {
+      // Spawn dust from the clock face
+      if (Math.random() < avgDeg * 0.15) {
+        spawnDust(cx, cy, radius)
+      }
+    }
+
+    // Update and draw dust
+    for (let i = dustParticles.length - 1; i >= 0; i--) {
+      const d = dustParticles[i]
+      d.y += d.vy
+      d.alpha -= 0.0004
+      if (d.alpha <= 0 || d.y > h) {
+        dustParticles.splice(i, 1)
+        continue
+      }
+      ctx.beginPath()
+      ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(140, 120, 90, ${d.alpha})`
+      ctx.fill()
+    }
+
+    // Restore wobble transform
+    if (avgDeg > 0.5) {
+      ctx.restore()
+    }
+
     // === PENDULUM ===
     const pendulumX = cx
     const pendulumTopY = cy + radius + 30
@@ -275,6 +740,22 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     const bobX = pendulumX + Math.sin(pendulumAngle) * pendulumLength
     const bobY = pendulumTopY + Math.cos(pendulumAngle) * pendulumLength
 
+    // Update pendulum trail
+    pendulumTrail.push({ x: bobX, y: bobY })
+    if (pendulumTrail.length > TRAIL_LENGTH) {
+      pendulumTrail.shift()
+    }
+
+    // Draw pendulum trail (faint ghost positions)
+    for (let i = 0; i < pendulumTrail.length - 1; i++) {
+      const t_pos = pendulumTrail[i]
+      const trailAlpha = (i / pendulumTrail.length) * 0.06
+      ctx.beginPath()
+      ctx.arc(t_pos.x, t_pos.y, 10 - (pendulumTrail.length - 1 - i) * 0.8, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(200, 180, 120, ${trailAlpha})`
+      ctx.fill()
+    }
+
     // Pendulum rod
     ctx.beginPath()
     ctx.moveTo(pendulumX, pendulumTopY)
@@ -291,6 +772,9 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     bobGrad.addColorStop(1, 'rgba(200, 180, 120, 0.02)')
     ctx.fillStyle = bobGrad
     ctx.fill()
+
+    // Update pendulum audio
+    updatePendulumAudio()
 
     // === CLOCK FACE POSITION NAVIGATION ===
     if (deps.switchTo) {
@@ -432,6 +916,8 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     if (lastHour >= 0 && currentHour !== lastHour && deps.onMidnight) {
       portalVisible = true
       portalAlpha = 0.4
+      // Play chime on hour change
+      playChime()
     }
     lastHour = currentHour
 
@@ -500,17 +986,22 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       active = true
       pendulumAngle = 0.2
       pendulumVelocity = 0
+      pendulumTrail.length = 0
+      dustParticles.length = 0
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      fadeAudioOut()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      cleanupAudio()
       overlay?.remove()
     },
   }
