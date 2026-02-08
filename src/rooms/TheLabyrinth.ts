@@ -157,6 +157,14 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let lookingAtAnomaly = false
   let anomalyDist = 0
   let anomalyScreenX = 0
+  let anomalyWX = 0
+  let anomalyWY = 0
+  const usedAnomalies = new Set<string>() // walls that have been clicked already
+
+  // Ambient creepy sound system
+  const ambientCreepyBuffers: AudioBuffer[] = []
+  let lastCreepySoundTime = 0
+  const CREEPY_SOUND_INTERVAL = 60 // seconds between ambient creepy sounds
 
   // Portal detection
   let nearbyPortal: { room: string; label: string; color: [number, number, number] } | null = null
@@ -199,19 +207,25 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let phantomSoundTimer = 0 // timer for ambient phantom sounds
 
   // Wall objects — specific things on walls you can click
+  // placement: 'wall' (normal), 'floor' (near bottom), 'ceiling' (near top), 'floating' (bobs up and down)
+  // physics: 'static' (fixed), 'bob' (gentle float), 'spin' (rotates), 'breathe' (pulses size), 'drip' (occasional drip particles)
   const WALL_OBJECTS = [
-    { name: 'rusty_handle', icon: '⬮', desc: 'a rusty door handle', w: 8, h: 14 },
-    { name: 'crack', icon: '╱', desc: 'a crack with light', w: 12, h: 20 },
-    { name: 'eye_hole', icon: '◉', desc: 'something watches', w: 6, h: 6 },
-    { name: 'carved_symbol', icon: '✧', desc: 'a carved symbol', w: 10, h: 10 },
-    { name: 'small_mirror', icon: '◻', desc: 'a small mirror', w: 8, h: 12 },
-    { name: 'bloodstain', icon: '●', desc: 'a dark stain', w: 14, h: 10 },
-    { name: 'keyhole', icon: '⚿', desc: 'a keyhole', w: 4, h: 8 },
-    { name: 'handprint', icon: '✋', desc: 'a handprint', w: 12, h: 14 },
-    { name: 'fungus', icon: '❋', desc: 'strange growth', w: 16, h: 10 },
-    { name: 'candle', icon: '🕯', desc: 'a flickering candle', w: 4, h: 12 },
-    { name: 'scratches', icon: '≡', desc: 'deep scratches', w: 16, h: 8 },
-    { name: 'face_relief', icon: '☹', desc: 'a face in the stone', w: 12, h: 14 },
+    { name: 'rusty_handle', icon: '⬮', desc: 'a rusty door handle', w: 8, h: 14, placement: 'wall', physics: 'static', scale: 1.0 },
+    { name: 'crack', icon: '╱', desc: 'a crack with light', w: 12, h: 20, placement: 'wall', physics: 'breathe', scale: 1.3 },
+    { name: 'eye_hole', icon: '◉', desc: 'something watches', w: 6, h: 6, placement: 'wall', physics: 'static', scale: 0.8 },
+    { name: 'carved_symbol', icon: '✧', desc: 'a carved symbol', w: 10, h: 10, placement: 'ceiling', physics: 'spin', scale: 1.0 },
+    { name: 'small_mirror', icon: '◻', desc: 'a small mirror', w: 8, h: 12, placement: 'wall', physics: 'static', scale: 1.2 },
+    { name: 'bloodstain', icon: '●', desc: 'a dark stain', w: 14, h: 10, placement: 'floor', physics: 'drip', scale: 1.5 },
+    { name: 'keyhole', icon: '⚿', desc: 'a keyhole', w: 4, h: 8, placement: 'wall', physics: 'static', scale: 0.9 },
+    { name: 'handprint', icon: '✋', desc: 'a handprint', w: 12, h: 14, placement: 'wall', physics: 'static', scale: 1.1 },
+    { name: 'fungus', icon: '❋', desc: 'strange growth', w: 16, h: 10, placement: 'floor', physics: 'breathe', scale: 1.4 },
+    { name: 'candle', icon: '🕯', desc: 'a flickering candle', w: 4, h: 12, placement: 'wall', physics: 'bob', scale: 1.0 },
+    { name: 'scratches', icon: '≡', desc: 'deep scratches', w: 16, h: 8, placement: 'ceiling', physics: 'static', scale: 1.2 },
+    { name: 'face_relief', icon: '☹', desc: 'a face in the stone', w: 12, h: 14, placement: 'wall', physics: 'breathe', scale: 1.3 },
+    { name: 'skull', icon: '💀', desc: 'a skull on the ground', w: 14, h: 14, placement: 'floor', physics: 'static', scale: 1.1 },
+    { name: 'floating_orb', icon: '◯', desc: 'something floats here', w: 10, h: 10, placement: 'floating', physics: 'bob', scale: 0.9 },
+    { name: 'chain', icon: '⛓', desc: 'chains hang from above', w: 6, h: 20, placement: 'ceiling', physics: 'bob', scale: 1.3 },
+    { name: 'rune', icon: '᛭', desc: 'a glowing rune', w: 10, h: 10, placement: 'floating', physics: 'spin', scale: 1.0 },
   ]
 
   function getWallObject(wx: number, wy: number): typeof WALL_OBJECTS[0] | null {
@@ -221,8 +235,14 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   }
 
   function getObjectYPos(wx: number, wy: number): number {
-    // Vertical position on the wall (0-1, 0=top, 1=bottom)
-    return 0.3 + cellHash2(wx + 7, wy + 13) * 0.4
+    const obj = getWallObject(wx, wy)
+    if (!obj) return 0.5
+    switch (obj.placement) {
+      case 'floor': return 0.75 + cellHash2(wx + 7, wy + 13) * 0.15  // near bottom
+      case 'ceiling': return 0.08 + cellHash2(wx + 7, wy + 13) * 0.15 // near top
+      case 'floating': return 0.3 + cellHash2(wx + 7, wy + 13) * 0.3  // mid-air, varies
+      default: return 0.3 + cellHash2(wx + 7, wy + 13) * 0.4 // wall — standard
+    }
   }
 
   // ===== HASH-BASED INFINITE MAZE =====
@@ -296,7 +316,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // This is a wall — determine subtype
     const h2 = cellHash2(wx, wy)
     if (h2 < 0.06) return INSCRIPTION
-    if (h2 < 0.11) return ANOMALY  // ~5% of walls are clickable anomalies
+    if (h2 < 0.20) return ANOMALY  // ~14% of walls are clickable anomalies
 
     return WALL
   }
@@ -575,6 +595,47 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         }
       } catch { /* missing assets ok */ }
     }
+
+    // Load ambient creepy sounds (kids laughter, singing, alien speaking)
+    for (let i = 1; i <= 12; i++) {
+      try {
+        const resp = await fetch(`/assets/labyrinth/ambient/ambient-${i}.mp3`)
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer()
+          const audioBuf = await audioCtx.decodeAudioData(buf)
+          ambientCreepyBuffers.push(audioBuf)
+        }
+      } catch { /* missing assets ok */ }
+    }
+  }
+
+  function playAmbientCreepySound() {
+    if (!audioCtx || ambientCreepyBuffers.length === 0) return
+    const dest = getAudioDestination()
+    const now = audioCtx.currentTime
+
+    const buf = ambientCreepyBuffers[Math.floor(Math.random() * ambientCreepyBuffers.length)]
+    const src = audioCtx.createBufferSource()
+    src.buffer = buf
+
+    // Random stereo pan for spatial feel
+    const panner = audioCtx.createStereoPanner()
+    panner.pan.value = (Math.random() - 0.5) * 1.6
+
+    // Soft volume with fade in/out
+    const gain = audioCtx.createGain()
+    gain.gain.setValueAtTime(0, now)
+    gain.gain.linearRampToValueAtTime(0.08 + Math.random() * 0.06, now + 0.5)
+    gain.gain.setValueAtTime(0.08 + Math.random() * 0.06, now + buf.duration - 1)
+    gain.gain.linearRampToValueAtTime(0, now + buf.duration)
+
+    // Slight pitch variation for uncanniness
+    src.playbackRate.value = 0.9 + Math.random() * 0.2
+
+    src.connect(panner)
+    panner.connect(gain)
+    gain.connect(dest)
+    src.start(now)
   }
 
   function playScareSound(intensity: number = 1) {
@@ -844,8 +905,76 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     'you are the maze',
   ]
 
+  // Object-specific interactions (overrides generic effect for certain objects)
+  let brightBoostEnd = 0  // temporary brightness boost from candle
+  let invertMovementEnd = 0 // movement inversion from mirror
+
+  function triggerObjectInteraction(): boolean {
+    const obj = getWallObject(anomalyWX, anomalyWY)
+    if (!obj) return false
+
+    switch (obj.name) {
+      case 'candle':
+        // Take the candle — temporary brightness boost for 8 seconds
+        brightBoostEnd = time + 8
+        if (audioCtx) {
+          const now = audioCtx.currentTime
+          const osc = audioCtx.createOscillator()
+          osc.type = 'sine'
+          osc.frequency.value = 660
+          const env = audioCtx.createGain()
+          env.gain.setValueAtTime(0.05, now)
+          env.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
+          osc.connect(env)
+          env.connect(getAudioDestination())
+          osc.start(now)
+          osc.stop(now + 0.4)
+        }
+        return true
+
+      case 'small_mirror':
+        // Mirror — inverts movement controls for 4 seconds + screen flash
+        invertMovementEnd = time + 4
+        currentEffect = {
+          triggeredAt: time, duration: 0.5,
+          type: 'screen_invert', params: {},
+        }
+        insanity = Math.min(1, insanity + 0.1)
+        return true
+
+      case 'fungus':
+        // Fungus — releases spores, green-tinted vision for 6 seconds
+        currentEffect = {
+          triggeredAt: time, duration: 6,
+          type: 'aurora', params: { hue: 120, spiralDir: 1, originX: anomalyScreenX, msgIdx: 0 },
+        }
+        // Fungus restores some sanity (natural calm)
+        insanity = Math.max(0, insanity - 0.15)
+        return true
+
+      case 'keyhole':
+        // Peek through — brief map reveal
+        currentEffect = {
+          triggeredAt: time, duration: 3,
+          type: 'map_reveal', params: { hue: 0, spiralDir: 1, originX: anomalyScreenX, msgIdx: 0 },
+        }
+        insanity = 0 // knowledge calms you
+        return true
+
+      default:
+        return false // use generic effect system
+    }
+  }
+
   function triggerWallEffect() {
     if (currentEffect) return
+
+    // Mark this anomaly as used — can only click each wall once
+    const key = `${anomalyWX},${anomalyWY}`
+    usedAnomalies.add(key)
+
+    // Try object-specific interaction first
+    if (triggerObjectInteraction()) return
 
     // Weight: 40% scary, 35% beautiful, 25% mysterious
     const roll = Math.random()
@@ -876,6 +1005,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         spiralDir: Math.random() > 0.5 ? 1 : -1,
         originX: anomalyScreenX,
       },
+    }
+
+    // Sanity impact: scary = lose 10%, non-scary = restore to full
+    if (category === 'scary') {
+      insanity = Math.min(1, insanity + 0.1)
+    } else {
+      insanity = 0
     }
 
     playEffectSound(category)
@@ -1122,20 +1258,32 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // Update insanity before everything else
     updateInsanity()
 
+    // Ambient creepy sounds — kids laughter, singing, alien speaking (~every 60s)
+    if (time - lastCreepySoundTime > CREEPY_SOUND_INTERVAL) {
+      lastCreepySoundTime = time
+      if (ambientCreepyBuffers.length > 0) {
+        // Add slight randomness (50-70 seconds between)
+        lastCreepySoundTime -= Math.random() * 10
+        playAmbientCreepySound()
+      }
+    }
+
     let moveX = 0
     let moveY = 0
     let moving = false
 
-    // Movement with insanity-induced drift
+    // Movement with insanity-induced drift (mirror inverts controls temporarily)
+    const inverted = time < invertMovementEnd
     const effectiveAngle = pa + moveDrift
+    const moveDir = inverted ? -1 : 1
     if (keys.has('w') || keys.has('arrowup')) {
-      moveX += Math.cos(effectiveAngle) * moveSpeed
-      moveY += Math.sin(effectiveAngle) * moveSpeed
+      moveX += Math.cos(effectiveAngle) * moveSpeed * moveDir
+      moveY += Math.sin(effectiveAngle) * moveSpeed * moveDir
       moving = true
     }
     if (keys.has('s') || keys.has('arrowdown')) {
-      moveX -= Math.cos(effectiveAngle) * moveSpeed
-      moveY -= Math.sin(effectiveAngle) * moveSpeed
+      moveX -= Math.cos(effectiveAngle) * moveSpeed * moveDir
+      moveY -= Math.sin(effectiveAngle) * moveSpeed * moveDir
       moving = true
     }
 
@@ -1204,9 +1352,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Check what center ray hits (for anomaly clicking)
     const centerHit = castRay(px, py, pa)
-    lookingAtAnomaly = centerHit.cell === ANOMALY && centerHit.dist < 3.5
+    const anomalyKey = `${centerHit.hitX},${centerHit.hitY}`
+    lookingAtAnomaly = centerHit.cell === ANOMALY && centerHit.dist < 3.5 && !usedAnomalies.has(anomalyKey)
     anomalyDist = centerHit.dist
     anomalyScreenX = canvas ? canvas.width / 2 : 400
+    anomalyWX = centerHit.hitX
+    anomalyWY = centerHit.hitY
 
     // Expire current effect
     if (currentEffect && time - currentEffect.triggeredAt > currentEffect.duration) {
@@ -1266,12 +1417,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const insanityB = insanity > 0.4 ? -insanity * 10 : 0
 
     if (cell === ANOMALY) {
-      // Anomaly walls shimmer with a subtle otherworldly glow
-      const shimmer = 0.5 + Math.sin(time * 2.5) * 0.3
+      // Anomaly walls shimmer with a strong otherworldly glow — clearly different from normal walls
+      const shimmer = 0.5 + Math.sin(time * 2.5) * 0.4
+      const pulse = 0.8 + Math.sin(time * 4) * 0.2
       return [
-        (45 + tensionR + insanityR + shimmer * 15) * brightness * sideDim,
-        (32 + tensionG + insanityG + shimmer * 8) * brightness * sideDim,
-        (70 + insanityB + shimmer * 20) * brightness * sideDim,
+        (55 + tensionR + insanityR + shimmer * 25) * brightness * sideDim * pulse,
+        (38 + tensionG + insanityG + shimmer * 12) * brightness * sideDim * pulse,
+        (90 + insanityB + shimmer * 35) * brightness * sideDim * pulse,
       ]
     }
     if (cell === INSCRIPTION) {
@@ -2010,7 +2162,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const heightMod = insanity > 0.6 ? 1 + (insanity - 0.6) * 0.5 : 1
       const wallHeight = Math.min(h * 2, (h / correctedDist) * heightMod)
       const wallTop = (midLine - wallHeight / 2)
-      const brightness = Math.max(0, 1 - correctedDist / 10)
+      const brightBoost = time < brightBoostEnd ? 0.25 : 0
+      const brightness = Math.min(1, Math.max(0, 1 - correctedDist / 10) + brightBoost)
       const sideDim = hit.side ? 0.7 : 1.0
 
       // Tension + insanity flicker
@@ -2036,20 +2189,23 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         })
       }
 
-      // Collect wall objects on anomaly walls
-      if (hit.cell === ANOMALY && correctedDist < 5) {
-        const obj = getWallObject(hit.hitX, hit.hitY)
-        if (obj) {
-          visibleObjects.push({
-            obj,
-            screenX: i * stripW + stripW / 2,
-            wallTop,
-            wallHeight,
-            dist: correctedDist,
-            brightness,
-            wx: hit.hitX,
-            wy: hit.hitY,
-          })
+      // Collect wall objects on anomaly walls (skip used ones)
+      if (hit.cell === ANOMALY && correctedDist < 7) {
+        const objKey = `${hit.hitX},${hit.hitY}`
+        if (!usedAnomalies.has(objKey)) {
+          const obj = getWallObject(hit.hitX, hit.hitY)
+          if (obj) {
+            visibleObjects.push({
+              obj,
+              screenX: i * stripW + stripW / 2,
+              wallTop,
+              wallHeight,
+              dist: correctedDist,
+              brightness,
+              wx: hit.hitX,
+              wy: hit.hitY,
+            })
+          }
         }
       }
     }
@@ -2081,32 +2237,61 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       shownObjects.add(key)
 
       const yPos = getObjectYPos(vo.wx, vo.wy)
-      const objY = vo.wallTop + vo.wallHeight * yPos
-      const scale = Math.max(0.3, 1 - vo.dist / 5)
-      const objW = vo.obj.w * scale
-      const objH = vo.obj.h * scale
-      const alpha = vo.brightness * (0.4 + Math.sin(time * 2 + vo.wx * 3.7) * 0.2)
+      let objY = vo.wallTop + vo.wallHeight * yPos
+      const baseScale = Math.max(0.5, 1.2 - vo.dist / 7) * (vo.obj.scale || 1.0)
+      const alpha = Math.min(0.9, vo.brightness * (0.6 + Math.sin(time * 2.5 + vo.wx * 3.7) * 0.25))
 
-      // Glow behind the object
-      const glowR = 6 * scale
+      // Apply physics
+      let physScale = baseScale
+      let rotation = 0
+      const phys = vo.obj.physics || 'static'
+      if (phys === 'bob') {
+        objY += Math.sin(time * 1.5 + vo.wx * 2.3) * 6 * baseScale // gentle floating
+      } else if (phys === 'spin') {
+        rotation = time * 1.2 + vo.wy * 4.1
+      } else if (phys === 'breathe') {
+        physScale = baseScale * (0.9 + Math.sin(time * 2 + vo.wx * 3) * 0.15)
+      }
+
+      // Pulsing glow behind the object — much more visible
+      const pulse = 0.7 + Math.sin(time * 3 + vo.wy * 2.1) * 0.3
+      const glowR = 16 * physScale * pulse
       const glowGrad = ctx.createRadialGradient(vo.screenX, objY, 0, vo.screenX, objY, glowR * 3)
-      glowGrad.addColorStop(0, `rgba(140, 100, 200, ${alpha * 0.25})`)
-      glowGrad.addColorStop(1, 'rgba(140, 100, 200, 0)')
+      glowGrad.addColorStop(0, `rgba(160, 120, 240, ${alpha * 0.4 * pulse})`)
+      glowGrad.addColorStop(0.5, `rgba(120, 80, 200, ${alpha * 0.15 * pulse})`)
+      glowGrad.addColorStop(1, 'rgba(100, 60, 180, 0)')
       ctx.fillStyle = glowGrad
       ctx.fillRect(vo.screenX - glowR * 3, objY - glowR * 3, glowR * 6, glowR * 6)
 
-      // Draw the object symbol
-      const fontSize = Math.max(6, Math.floor(12 * scale))
-      ctx.font = `${fontSize}px sans-serif`
-      ctx.fillStyle = `rgba(200, 170, 240, ${alpha})`
-      ctx.textAlign = 'center'
-      ctx.fillText(vo.obj.icon, vo.screenX, objY + fontSize * 0.3)
+      // Drip physics — small particles falling from object
+      if (phys === 'drip' && Math.random() < 0.3) {
+        const dripY = objY + Math.random() * 15 * physScale
+        const dripAlpha = alpha * 0.4 * (1 - Math.random() * 0.5)
+        ctx.beginPath()
+        ctx.arc(vo.screenX + (Math.random() - 0.5) * 4, dripY, 1.5 * physScale, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(140, 40, 60, ${dripAlpha})`
+        ctx.fill()
+      }
 
-      // At close range, show description
-      if (vo.dist < 2.5) {
-        ctx.font = `${Math.floor(9 * scale)}px "Cormorant Garamond", serif`
-        ctx.fillStyle = `rgba(180, 160, 200, ${alpha * 0.5})`
-        ctx.fillText(vo.obj.desc, vo.screenX, objY + fontSize + 8 * scale)
+      // Draw the object symbol — with rotation and scale
+      const fontSize = Math.max(14, Math.floor(24 * physScale))
+      ctx.save()
+      ctx.translate(vo.screenX, objY)
+      if (rotation) ctx.rotate(rotation)
+      ctx.font = `${fontSize}px sans-serif`
+      ctx.fillStyle = `rgba(220, 190, 255, ${alpha})`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(vo.obj.icon, 0, 0)
+      ctx.restore()
+
+      // Show description at moderate range
+      if (vo.dist < 4) {
+        const descAlpha = Math.min(0.7, alpha * 0.6)
+        ctx.font = `${Math.floor(12 * physScale)}px "Cormorant Garamond", serif`
+        ctx.fillStyle = `rgba(200, 180, 230, ${descAlpha})`
+        ctx.textAlign = 'center'
+        ctx.fillText(vo.obj.desc, vo.screenX, objY + fontSize * 0.6 + 10 * physScale)
       }
     }
 
@@ -2373,6 +2558,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       currentFragment = null
       lastFetchTime = time
       fetchIntervalSec = 8 + Math.random() * 10
+
+      // Reset used anomalies and ambient sounds for fresh session
+      usedAnomalies.clear()
+      lastCreepySoundTime = time + 20 // first ambient sound after 20s
 
       initAudio()
       render()

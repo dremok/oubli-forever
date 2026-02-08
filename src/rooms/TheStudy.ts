@@ -61,6 +61,16 @@ const PROMPTS_BASE = [
   'The void is not empty. What fills the emptiness you carry?',
   'Write about a landscape that has changed beyond recognition...',
   'A material that can be memory, logic, or learning — what would you choose to be right now?',
+
+  // Feb 2026 — round 2 culturally grounded prompts
+  'AI generates 7 million songs per day. Write about a song that could never be generated...',
+  'Korg built a synth where you touch steel resonators to shape sound. What would you touch to shape a memory?',
+  'Scientists say we don\'t hear music — we become it. What rhythm has your body memorized?',
+  'A melody from 1926 just entered the public domain. What would you set free after 100 years?',
+  'The Doomsday Clock reads 85 seconds to midnight. What would you write in the last 85 seconds?',
+  'Devon Turnbull built a listening room as art. Describe the room where you listen best...',
+  'An AI can now drive a rover on Mars. Write about a place only a machine has seen...',
+  'The polar vortex is splitting. Write about something protective that broke apart...',
 ]
 
 // Fallback quotes for when the API is unreachable
@@ -176,6 +186,21 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
   // Flicker state for oil lamp effect
   let flickerPhase = 0
   let flickerIntensity = 0.03
+
+  // Writing streak warmth
+  let lastKeyTime = 0
+  let streakWarmth = 0 // 0-1, builds during continuous typing
+
+  // Ink blot drops
+  interface InkBlot {
+    x: number; y: number
+    radius: number; maxRadius: number
+    alpha: number; age: number
+    spreading: boolean
+  }
+  const inkBlots: InkBlot[] = []
+  let lastBlotTime = 0
+  let streakEndTime = 0
 
   function loadText(): string {
     try {
@@ -435,6 +460,63 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
     osc.stop(now + 0.6)
   }
 
+  /** Play a typewriter click sound on keypress */
+  function playTypewriterClick(keyType: 'letter' | 'space' | 'enter' | 'backspace') {
+    if (!audioCtx || !audioNodes.masterGain) return
+    const now = audioCtx.currentTime
+
+    // Different character for each key type
+    const configs = {
+      letter: { freq: 2200 + Math.random() * 600, dur: 0.025, vol: 0.04, decay: 0.02 },
+      space: { freq: 1400 + Math.random() * 200, dur: 0.04, vol: 0.05, decay: 0.03 },
+      enter: { freq: 800, dur: 0.08, vol: 0.06, decay: 0.06 }, // carriage return
+      backspace: { freq: 3000 + Math.random() * 400, dur: 0.015, vol: 0.025, decay: 0.015 },
+    }
+    const cfg = configs[keyType]
+
+    // Short noise burst filtered to give mechanical character
+    const sampleRate = audioCtx.sampleRate
+    const bufLen = Math.ceil(sampleRate * cfg.dur)
+    const buf = audioCtx.createBuffer(1, bufLen, sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < bufLen; i++) {
+      data[i] = (Math.random() * 2 - 1)
+    }
+
+    const src = audioCtx.createBufferSource()
+    src.buffer = buf
+
+    const bp = audioCtx.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.frequency.value = cfg.freq
+    bp.Q.value = 3
+
+    const env = audioCtx.createGain()
+    env.gain.setValueAtTime(cfg.vol, now)
+    env.gain.exponentialRampToValueAtTime(0.001, now + cfg.dur + cfg.decay)
+
+    src.connect(bp)
+    bp.connect(env)
+    env.connect(audioNodes.masterGain)
+    src.start(now)
+    src.stop(now + cfg.dur + cfg.decay + 0.01)
+
+    // Enter gets a secondary low thump (carriage return feel)
+    if (keyType === 'enter') {
+      const osc = audioCtx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(200, now)
+      osc.frequency.exponentialRampToValueAtTime(80, now + 0.06)
+      const thumpEnv = audioCtx.createGain()
+      thumpEnv.gain.setValueAtTime(0.03, now)
+      thumpEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+      osc.connect(thumpEnv)
+      thumpEnv.connect(audioNodes.masterGain)
+      osc.start(now)
+      osc.stop(now + 0.1)
+    }
+  }
+
   /** Play a soft page-turn sound (called when quotes change) */
   function playPageTurn() {
     if (!audioCtx || !audioNodes.masterGain) return
@@ -541,22 +623,79 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
 
     atmosCtx.clearRect(0, 0, w, h)
 
+    // --- Writing streak warmth ---
+    const now = Date.now()
+    const timeSinceKey = now - lastKeyTime
+    if (timeSinceKey < 800) {
+      // Actively typing — build warmth
+      streakWarmth = Math.min(1, streakWarmth + 0.003)
+    } else {
+      // Not typing — cool down
+      if (streakWarmth > 0 && streakEndTime === 0) {
+        streakEndTime = now // mark when streak ended
+      }
+      streakWarmth = Math.max(0, streakWarmth - 0.001)
+    }
+
+    // --- Ink blot drops (spawn after writing pauses) ---
+    if (streakEndTime > 0 && now - streakEndTime > 3000 && now - lastBlotTime > 8000 && Math.random() < 0.02) {
+      // Ink blots appear after you stop writing — like ink pooling on the page
+      const bx = w * 0.2 + Math.random() * w * 0.6
+      const by = h * 0.2 + Math.random() * h * 0.6
+      inkBlots.push({
+        x: bx, y: by,
+        radius: 0, maxRadius: 15 + Math.random() * 35,
+        alpha: 0.12 + Math.random() * 0.08,
+        age: 0,
+        spreading: true,
+      })
+      lastBlotTime = now
+      streakEndTime = 0
+    }
+
+    // Update and draw ink blots
+    for (let i = inkBlots.length - 1; i >= 0; i--) {
+      const blot = inkBlots[i]
+      blot.age++
+      if (blot.spreading) {
+        blot.radius += (blot.maxRadius - blot.radius) * 0.02
+        if (blot.radius > blot.maxRadius * 0.95) blot.spreading = false
+      } else {
+        blot.alpha -= 0.0003
+      }
+      if (blot.alpha <= 0) { inkBlots.splice(i, 1); continue }
+
+      const blotGrad = atmosCtx.createRadialGradient(blot.x, blot.y, 0, blot.x, blot.y, blot.radius)
+      blotGrad.addColorStop(0, `rgba(5, 2, 15, ${blot.alpha})`)
+      blotGrad.addColorStop(0.6, `rgba(10, 4, 25, ${blot.alpha * 0.6})`)
+      blotGrad.addColorStop(1, `rgba(10, 4, 25, 0)`)
+      atmosCtx.fillStyle = blotGrad
+      atmosCtx.fillRect(blot.x - blot.radius, blot.y - blot.radius, blot.radius * 2, blot.radius * 2)
+    }
+
     // --- Oil lamp flicker ---
     flickerPhase += 0.02 + Math.random() * 0.01
-    flickerIntensity = 0.02 + Math.sin(flickerPhase) * 0.01
+    const baseFlicker = 0.02 + Math.sin(flickerPhase) * 0.01
       + Math.sin(flickerPhase * 2.3) * 0.008
       + Math.sin(flickerPhase * 5.7) * 0.005
+    flickerIntensity = baseFlicker + streakWarmth * 0.03 // writing makes the flame burn brighter
 
-    // Subtle warm overlay that flickers
-    const flickerAlpha = 0.015 + flickerIntensity
-    atmosCtx.fillStyle = `rgba(255, 200, 100, ${flickerAlpha})`
+    // Subtle warm overlay that flickers — warmer during writing streaks
+    const flickerAlpha = 0.015 + flickerIntensity + streakWarmth * 0.02
+    const warmR = 255
+    const warmG = Math.floor(200 - streakWarmth * 30) // shifts warmer/oranger
+    const warmB = Math.floor(100 - streakWarmth * 40)
+    atmosCtx.fillStyle = `rgba(${warmR}, ${warmG}, ${warmB}, ${flickerAlpha})`
     atmosCtx.fillRect(0, 0, w, h)
 
-    // --- Vignette ---
-    const vigGrad = atmosCtx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.75)
+    // --- Vignette (opens up during writing streaks) ---
+    const vigInner = 0.25 + streakWarmth * 0.1 // vignette opens wider while writing
+    const vigOuter = 0.75 + streakWarmth * 0.1
+    const vigEdge = 0.5 - streakWarmth * 0.15 // edge darkens less while in flow
+    const vigGrad = atmosCtx.createRadialGradient(w / 2, h / 2, w * vigInner, w / 2, h / 2, w * vigOuter)
     vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)')
-    vigGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.15)')
-    vigGrad.addColorStop(1, 'rgba(0, 0, 0, 0.5)')
+    vigGrad.addColorStop(0.6, `rgba(0, 0, 0, ${0.15 - streakWarmth * 0.05})`)
+    vigGrad.addColorStop(1, `rgba(0, 0, 0, ${vigEdge})`)
     atmosCtx.fillStyle = vigGrad
     atmosCtx.fillRect(0, 0, w, h)
 
@@ -582,7 +721,7 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       if (mote.x < -10) mote.x = w + 10
       if (mote.x > w + 10) mote.x = -10
 
-      // Brighter near cursor (candle illumination)
+      // Brighter near cursor (candle illumination) + writing streak
       let cursorBoost = 0
       if (mouseX > 0 && mouseY > 0) {
         const dx = mote.x - mouseX
@@ -590,11 +729,12 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
         const dist = Math.sqrt(dx * dx + dy * dy)
         cursorBoost = Math.max(0, 1 - dist / 200) * 0.4
       }
+      const streakBoost = streakWarmth * 0.15 // motes glow brighter as writing heats up
 
       const r = 255
       const g = Math.floor(180 + mote.warmth * 40)
       const b = Math.floor(80 + mote.warmth * 40)
-      const a = mote.alpha + cursorBoost
+      const a = mote.alpha + cursorBoost + streakBoost
 
       atmosCtx.beginPath()
       atmosCtx.arc(mote.x, mote.y, mote.size, 0, Math.PI * 2)
@@ -830,6 +970,20 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
           }
         }
       })
+      // Typewriter click sounds on keypress
+      textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+        lastKeyTime = Date.now()
+        streakEndTime = 0
+        if (e.key === 'Enter') playTypewriterClick('enter')
+        else if (e.key === ' ') playTypewriterClick('space')
+        else if (e.key === 'Backspace') playTypewriterClick('backspace')
+        else if (e.key.length === 1) playTypewriterClick('letter')
+        // Boost fireplace crackling during writing
+        if (audioNodes.fireplaceGain && audioCtx) {
+          const targetVol = 0.12 + streakWarmth * 0.08
+          audioNodes.fireplaceGain.gain.setTargetAtTime(targetVol, audioCtx.currentTime, 0.3)
+        }
+      })
       overlay.appendChild(textarea)
 
       // Bottom bar: word count + actions
@@ -1006,6 +1160,8 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       stopQuoteCycle()
       fadeOutAudio()
       stopAtmosphere()
+      inkBlots.length = 0
+      streakWarmth = 0
     },
 
     destroy() {
@@ -1014,6 +1170,8 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       stopQuoteCycle()
       destroyAudio()
       stopAtmosphere()
+      inkBlots.length = 0
+      streakWarmth = 0
       overlay?.remove()
     },
   }
