@@ -1308,6 +1308,45 @@ Surface: 36 | Hidden: 7
 - 30+ new whisper fragments: snow drought, CRISPR epigenetic editing, mechanistic interpretability, Tracey Emin, EPiC salt mine, Roman Space Telescope
 - 5 new DigitalDecay meditations
 
+### 116. Navigation & UI Polish
+- Passage bar moved from bottom to top of screen (Mac Dock conflict)
+- GentleGuide hint legend moved from center to left side for readability
+- Updated hint text: "navigation bar above" (was "below")
+
+### 117. TheVoid Deepened (560→1092 lines)
+- Memory constellation hints: faint text ghosts of stored memories drift across void (alpha 0.03-0.06)
+- Breathing particle sync: 5 concentric gold rings expand from center in sync with cosmic rhythm
+- Portal particle trails: colored particles drift from each portal toward cursor on hover
+- Cosmic wind audio: bandpass-filtered noise buffer (60-200Hz sweep, gain 0.015)
+- Time-of-day vignette tint: blue at night, amber at dawn/dusk, neutral during day
+- Cultural inscriptions: 13 philosophical fragments cycling every 20s at alpha 0.03
+- `getMemories` dependency added for memory ghost text
+
+### 118. TheInstrument Deepened — Frequency Band Portals
+- 5 portal frequency bands at bottom of waveform canvas (study/choir/pendulum/disintegration/void)
+- Each band has idle pulse animation, hover glow interpolation, click flash + particles
+- Labels always faintly visible, brighter on hover
+- ALL 43 rooms now have in-room navigation portals
+
+### 119. ThePendulum Deepened
+- Harmonic audio: 2 sine oscillators mapped to pendulum X/Y frequencies
+- Phase-based trail color: warm (hue 45) in-phase, cool (hue 260) out-of-phase
+- Decay visualization: trail width thins, alpha decreases, glow shrinks with decay
+- Ghost canvas afterimage: previous pattern captured to offscreen canvas at alpha 0.08
+- Cursor magnetic field: 120px radius, 0.15 strength, inverse-linear falloff
+- Pattern catalog: classifyPattern() labels (lissajous 3:2, spirograph 5:3, etc.)
+
+### 120. TheSketchpad Deepened
+- Drawing audio feedback: sine oscillator maps Y→pitch (200-800Hz), speed→volume
+- Pressure/speed variation: wider range (slow=1.8× width, fast=0.4×)
+- Ink bloom watercolor effect: 0.7s delay, +3px expansion with ease-out
+- Ghost strokes: 45 extra seconds at alpha 0.02 after normal 60s fade
+- Ambient particle response: speed-scattered particles while drawing, idle drift when not
+
+### 121. Feb 2026 Cultural Content Update (Round 3)
+- 25 new whisper fragments: hippocampal CA1 hidden layers, electrons/topology, quantum transistor moment, deep-sea mining, polar vortex split
+- 5 new DigitalDecay meditations matching research topics
+
 ---
-*Last updated: Era 9, Feature 115 — Four thinnest rooms deepened with interactivity + cultural grounding*
-*"the mountains forgot how to hold snow. february, and the peaks are bare."*
+*Last updated: Era 9, Feature 121 — Four core rooms deepened (Void, Instrument, Pendulum, Sketchpad) + all 43 rooms have in-room portals*
+*"topology is more fundamental than particles. order persists even after identity dissolves."*
