@@ -1,22 +1,22 @@
 /**
- * THE LABYRINTH — you are inside
+ * THE LABYRINTH — infinite, generative, forgetting
  *
- * First-person maze exploration via raycasting.
- * WASD to move, mouse/arrow to look. The maze is seeded and
- * persists between visits — you always return to the same corridors.
+ * First-person maze exploration via raycasting in an infinite
+ * procedural labyrinth. WASD to move, arrow keys to turn.
+ * Keyboard only — the maze demands your full attention.
  *
- * Hidden within the maze are three artifacts that connect to other rooms:
- * - A cipher stone (encoded inscriptions) → the cipher
- * - A cartographer's table (partial map) → the cartographer
- * - A bookshelf growing from the wall → the library
+ * The labyrinth generates itself as you walk — infinite corridors
+ * stretching in every direction, determined by hash functions.
+ * But it also forgets: corridors you passed through dissolve
+ * behind you, regenerated differently if you return.
  *
- * Walls whisper fragments of your memories as you pass.
- * Wikipedia fragments appear as "forgotten knowledge" scratched into stone.
- * The exit at the far end leads to a random hidden room.
+ * Rare jump scares punctuate the unease — pre-generated images
+ * and sounds that flash in dead ends and dark corners.
  *
- * Inspired by: Borges' "Garden of Forking Paths", grey matter
- * erosion research, Chiharu Shiota's thread installations,
- * the Minotaur's labyrinth, how getting lost is a form of finding
+ * Inspired by: Borges' "Garden of Forking Paths", procedural
+ * generation, grey matter erosion research, Chiharu Shiota's
+ * thread installations, 3600-year-old Patagonian trees burning,
+ * the feeling that the way back has changed
  */
 
 import type { Room } from './RoomManager'
@@ -28,27 +28,18 @@ interface LabyrinthDeps {
   getMemories?: () => { currentText: string; degradation: number }[]
 }
 
-// Wikipedia "forgotten knowledge" fragment
-interface WikiFragment {
-  title: string
-  extract: string
-  appearedAt: number    // time when this fragment appeared
-  revealProgress: number // 0..1 how much of the extract is revealed
-  alpha: number          // current fade alpha
-  fading: boolean        // is it fading out?
-}
+// Cell types
+const WALL = 1
+const INSCRIPTION = 2
 
-// Seeded pseudo-random number generator (mulberry32)
-function mulberry32(seed: number) {
-  return () => {
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed)
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
-    return ((t ^ t >>> 14) >>> 0) / 4294967296
-  }
-}
+// Region system for forgetting
+const REGION_SIZE = 12
+const KEEP_RADIUS = 3
 
-// Text fragments that appear on walls (mixed with user memories)
+// Maze parameters
+const DOOR_THRESHOLD = 0.38
+
+// Text fragments on walls
 const WALL_FRAGMENTS = [
   'every path divides',
   'I have been here before',
@@ -66,37 +57,44 @@ const WALL_FRAGMENTS = [
   'each passage a synapse',
   'forgetting the way back',
   'the maze dreams itself',
+  'the corridor behind you has changed',
+  'this wall was not here before',
+  'you are the minotaur',
+  '3600 years of memory stored in wood, burning',
 ]
 
-// Cultural inscriptions — visible on walls when player is close
 const CULTURAL_INSCRIPTIONS = [
   'borges imagined a library containing every possible book. this labyrinth contains every possible path.',
   'the minotaur was the child of a queen and a bull. what is the child of a human and forgetting?',
   'thread unspools behind you. chiharu shiota fills galleries with red thread — connection made visible.',
   'the brain\'s hippocampus has four hidden layers. each stores a different kind of memory.',
-  'perseverance rover navigated mars terrain by AI alone. 689 feet through alien landscape.',
-  '365 buttons, one for each day. it only has to make sense to me.',
+  'in patagonia, alerce trees 3600 years old are burning. each ring a year of memory stored in wood.',
+  'the great meme reset of 2026: a collective desire to forget an entire era and start over.',
+  'episodic and semantic memory share the same neural network. what happened to you and what you know are one.',
+  'ruthenium molecules that switch between memory, logic, and learning. matter that remembers.',
+  'milan 2026: the olympics chose fire and human voice over AI spectacle. the analog as radical act.',
+  'a frozen earth was found hiding in kepler\'s old archives. something real, waiting to be noticed.',
 ]
 
-// Cell types
-const WALL = 1
-const EXIT = 2
-const CIPHER_STONE = 3   // → cipher room
-const MAP_TABLE = 4       // → cartographer room
-const BOOKSHELF = 5       // → library room
-const INSCRIPTION = 6     // wall with text (not a passage, just decoration)
-const PORTAL = 7          // dark doorway portal to connected rooms
+// Portal targets for rooms reachable from the labyrinth
+const PORTAL_TARGETS = [
+  { room: 'cipher', label: 'the cipher', color: [40, 160, 90] as [number, number, number] },
+  { room: 'cartographer', label: 'the cartographer', color: [170, 140, 60] as [number, number, number] },
+  { room: 'library', label: 'the library', color: [140, 50, 90] as [number, number, number] },
+  { room: 'mirror', label: 'the mirror', color: [100, 100, 180] as [number, number, number] },
+  { room: 'void', label: 'the void', color: [80, 60, 120] as [number, number, number] },
+]
 
-// Portal definition
-interface LabyrinthPortal {
-  x: number
-  y: number
-  targetRoom: string
-  label: string
-  color: [number, number, number]
+// Wikipedia fragment for "forgotten knowledge"
+interface WikiFragment {
+  title: string
+  extract: string
+  appearedAt: number
+  revealProgress: number
+  alpha: number
+  fading: boolean
 }
 
-// Strip HTML tags from Wikipedia extracts
 function stripHtml(html: string): string {
   const tmp = document.createElement('div')
   tmp.innerHTML = html
@@ -111,399 +109,249 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let frameId = 0
   let time = 0
 
-  // Player state
+  // Player state — world coordinates
   let px = 1.5
   let py = 1.5
   let pa = 0 // angle in radians
-  const moveSpeed = 0.03
-  const turnSpeed = 0.04
+  const moveSpeed = 0.035
+  const turnSpeed = 0.045
 
-  // Maze
-  let maze: number[][] = []
-  let mazeW = 0
-  let mazeH = 0
-  let exitX = 0
-  let exitY = 0
+  // Input
+  const keys = new Set<string>()
 
-  // Special object positions
-  let cipherPos = { x: 0, y: 0 }
-  let mapPos = { x: 0, y: 0 }
-  let bookPos = { x: 0, y: 0 }
+  // Region salts for the forgetting mechanic
+  const regionSalts = new Map<string, number>()
+  const activeRegions = new Set<string>()
 
-  // Portal positions (in-maze doorways to connected rooms)
-  let portals: LabyrinthPortal[] = []
+  // Explored cells for minimap
+  const exploredCells = new Set<string>()
 
-  // Wall inscriptions: map cell key "x,y" → text
-  const wallTexts = new Map<string, string>()
+  // Minimap ghost regions (evicted)
+  const ghostRegions = new Set<string>()
 
-  // Discovery state (persisted)
-  let discovered = new Set<string>()
+  // Tension system
+  let tension = 0
+  let tensionTarget = 0
+
+  // Jump scare state
+  const scareImages: HTMLImageElement[] = []
+  const scareBuffers: AudioBuffer[] = []
+  let currentScare: { triggeredAt: number; image: HTMLImageElement | null; duration: number } | null = null
+  let lastScareTime = -999
+
+  // Portal detection
+  let nearbyPortal: { room: string; label: string; color: [number, number, number] } | null = null
 
   // Audio
   let audioCtx: AudioContext | null = null
-  let footstepOsc: OscillatorNode | null = null
-  let footstepGain: GainNode | null = null
-  let footstepOsc2: OscillatorNode | null = null
-  let footstepGain2: GainNode | null = null
   let ambienceGain: GainNode | null = null
+  let ambOsc: OscillatorNode | null = null
+  let footstepGain: GainNode | null = null
+  let footstepOsc: OscillatorNode | null = null
   let reverbNode: ConvolverNode | null = null
   let reverbGain: GainNode | null = null
   let dripTimeout: ReturnType<typeof setTimeout> | null = null
   let lastStepTime = 0
 
-  // Interaction hint
-  let nearbyObject: string | null = null
-  let interactAlpha = 0
-
-  // Input
-  const keys = new Set<string>()
-
-  // Mouse-look state
-  let mouseLookAngle = 0 // offset from movement direction
-  let viewAngle = 0 // pa + mouseLookAngle, used for raycasting
-
-  // Minimap — explored cells
-  const exploredCells = new Set<string>()
-
-  // --- Wikipedia "Forgotten Knowledge" system ---
-  const wikiCache = new Set<string>()        // titles already seen this session
+  // Wikipedia system
+  const wikiCache = new Set<string>()
   let currentFragment: WikiFragment | null = null
   let lastFetchTime = 0
-  let fetchIntervalSec = 35                   // first fetch after 35s, then randomized 30-60s
+  let fetchIntervalSec = 35
   let wikiFetchInProgress = false
 
-  async function fetchWikiFragment(): Promise<void> {
-    if (wikiFetchInProgress) return
-    wikiFetchInProgress = true
-    try {
-      const url = 'https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&prop=extracts&exchars=300&exintro=1&format=json&origin=*'
-      const resp = await fetch(url)
-      if (!resp.ok) return
-      const data = await resp.json()
-      const pages = data?.query?.pages
-      if (!pages) return
+  // Inscription hint
+  let inscriptionText = ''
+  let inscriptionAlpha = 0
 
-      const pageIds = Object.keys(pages)
-      for (const pid of pageIds) {
-        const page = pages[pid]
-        const title: string = page.title || ''
-        const rawExtract: string = page.extract || ''
-        const extract = stripHtml(rawExtract).trim()
+  // ===== HASH-BASED INFINITE MAZE =====
 
-        // Skip if already seen, too short, or empty
-        if (!title || !extract || extract.length < 20) continue
-        if (wikiCache.has(title)) continue
-
-        wikiCache.add(title)
-        currentFragment = {
-          title,
-          extract: extract.substring(0, 250), // cap length for readability
-          appearedAt: time,
-          revealProgress: 0,
-          alpha: 0,
-          fading: false,
-        }
-        // Randomize next interval between 30-60 seconds
-        fetchIntervalSec = 30 + Math.random() * 30
-        lastFetchTime = time
-        return
-      }
-    } catch {
-      // Graceful fallback — just skip this cycle
-    } finally {
-      wikiFetchInProgress = false
-    }
+  function regionKey(wx: number, wy: number): string {
+    const rx = Math.floor(wx / REGION_SIZE)
+    const ry = Math.floor(wy / REGION_SIZE)
+    return `${rx},${ry}`
   }
 
-  function updateWikiFragment(): void {
-    // Trigger fetch if enough time has passed and no current fragment
-    if (!currentFragment && time - lastFetchTime > fetchIntervalSec) {
-      fetchWikiFragment()
-    }
-
-    if (!currentFragment) return
-
-    const age = time - currentFragment.appearedAt
-
-    // Fade in over 2 seconds
-    if (age < 2) {
-      currentFragment.alpha = Math.min(1, age / 2)
-    }
-
-    // Gradually reveal extract text over 6 seconds (after 1s delay)
-    if (age > 1 && age < 7) {
-      currentFragment.revealProgress = Math.min(1, (age - 1) / 6)
-    } else if (age >= 7) {
-      currentFragment.revealProgress = 1
-    }
-
-    // Start fading after 15 seconds, fade over 3 seconds
-    if (age > 15) {
-      currentFragment.fading = true
-      currentFragment.alpha = Math.max(0, 1 - (age - 15) / 3)
-    }
-
-    // Remove after fully faded (18 seconds total)
-    if (age > 18) {
-      currentFragment = null
-    }
+  function cellHash(wx: number, wy: number): number {
+    const rx = Math.floor(wx / REGION_SIZE)
+    const ry = Math.floor(wy / REGION_SIZE)
+    const salt = regionSalts.get(`${rx},${ry}`) ?? 0
+    let h = (wx * 374761393 + wy * 668265263 + salt * 1013904223) | 0
+    h = Math.imul(h ^ (h >>> 13), 1274126177)
+    h = h ^ (h >>> 16)
+    return (h >>> 0) / 4294967296
   }
 
-  function renderWikiFragment(w: number, h: number): void {
-    if (!currentFragment || !ctx) return
-
-    const frag = currentFragment
-    const baseAlpha = frag.alpha * 0.7 // keep it subtle, like old stone
-
-    // Position: upper-left area, like scratches on nearby wall
-    const boxX = 24
-    const boxY = 50
-    const maxWidth = Math.min(320, w * 0.4)
-
-    // Title — appears immediately, styled like carved stone lettering
-    ctx.save()
-    ctx.font = 'small-caps 13px "Cormorant Garamond", serif'
-    ctx.fillStyle = `rgba(160, 145, 120, ${baseAlpha * 0.9})`
-    ctx.textAlign = 'left'
-
-    // Add slight jitter to simulate uneven carving
-    const jitterX = Math.sin(time * 0.7 + 3.1) * 0.5
-    const jitterY = Math.cos(time * 0.5 + 1.7) * 0.3
-
-    ctx.fillText(frag.title.toUpperCase(), boxX + jitterX, boxY + jitterY)
-
-    // Thin line under title, like a chisel mark
-    const titleWidth = ctx.measureText(frag.title.toUpperCase()).width
-    ctx.strokeStyle = `rgba(140, 125, 100, ${baseAlpha * 0.4})`
-    ctx.lineWidth = 0.5
-    ctx.beginPath()
-    ctx.moveTo(boxX, boxY + 5)
-    ctx.lineTo(boxX + Math.min(titleWidth, maxWidth) * frag.revealProgress, boxY + 5)
-    ctx.stroke()
-
-    // Extract text — revealed character by character
-    if (frag.revealProgress > 0) {
-      const charsToShow = Math.floor(frag.extract.length * frag.revealProgress)
-      const visibleText = frag.extract.substring(0, charsToShow)
-
-      ctx.font = '13px "Cormorant Garamond", serif'
-      ctx.fillStyle = `rgba(130, 120, 105, ${baseAlpha * 0.7})`
-
-      // Word-wrap the text manually
-      const words = visibleText.split(' ')
-      let line = ''
-      let lineY = boxY + 22
-
-      for (const word of words) {
-        const testLine = line ? line + ' ' + word : word
-        const metrics = ctx.measureText(testLine)
-        if (metrics.width > maxWidth && line) {
-          // Each line gets slight position variation — uneven stone surface
-          const lineJitter = Math.sin(lineY * 0.3 + time * 0.2) * 0.4
-          ctx.fillText(line, boxX + lineJitter, lineY)
-          line = word
-          lineY += 15
-          if (lineY > boxY + 100) break // max ~6 lines
-        } else {
-          line = testLine
-        }
-      }
-      if (line && lineY <= boxY + 100) {
-        const lineJitter = Math.sin(lineY * 0.3 + time * 0.2) * 0.4
-        ctx.fillText(line, boxX + lineJitter, lineY)
-      }
-
-      // Subtle "scratched into stone" texture overlay — small random dots
-      if (baseAlpha > 0.3) {
-        const dotCount = Math.floor(charsToShow * 0.15)
-        for (let i = 0; i < dotCount; i++) {
-          const dx = boxX + ((i * 37 + 13) % Math.floor(maxWidth))
-          const dy = boxY + 10 + ((i * 23 + 7) % 90)
-          const dotAlpha = baseAlpha * 0.15 * (0.3 + Math.sin(i * 1.7) * 0.3)
-          ctx.fillStyle = `rgba(100, 90, 75, ${dotAlpha})`
-          ctx.fillRect(dx, dy, 1, 1)
-        }
-      }
-    }
-
-    ctx.restore()
+  function cellHash2(wx: number, wy: number): number {
+    const rx = Math.floor(wx / REGION_SIZE)
+    const ry = Math.floor(wy / REGION_SIZE)
+    const salt = regionSalts.get(`${rx},${ry}`) ?? 0
+    let h = (wx * 668265263 + wy * 374761393 + salt * 2654435769) | 0
+    h = Math.imul(h ^ (h >>> 13), 2246822507)
+    h = h ^ (h >>> 16)
+    return (h >>> 0) / 4294967296
   }
 
-  // --- End Wikipedia system ---
-
-  function getSeed(): number {
-    const key = 'oubli-labyrinth-seed'
-    let seed = localStorage.getItem(key)
-    if (!seed) {
-      seed = String(Math.floor(Math.random() * 2147483647))
-      localStorage.setItem(key, seed)
-    }
-    return parseInt(seed)
-  }
-
-  function generateMaze(width: number, height: number, seed: number): number[][] {
-    const rng = mulberry32(seed)
-    const w = width | 1
-    const h = height | 1
-    mazeW = w
-    mazeH = h
-
-    // Fill with walls
-    const grid: number[][] = Array.from({ length: h }, () => Array(w).fill(WALL))
-
-    // Recursive backtracker (iterative to avoid stack overflow)
-    const stack: [number, number][] = [[1, 1]]
-    grid[1][1] = 0
-
-    while (stack.length > 0) {
-      const [x, y] = stack[stack.length - 1]
-      const dirs: [number, number][] = [[0, -2], [0, 2], [-2, 0], [2, 0]]
-      // Shuffle with seeded RNG
-      for (let i = dirs.length - 1; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1))
-        ;[dirs[i], dirs[j]] = [dirs[j], dirs[i]]
-      }
-
-      let carved = false
-      for (const [dx, dy] of dirs) {
-        const nx = x + dx
-        const ny = y + dy
-        if (nx > 0 && nx < w - 1 && ny > 0 && ny < h - 1 && grid[ny][nx] === WALL) {
-          grid[y + dy / 2][x + dx / 2] = 0
-          grid[ny][nx] = 0
-          stack.push([nx, ny])
-          carved = true
-          break
-        }
-      }
-      if (!carved) stack.pop()
-    }
-
-    // Place exit far from start
-    exitX = w - 2
-    exitY = h - 2
-    grid[exitY][exitX] = EXIT
-
-    // Collect all open cells for placing objects
-    const openCells: [number, number][] = []
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        if (grid[y][x] === 0 && !(x === 1 && y === 1) && !(x === exitX && y === exitY)) {
-          openCells.push([x, y])
-        }
-      }
-    }
-
-    // Shuffle open cells with seeded RNG
-    for (let i = openCells.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1))
-      ;[openCells[i], openCells[j]] = [openCells[j], openCells[i]]
-    }
-
-    // Place special objects — find walls adjacent to open cells
-    function placeAdjacentWall(cellIdx: number, cellType: number): { x: number; y: number } {
-      const [cx, cy] = openCells[cellIdx]
-      // Check 4 neighbors for a wall to mark as special
-      const neighbors: [number, number][] = [[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]]
-      for (const [nx, ny] of neighbors) {
-        if (nx > 0 && nx < w-1 && ny > 0 && ny < h-1 && grid[ny][nx] === WALL) {
-          grid[ny][nx] = cellType
-          return { x: nx, y: ny }
-        }
-      }
-      // Fallback: mark the cell itself
-      grid[cy][cx] = cellType
-      return { x: cx, y: cy }
-    }
-
-    // Place artifacts in different quadrants for good distribution
-    const q1 = openCells.filter(([x, y]) => x < w/2 && y < h/2)
-    const q2 = openCells.filter(([x, y]) => x >= w/2 && y < h/2)
-    const q3 = openCells.filter(([x, y]) => x < w/2 && y >= h/2)
-
-    // Cipher stone in quadrant with most cells, map table in next, bookshelf in last
-    const quadrants = [q1, q2, q3].sort((a, b) => b.length - a.length)
-
-    if (quadrants[0].length > 0) {
-      const idx = Math.floor(rng() * quadrants[0].length)
-      const [cx, cy] = quadrants[0][idx]
-      const cellIdx = openCells.findIndex(([x, y]) => x === cx && y === cy)
-      cipherPos = placeAdjacentWall(cellIdx >= 0 ? cellIdx : 0, CIPHER_STONE)
-    }
-    if (quadrants[1].length > 0) {
-      const idx = Math.floor(rng() * quadrants[1].length)
-      const [cx, cy] = quadrants[1][idx]
-      const cellIdx = openCells.findIndex(([x, y]) => x === cx && y === cy)
-      mapPos = placeAdjacentWall(cellIdx >= 0 ? cellIdx : 1, MAP_TABLE)
-    }
-    if (quadrants[2].length > 0) {
-      const idx = Math.floor(rng() * quadrants[2].length)
-      const [cx, cy] = quadrants[2][idx]
-      const cellIdx = openCells.findIndex(([x, y]) => x === cx && y === cy)
-      bookPos = placeAdjacentWall(cellIdx >= 0 ? cellIdx : 2, BOOKSHELF)
-    }
-
-    // --- Place portal doorways for connected rooms ---
-    // Use the 4th quadrant and remaining open cells for portals
-    const q4 = openCells.filter(([x, y]) => x >= w/2 && y >= h/2 && !(x === exitX && y === exitY))
-    const portalDefs: { targetRoom: string; label: string; color: [number, number, number] }[] = [
-      { targetRoom: 'cipher', label: 'the cipher', color: [40, 160, 90] },
-      { targetRoom: 'cartographer', label: 'the cartographer', color: [170, 140, 60] },
-      { targetRoom: 'library', label: 'the library', color: [140, 50, 90] },
+  // Check if this door has the minimum hash among a room's 4 doors
+  function isDoorMinForRoom(roomX: number, roomY: number, doorX: number, doorY: number, doorHash: number): boolean {
+    const doors: [number, number][] = [
+      [roomX, roomY - 1], [roomX, roomY + 1],
+      [roomX - 1, roomY], [roomX + 1, roomY],
     ]
-    portals = []
-    // Spread portals across the maze — use different cell pools
-    const portalPools = [q4, q2, q3]
-    for (let pi = 0; pi < portalDefs.length; pi++) {
-      const pool = portalPools[pi % portalPools.length]
-      // Find an open cell not already used by an artifact
-      for (const [cx, cy] of pool) {
-        const isArtifact =
-          (cx === cipherPos.x && cy === cipherPos.y) ||
-          (cx === mapPos.x && cy === mapPos.y) ||
-          (cx === bookPos.x && cy === bookPos.y)
-        const isUsed = portals.some(p => p.x === cx && p.y === cy)
-        if (!isArtifact && !isUsed && grid[cy][cx] === 0) {
-          // Find an adjacent wall to turn into a portal
-          const neighbors: [number, number][] = [[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]]
-          let placed = false
-          for (const [nx, ny] of neighbors) {
-            if (nx > 0 && nx < w-1 && ny > 0 && ny < h-1 && grid[ny][nx] === WALL) {
-              grid[ny][nx] = PORTAL
-              portals.push({ x: nx, y: ny, ...portalDefs[pi] })
-              placed = true
-              break
-            }
-          }
-          if (placed) break
-        }
-      }
+    for (const [dx, dy] of doors) {
+      if (dx === doorX && dy === doorY) continue
+      if (cellHash(dx, dy) < doorHash) return false
+    }
+    return true
+  }
+
+  function getWorldCell(wx: number, wy: number): number {
+    const xOdd = (wx & 1) === 1
+    const yOdd = (wy & 1) === 1
+
+    // Pillars at even/even — always wall
+    if (!xOdd && !yOdd) return WALL
+
+    // Rooms at odd/odd — always open
+    if (xOdd && yOdd) return 0
+
+    // Door position — check if open
+    const h = cellHash(wx, wy)
+
+    // Guaranteed exit: if this door is the minimum for either adjacent room, it's open
+    if (xOdd) {
+      // Connects rooms (wx, wy-1) and (wx, wy+1)
+      if (isDoorMinForRoom(wx, wy - 1, wx, wy, h)) return 0
+      if (isDoorMinForRoom(wx, wy + 1, wx, wy, h)) return 0
+    } else {
+      // Connects rooms (wx-1, wy) and (wx+1, wy)
+      if (isDoorMinForRoom(wx - 1, wy, wx, wy, h)) return 0
+      if (isDoorMinForRoom(wx + 1, wy, wx, wy, h)) return 0
     }
 
-    // Scatter inscriptions on ~15% of wall cells
-    wallTexts.clear()
+    // Standard threshold check
+    if (h < DOOR_THRESHOLD) return 0
+
+    // This is a wall — determine subtype
+    const h2 = cellHash2(wx, wy)
+    if (h2 < 0.10) return INSCRIPTION
+
+    return WALL
+  }
+
+  function countExits(wx: number, wy: number): number {
+    // Find room cell at or near this position
+    const rx = wx | 1
+    const ry = wy | 1
+    let exits = 0
+    if (getWorldCell(rx, ry - 1) === 0) exits++
+    if (getWorldCell(rx, ry + 1) === 0) exits++
+    if (getWorldCell(rx - 1, ry) === 0) exits++
+    if (getWorldCell(rx + 1, ry) === 0) exits++
+    return exits
+  }
+
+  function isPortalRoom(wx: number, wy: number): boolean {
+    if ((wx & 1) === 0 || (wy & 1) === 0) return false
+    return cellHash2(wx, wy) < 0.006
+  }
+
+  function getPortalTarget(wx: number, wy: number): { room: string; label: string; color: [number, number, number] } {
+    const idx = Math.floor(cellHash2(wx + 1, wy + 1) * PORTAL_TARGETS.length)
+    return PORTAL_TARGETS[idx % PORTAL_TARGETS.length]
+  }
+
+  function getInscriptionText(wx: number, wy: number): string {
     const memTexts = deps.getMemories?.().map(m => m.currentText).filter(t => t.length > 3) ?? []
     const allTexts = [...WALL_FRAGMENTS, ...memTexts.slice(0, 10)]
+    const idx = Math.floor(cellHash2(wx + 3, wy + 7) * allTexts.length)
+    return allTexts[idx % allTexts.length]
+  }
 
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        if (grid[y][x] === WALL && rng() < 0.12) {
-          // Check if adjacent to an open cell (visible wall)
-          const hasOpen = [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].some(
-            ([nx, ny]) => nx >= 0 && nx < w && ny >= 0 && ny < h && (grid[ny][nx] === 0 || grid[ny][nx] === EXIT)
-          )
-          if (hasOpen) {
-            grid[y][x] = INSCRIPTION
-            wallTexts.set(`${x},${y}`, allTexts[Math.floor(rng() * allTexts.length)])
-          }
-        }
+  // ===== REGION MANAGEMENT =====
+
+  function updateRegions(): void {
+    const prx = Math.floor(px / REGION_SIZE)
+    const pry = Math.floor(py / REGION_SIZE)
+
+    const newActive = new Set<string>()
+    for (let dx = -KEEP_RADIUS; dx <= KEEP_RADIUS; dx++) {
+      for (let dy = -KEEP_RADIUS; dy <= KEEP_RADIUS; dy++) {
+        newActive.add(`${prx + dx},${pry + dy}`)
       }
     }
 
-    return grid
+    // Increment salt for regions that just left the active set (the labyrinth forgets)
+    for (const key of activeRegions) {
+      if (!newActive.has(key)) {
+        const currentSalt = regionSalts.get(key) ?? 0
+        regionSalts.set(key, currentSalt + 1)
+        ghostRegions.add(key)
+      }
+    }
+
+    activeRegions.clear()
+    for (const key of newActive) {
+      activeRegions.add(key)
+      ghostRegions.delete(key)
+    }
   }
 
-  // Create a synthetic impulse response for convolution reverb (~2s stone corridor)
+  // ===== DDA RAYCASTING =====
+
+  interface RayHit {
+    dist: number
+    side: number
+    cell: number
+    hitX: number
+    hitY: number
+  }
+
+  function castRay(ox: number, oy: number, angle: number): RayHit {
+    const dx = Math.cos(angle)
+    const dy = Math.sin(angle)
+
+    let mapX = Math.floor(ox)
+    let mapY = Math.floor(oy)
+
+    const stepX = dx > 0 ? 1 : -1
+    const stepY = dy > 0 ? 1 : -1
+
+    const absDx = Math.abs(dx)
+    const absDy = Math.abs(dy)
+
+    let tMaxX = absDx > 1e-8 ? (dx > 0 ? (mapX + 1 - ox) / dx : (mapX - ox) / dx) : 1e30
+    let tMaxY = absDy > 1e-8 ? (dy > 0 ? (mapY + 1 - oy) / dy : (mapY - oy) / dy) : 1e30
+    const tDeltaX = absDx > 1e-8 ? Math.abs(1 / dx) : 1e30
+    const tDeltaY = absDy > 1e-8 ? Math.abs(1 / dy) : 1e30
+
+    let side = 0
+
+    for (let i = 0; i < 80; i++) {
+      if (tMaxX < tMaxY) {
+        mapX += stepX
+        tMaxX += tDeltaX
+        side = 0
+      } else {
+        mapY += stepY
+        tMaxY += tDeltaY
+        side = 1
+      }
+
+      const cell = getWorldCell(mapX, mapY)
+      if (cell >= 1) {
+        const dist = side === 0
+          ? (mapX - ox + (1 - stepX) / 2) / dx
+          : (mapY - oy + (1 - stepY) / 2) / dy
+        return { dist: Math.abs(dist), side, cell, hitX: mapX, hitY: mapY }
+      }
+    }
+
+    return { dist: 30, side: 0, cell: 0, hitX: mapX, hitY: mapY }
+  }
+
+  // ===== AUDIO =====
+
   function createReverbIR(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
     const sampleRate = ctx.sampleRate
     const length = sampleRate * duration
@@ -517,34 +365,30 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     return buffer
   }
 
-  // Dripping water — periodic high-frequency pings with reverb
   function scheduleDrip() {
     if (!audioCtx || !active) return
-    const ctx = audioCtx
     const dest = getAudioDestination()
-    const now = ctx.currentTime
+    const now = audioCtx.currentTime
 
-    const freq = 800 + Math.random() * 400 // 800-1200Hz
-    const osc = ctx.createOscillator()
+    const freq = 800 + Math.random() * 400
+    const osc = audioCtx.createOscillator()
     osc.type = 'sine'
     osc.frequency.value = freq
 
-    const dripGain = ctx.createGain()
+    const dripGain = audioCtx.createGain()
     dripGain.gain.setValueAtTime(0.02, now)
     dripGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15)
 
     osc.connect(dripGain)
-    // Route through reverb if available, otherwise direct
-    if (reverbGain) {
-      dripGain.connect(reverbGain)
-    }
+    if (reverbGain) dripGain.connect(reverbGain)
     dripGain.connect(dest)
     osc.start(now)
     osc.stop(now + 0.2)
 
-    // Schedule next drip: 3-8 seconds
-    const nextDelay = 3000 + Math.random() * 5000
-    dripTimeout = setTimeout(scheduleDrip, nextDelay)
+    // Drips come faster when tension is high
+    const baseDelay = 3000 + Math.random() * 5000
+    const tensionMultiplier = Math.max(0.3, 1 - tension * 0.6)
+    dripTimeout = setTimeout(scheduleDrip, baseDelay * tensionMultiplier)
   }
 
   async function initAudio() {
@@ -553,7 +397,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       audioCtx = await getAudioContext()
       const dest = getAudioDestination()
 
-      // --- Reverb: convolution with synthetic impulse response ---
+      // Reverb
       reverbNode = audioCtx.createConvolver()
       reverbNode.buffer = createReverbIR(audioCtx, 2, 2.5)
       reverbGain = audioCtx.createGain()
@@ -561,15 +405,15 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       reverbNode.connect(reverbGain)
       reverbGain.connect(dest)
 
-      // --- Ambient drone — low rumble of the labyrinth ---
-      const ambOsc = audioCtx.createOscillator()
+      // Ambient drone
+      ambOsc = audioCtx.createOscillator()
       ambOsc.type = 'sine'
-      ambOsc.frequency.value = 42 // deep sub-bass
+      ambOsc.frequency.value = 42
       ambienceGain = audioCtx.createGain()
       ambienceGain.gain.value = 0
       ambOsc.connect(ambienceGain)
       ambienceGain.connect(dest)
-      ambienceGain.connect(reverbNode) // also route through reverb
+      ambienceGain.connect(reverbNode)
       ambOsc.start()
 
       // Second harmonic
@@ -582,19 +426,17 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       amb2Gain.connect(dest)
       ambOsc2.start()
 
-      // Slowly fade in
       ambienceGain.gain.linearRampToValueAtTime(0.06, audioCtx.currentTime + 3)
       amb2Gain.gain.linearRampToValueAtTime(0.03, audioCtx.currentTime + 5)
 
-      // --- Distant rumble: very low brown noise at ~40Hz bandpass ---
+      // Brown noise rumble
       const rumbleSize = audioCtx.sampleRate * 2
       const rumbleBuffer = audioCtx.createBuffer(1, rumbleSize, audioCtx.sampleRate)
       const rumbleData = rumbleBuffer.getChannelData(0)
       let lastVal = 0
       for (let i = 0; i < rumbleSize; i++) {
-        // Brown noise: integrate white noise
         lastVal += (Math.random() * 2 - 1) * 0.1
-        lastVal *= 0.998 // slight decay
+        lastVal *= 0.998
         rumbleData[i] = lastVal
       }
       const rumbleSource = audioCtx.createBufferSource()
@@ -611,7 +453,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       rumbleGain.connect(dest)
       rumbleSource.start()
 
-      // --- Footstep synth 1 — short filtered noise burst ---
+      // Footstep synth
       footstepOsc = audioCtx.createOscillator()
       footstepOsc.type = 'sawtooth'
       footstepOsc.frequency.value = 80
@@ -623,25 +465,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       footstepOsc.connect(footFilter)
       footFilter.connect(footstepGain)
       footstepGain.connect(dest)
-      footstepGain.connect(reverbNode) // footsteps echo in the corridor
+      footstepGain.connect(reverbNode)
       footstepOsc.start()
 
-      // --- Footstep synth 2 — higher crunch for variety ---
-      footstepOsc2 = audioCtx.createOscillator()
-      footstepOsc2.type = 'triangle'
-      footstepOsc2.frequency.value = 140
-      footstepGain2 = audioCtx.createGain()
-      footstepGain2.gain.value = 0
-      const footFilter2 = audioCtx.createBiquadFilter()
-      footFilter2.type = 'highpass'
-      footFilter2.frequency.value = 100
-      footstepOsc2.connect(footFilter2)
-      footFilter2.connect(footstepGain2)
-      footstepGain2.connect(dest)
-      footstepGain2.connect(reverbNode)
-      footstepOsc2.start()
-
-      // --- Start dripping water schedule ---
       const firstDrip = 2000 + Math.random() * 4000
       dripTimeout = setTimeout(scheduleDrip, firstDrip)
     } catch {
@@ -655,68 +481,189 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (now - lastStepTime < 0.25) return
     lastStepTime = now
 
-    // Primary footstep — low thud
     footstepGain.gain.cancelScheduledValues(now)
     footstepGain.gain.setValueAtTime(0.04, now)
     footstepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
+  }
 
-    // Secondary footstep — higher crunch, alternating emphasis
-    if (footstepGain2) {
-      const alt = Math.sin(now * 3) > 0 ? 0.025 : 0.015
-      footstepGain2.gain.cancelScheduledValues(now)
-      footstepGain2.gain.setValueAtTime(alt, now)
-      footstepGain2.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+  // ===== JUMP SCARE SYSTEM =====
+
+  async function loadScareAssets() {
+    // Load images
+    for (let i = 1; i <= 5; i++) {
+      const img = new Image()
+      img.src = `/assets/labyrinth/labyrinth-scare-${i}.jpg`
+      img.onload = () => scareImages.push(img)
+    }
+
+    // Load sounds
+    if (!audioCtx) return
+    for (let i = 1; i <= 4; i++) {
+      try {
+        const resp = await fetch(`/assets/labyrinth/labyrinth-sound-${i}.mp3`)
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer()
+          const audioBuf = await audioCtx.decodeAudioData(buf)
+          scareBuffers.push(audioBuf)
+        }
+      } catch { /* missing assets ok */ }
     }
   }
 
-  function castRay(ox: number, oy: number, angle: number): { dist: number; side: number; cell: number; hitX?: number; hitY?: number } {
-    const dx = Math.cos(angle)
-    const dy = Math.sin(angle)
+  function playScareSound() {
+    if (!audioCtx) return
+    const dest = getAudioDestination()
+    const now = audioCtx.currentTime
 
-    let t = 0
-    const step = 0.02
-
-    while (t < 20) {
-      const x = ox + dx * t
-      const y = oy + dy * t
-      const mx = Math.floor(x)
-      const my = Math.floor(y)
-
-      if (mx < 0 || mx >= mazeW || my < 0 || my >= mazeH) {
-        return { dist: t, side: 0, cell: WALL }
-      }
-
-      const cell = maze[my][mx]
-      if (cell >= 1) {
-        const prevX = Math.floor(ox + dx * (t - step))
-        const prevY = Math.floor(oy + dy * (t - step))
-        const side = (prevX !== mx) ? 0 : 1
-        return { dist: t, side, cell, hitX: mx, hitY: my }
-      }
-
-      t += step
+    // Play pre-generated sound if available
+    if (scareBuffers.length > 0) {
+      const buf = scareBuffers[Math.floor(Math.random() * scareBuffers.length)]
+      const source = audioCtx.createBufferSource()
+      source.buffer = buf
+      const gain = audioCtx.createGain()
+      gain.gain.value = 0.4
+      source.connect(gain)
+      gain.connect(dest)
+      if (reverbNode) gain.connect(reverbNode)
+      source.start()
     }
 
-    return { dist: 20, side: 0, cell: 0 }
+    // Always add a synthesized sub-bass thump
+    const thump = audioCtx.createOscillator()
+    thump.frequency.value = 30
+    thump.type = 'sine'
+    const thumpGain = audioCtx.createGain()
+    thumpGain.gain.setValueAtTime(0.25, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5)
+    thump.connect(thumpGain)
+    thumpGain.connect(dest)
+    thump.start(now)
+    thump.stop(now + 0.5)
+
+    // High screech
+    const screech = audioCtx.createOscillator()
+    screech.frequency.value = 1800 + Math.random() * 600
+    screech.type = 'sawtooth'
+    const screechGain = audioCtx.createGain()
+    screechGain.gain.setValueAtTime(0.06, now)
+    screechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
+    const screechFilter = audioCtx.createBiquadFilter()
+    screechFilter.type = 'bandpass'
+    screechFilter.frequency.value = 2000
+    screechFilter.Q.value = 5
+    screech.connect(screechFilter)
+    screechFilter.connect(screechGain)
+    screechGain.connect(dest)
+    if (reverbNode) screechGain.connect(reverbNode)
+    screech.start(now)
+    screech.stop(now + 0.4)
   }
 
-  function isWalkable(cell: number): boolean {
-    return cell === 0 || cell === EXIT
+  function triggerScare() {
+    const img = scareImages.length > 0
+      ? scareImages[Math.floor(Math.random() * scareImages.length)]
+      : null
+    currentScare = {
+      triggeredAt: time,
+      image: img,
+      duration: 1.2,
+    }
+    lastScareTime = time
+    tension = 0
+    tensionTarget = 0
+    playScareSound()
   }
 
-  // Find which portal (if any) is at a given cell
-  function getPortalAt(cx: number, cy: number): LabyrinthPortal | undefined {
-    return portals.find(p => p.x === cx && p.y === cy)
+  function checkScare(): void {
+    if (currentScare) return
+    if (time - lastScareTime < 90) return // 90 second cooldown
+
+    const exits = countExits(Math.floor(px), Math.floor(py))
+
+    // Build tension
+    if (exits <= 1) {
+      tensionTarget = Math.min(1, tensionTarget + 0.0015)
+    } else {
+      tensionTarget = Math.max(0, tensionTarget - 0.002)
+    }
+
+    // Random tension spikes
+    if (Math.random() < 0.0003) {
+      tensionTarget = Math.min(1, tensionTarget + 0.25)
+    }
+
+    tension += (tensionTarget - tension) * 0.015
+
+    // Trigger when tension is high enough
+    if (tension > 0.7 && Math.random() < 0.008) {
+      triggerScare()
+    }
   }
+
+  // ===== WIKIPEDIA SYSTEM =====
+
+  async function fetchWikiFragment(): Promise<void> {
+    if (wikiFetchInProgress) return
+    wikiFetchInProgress = true
+    try {
+      const url = 'https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&prop=extracts&exchars=300&exintro=1&format=json&origin=*'
+      const resp = await fetch(url)
+      if (!resp.ok) return
+      const data = await resp.json()
+      const pages = data?.query?.pages
+      if (!pages) return
+
+      for (const pid of Object.keys(pages)) {
+        const page = pages[pid]
+        const title: string = page.title || ''
+        const rawExtract: string = page.extract || ''
+        const extract = stripHtml(rawExtract).trim()
+
+        if (!title || !extract || extract.length < 20) continue
+        if (wikiCache.has(title)) continue
+
+        wikiCache.add(title)
+        currentFragment = {
+          title,
+          extract: extract.substring(0, 250),
+          appearedAt: time,
+          revealProgress: 0,
+          alpha: 0,
+          fading: false,
+        }
+        fetchIntervalSec = 30 + Math.random() * 30
+        lastFetchTime = time
+        return
+      }
+    } catch { /* skip */ }
+    finally { wikiFetchInProgress = false }
+  }
+
+  function updateWikiFragment(): void {
+    if (!currentFragment && time - lastFetchTime > fetchIntervalSec) {
+      fetchWikiFragment()
+    }
+    if (!currentFragment) return
+
+    const age = time - currentFragment.appearedAt
+    if (age < 2) currentFragment.alpha = Math.min(1, age / 2)
+    if (age > 1 && age < 7) currentFragment.revealProgress = Math.min(1, (age - 1) / 6)
+    else if (age >= 7) currentFragment.revealProgress = 1
+    if (age > 15) {
+      currentFragment.fading = true
+      currentFragment.alpha = Math.max(0, 1 - (age - 15) / 3)
+    }
+    if (age > 18) currentFragment = null
+  }
+
+  // ===== UPDATE =====
 
   function update() {
     let moveX = 0
     let moveY = 0
     let moving = false
 
-    // Combine keyboard angle with mouse-look offset for view direction
-    viewAngle = pa + mouseLookAngle
-
+    // Keyboard only — no mouse
     if (keys.has('w') || keys.has('arrowup')) {
       moveX += Math.cos(pa) * moveSpeed
       moveY += Math.sin(pa) * moveSpeed
@@ -734,270 +681,302 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       pa += turnSpeed
     }
 
-    // Mark current cell as explored for minimap
-    const cellKey = `${Math.floor(px)},${Math.floor(py)}`
-    exploredCells.add(cellKey)
-
-    // Collision detection
+    // Collision detection against world cells
     const margin = 0.2
     const newX = px + moveX
-    const newY = py + moveY
+    const checkCellX = getWorldCell(
+      Math.floor(newX + margin * Math.sign(moveX)),
+      Math.floor(py),
+    )
+    if (checkCellX === 0) px = newX
 
-    const cellXCheck = maze[Math.floor(py)]?.[Math.floor(newX + margin * Math.sign(moveX))]
-    if (cellXCheck !== undefined && isWalkable(cellXCheck)) {
-      px = newX
-    }
-    const cellYCheck = maze[Math.floor(newY + margin * Math.sign(moveY))]?.[Math.floor(px)]
-    if (cellYCheck !== undefined && isWalkable(cellYCheck)) {
-      py = newY
-    }
+    const newY = py + moveY
+    const checkCellY = getWorldCell(
+      Math.floor(px),
+      Math.floor(newY + margin * Math.sign(moveY)),
+    )
+    if (checkCellY === 0) py = newY
 
     if (moving) playFootstep()
 
-    // Check proximity to special objects and portals
-    nearbyObject = null
-    const checkDist = 1.8
+    // Track explored cells
+    exploredCells.add(`${Math.floor(px)},${Math.floor(py)}`)
 
-    const dCipher = Math.hypot(px - (cipherPos.x + 0.5), py - (cipherPos.y + 0.5))
-    const dMap = Math.hypot(px - (mapPos.x + 0.5), py - (mapPos.y + 0.5))
-    const dBook = Math.hypot(px - (bookPos.x + 0.5), py - (bookPos.y + 0.5))
+    // Update regions (the labyrinth forgets distant areas)
+    updateRegions()
 
-    if (dCipher < checkDist) nearbyObject = 'cipher'
-    else if (dMap < checkDist) nearbyObject = 'cartographer'
-    else if (dBook < checkDist) nearbyObject = 'library'
-
-    // Check portals
-    if (!nearbyObject) {
-      for (const portal of portals) {
-        const dp = Math.hypot(px - (portal.x + 0.5), py - (portal.y + 0.5))
-        if (dp < checkDist) {
-          nearbyObject = `portal:${portal.targetRoom}`
-          break
+    // Prune explored cells far from player periodically
+    if (Math.floor(time * 60) % 300 === 0) {
+      const floorPx = Math.floor(px)
+      const floorPy = Math.floor(py)
+      for (const key of exploredCells) {
+        const comma = key.indexOf(',')
+        const cx = parseInt(key.substring(0, comma))
+        const cy = parseInt(key.substring(comma + 1))
+        if (Math.abs(cx - floorPx) > 60 || Math.abs(cy - floorPy) > 60) {
+          exploredCells.delete(key)
         }
       }
     }
 
-    // Update Wikipedia fragment
+    // Check for nearby portal
+    const roomX = Math.floor(px) | 1
+    const roomY = Math.floor(py) | 1
+    if (isPortalRoom(roomX, roomY)) {
+      nearbyPortal = getPortalTarget(roomX, roomY)
+    } else {
+      nearbyPortal = null
+    }
+
+    // Update tension/scare
+    checkScare()
+
+    // Update ambient drone pitch with tension
+    if (ambOsc && audioCtx) {
+      ambOsc.frequency.value = 42 - tension * 10
+    }
+
+    // Wikipedia
     updateWikiFragment()
 
-    // Check if at exit
-    if (Math.floor(px) === exitX && Math.floor(py) === exitY) {
-      if (deps.onExit) {
-        deps.onExit()
-      } else {
-        // Regenerate with new seed
-        localStorage.removeItem('oubli-labyrinth-seed')
-        maze = generateMaze(25, 25, getSeed())
-        px = 1.5
-        py = 1.5
-      }
-    }
-  }
-
-  function getCellColor(cell: number, brightness: number, sideDim: number, hitX?: number, hitY?: number): [number, number, number] {
-    switch (cell) {
-      case EXIT:
-        return [255 * brightness, 215 * brightness, 0]
-      case CIPHER_STONE:
-        // Pulsing green — encoded
-        return [
-          20 * brightness * sideDim,
-          (100 + Math.sin(time * 2) * 40) * brightness * sideDim,
-          60 * brightness * sideDim,
-        ]
-      case MAP_TABLE:
-        // Warm amber — cartography
-        return [
-          (120 + Math.sin(time * 1.5) * 30) * brightness * sideDim,
-          (90 + Math.sin(time * 1.5) * 20) * brightness * sideDim,
-          30 * brightness * sideDim,
-        ]
-      case BOOKSHELF:
-        // Deep burgundy — old books
-        return [
-          (100 + Math.sin(time * 1.8) * 25) * brightness * sideDim,
-          30 * brightness * sideDim,
-          (50 + Math.sin(time * 1.8) * 20) * brightness * sideDim,
-        ]
-      case INSCRIPTION:
-        // Slightly warmer than normal walls
-        return [
-          50 * brightness * sideDim,
-          38 * brightness * sideDim,
-          65 * brightness * sideDim,
-        ]
-      case PORTAL: {
-        // Dark opening — much darker than walls, with subtle colored edge glow
-        const portal = hitX !== undefined && hitY !== undefined ? getPortalAt(hitX, hitY) : undefined
-        if (portal) {
-          const pulse = 0.3 + Math.sin(time * 1.2 + portal.x * 0.7) * 0.15
-          return [
-            portal.color[0] * brightness * sideDim * pulse * 0.3,
-            portal.color[1] * brightness * sideDim * pulse * 0.3,
-            portal.color[2] * brightness * sideDim * pulse * 0.3,
-          ]
-        }
-        // Fallback: very dark void
-        return [3 * brightness, 2 * brightness, 5 * brightness]
-      }
-      default:
-        // Normal wall
-        return [
-          40 * brightness * sideDim,
-          30 * brightness * sideDim,
-          60 * brightness * sideDim,
-        ]
-    }
-  }
-
-  function renderPortalDoorway(screenX: number, wallTop: number, wallHeight: number, stripW: number, portal: LabyrinthPortal, brightness: number): void {
-    if (!ctx) return
-
-    // Draw a dark archway shape within the wall strip
-    const archW = stripW + 1
-    const archH = wallHeight * 0.85
-    const archTop = wallTop + wallHeight * 0.1
-    const pulse = 0.4 + Math.sin(time * 1.5 + portal.x * 0.7) * 0.2
-
-    // Deep black interior — the passage beyond
-    ctx.fillStyle = `rgba(1, 0, 2, ${0.9 * brightness})`
-    ctx.fillRect(screenX, archTop, archW, archH)
-
-    // Colored edge glow on the archway — very subtle
-    const glowAlpha = brightness * pulse * 0.15
-    ctx.fillStyle = `rgba(${portal.color[0]}, ${portal.color[1]}, ${portal.color[2]}, ${glowAlpha})`
-    // Top edge
-    ctx.fillRect(screenX, archTop, archW, 2)
-    // Bottom edge
-    ctx.fillRect(screenX, archTop + archH - 2, archW, 2)
-  }
-
-  // Cultural inscriptions: find nearby walls with cultural text and display them
-  function renderCulturalInscriptions(w: number, h: number): void {
-    if (!ctx) return
-    // Check cells around the player for cultural inscription proximity
-    const checkRadius = 2.5
-    const shown: string[] = []
-    for (let ci = 0; ci < CULTURAL_INSCRIPTIONS.length; ci++) {
-      // Each cultural inscription is placed at a deterministic position in the maze
-      // based on its index (spread evenly through the maze)
-      const ciX = 1 + ((ci * 7 + 3) % (mazeW - 2))
-      const ciY = 1 + ((ci * 5 + 2) % (mazeH - 2))
-      const dist = Math.hypot(px - ciX, py - ciY)
-      if (dist < checkRadius) {
-        const fade = 1 - dist / checkRadius
-        shown.push(CULTURAL_INSCRIPTIONS[ci])
-        // Render the inscription at bottom-center, fading based on distance
-        const alpha = fade * 0.65 * (0.7 + Math.sin(time * 0.4 + ci) * 0.3)
-        ctx.save()
-        ctx.font = 'italic 11px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(200, 180, 150, ${alpha})`
-        ctx.textAlign = 'center'
-        // Word-wrap long inscriptions
-        const words = shown[shown.length - 1].split(' ')
-        let line = ''
-        let lineY = h - 80 - (shown.length - 1) * 50
-        const maxLineW = Math.min(500, w * 0.7)
-        for (const word of words) {
-          const test = line ? line + ' ' + word : word
-          if (ctx.measureText(test).width > maxLineW && line) {
-            ctx.fillText(line, w / 2, lineY)
-            line = word
-            lineY += 14
-          } else {
-            line = test
+    // Inscription detection — check walls near player
+    inscriptionText = ''
+    inscriptionAlpha = Math.max(0, inscriptionAlpha - 0.02)
+    const checkRadius = 1.8
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        const wx = Math.floor(px) + dx
+        const wy = Math.floor(py) + dy
+        if (getWorldCell(wx, wy) === INSCRIPTION) {
+          const dist = Math.hypot(px - (wx + 0.5), py - (wy + 0.5))
+          if (dist < checkRadius) {
+            inscriptionText = getInscriptionText(wx, wy)
+            inscriptionAlpha = Math.min(0.6, 1 - dist / checkRadius)
+            break
           }
         }
-        if (line) ctx.fillText(line, w / 2, lineY)
-        ctx.restore()
       }
+      if (inscriptionText) break
     }
   }
 
-  // Minimap: 80x80 in the top-right corner, explored cells revealed
-  function renderMinimap(w: number, h: number): void {
-    if (!ctx || mazeW === 0 || mazeH === 0) return
-    const mapSize = 80
-    const margin = 12
-    const mapX = w - mapSize - margin
-    const mapY = margin
-    const cellW = mapSize / mazeW
-    const cellH = mapSize / mazeH
+  // ===== RENDERING =====
+
+  function getCellColor(cell: number, brightness: number, sideDim: number): [number, number, number] {
+    // Tension affects wall color — slight red shift
+    const tensionR = tension * 15
+    const tensionG = -tension * 5
+
+    if (cell === INSCRIPTION) {
+      return [
+        (50 + tensionR) * brightness * sideDim,
+        (38 + tensionG) * brightness * sideDim,
+        65 * brightness * sideDim,
+      ]
+    }
+    return [
+      (40 + tensionR) * brightness * sideDim,
+      (30 + tensionG) * brightness * sideDim,
+      60 * brightness * sideDim,
+    ]
+  }
+
+  function renderWikiFragment(w: number, h: number): void {
+    if (!currentFragment || !ctx) return
+    const frag = currentFragment
+    const baseAlpha = frag.alpha * 0.7
+
+    const boxX = 24
+    const boxY = 50
+    const maxWidth = Math.min(320, w * 0.4)
 
     ctx.save()
+    ctx.font = 'small-caps 13px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(160, 145, 120, ${baseAlpha * 0.9})`
+    ctx.textAlign = 'left'
 
-    // Background
+    const jitterX = Math.sin(time * 0.7 + 3.1) * 0.5
+    const jitterY = Math.cos(time * 0.5 + 1.7) * 0.3
+    ctx.fillText(frag.title.toUpperCase(), boxX + jitterX, boxY + jitterY)
+
+    const titleWidth = ctx.measureText(frag.title.toUpperCase()).width
+    ctx.strokeStyle = `rgba(140, 125, 100, ${baseAlpha * 0.4})`
+    ctx.lineWidth = 0.5
+    ctx.beginPath()
+    ctx.moveTo(boxX, boxY + 5)
+    ctx.lineTo(boxX + Math.min(titleWidth, maxWidth) * frag.revealProgress, boxY + 5)
+    ctx.stroke()
+
+    if (frag.revealProgress > 0) {
+      const charsToShow = Math.floor(frag.extract.length * frag.revealProgress)
+      const visibleText = frag.extract.substring(0, charsToShow)
+
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(130, 120, 105, ${baseAlpha * 0.7})`
+
+      const words = visibleText.split(' ')
+      let line = ''
+      let lineY = boxY + 22
+      for (const word of words) {
+        const testLine = line ? line + ' ' + word : word
+        if (ctx.measureText(testLine).width > maxWidth && line) {
+          const lineJitter = Math.sin(lineY * 0.3 + time * 0.2) * 0.4
+          ctx.fillText(line, boxX + lineJitter, lineY)
+          line = word
+          lineY += 15
+          if (lineY > boxY + 100) break
+        } else {
+          line = testLine
+        }
+      }
+      if (line && lineY <= boxY + 100) {
+        ctx.fillText(line, boxX + Math.sin(lineY * 0.3 + time * 0.2) * 0.4, lineY)
+      }
+    }
+    ctx.restore()
+  }
+
+  function renderMinimap(w: number, h: number): void {
+    if (!ctx) return
+    const viewRadius = 20
+    const mapSize = 100
+    const cellSize = mapSize / (viewRadius * 2)
+    const mapX = w - mapSize - 12
+    const mapY = 12
+
+    ctx.save()
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     ctx.fillRect(mapX - 1, mapY - 1, mapSize + 2, mapSize + 2)
-
-    // Border
-    ctx.strokeStyle = 'rgba(60, 80, 60, 0.3)'
+    ctx.strokeStyle = 'rgba(60, 80, 60, 0.2)'
     ctx.lineWidth = 1
     ctx.strokeRect(mapX - 1, mapY - 1, mapSize + 2, mapSize + 2)
 
-    // Draw explored cells
-    for (let my = 0; my < mazeH; my++) {
-      for (let mx = 0; mx < mazeW; mx++) {
-        const key = `${mx},${my}`
-        if (!exploredCells.has(key)) {
-          // Also reveal cells adjacent to explored cells (walls become visible)
-          const neighbors = [`${mx-1},${my}`,`${mx+1},${my}`,`${mx},${my-1}`,`${mx},${my+1}`]
-          const adjacentExplored = neighbors.some(n => exploredCells.has(n))
-          if (!adjacentExplored) continue
+    const centerWX = Math.floor(px)
+    const centerWY = Math.floor(py)
 
-          // This is an unexplored cell adjacent to explored — show wall outlines only
-          const cell = maze[my]?.[mx]
-          if (cell !== undefined && cell >= 1 && cell !== EXIT) {
-            ctx.fillStyle = 'rgba(30, 50, 30, 0.4)'
-            ctx.fillRect(mapX + mx * cellW, mapY + my * cellH, cellW + 0.5, cellH + 0.5)
-          }
-          continue
-        }
+    for (const key of exploredCells) {
+      const comma = key.indexOf(',')
+      const cwx = parseInt(key.substring(0, comma))
+      const cwy = parseInt(key.substring(comma + 1))
+      const ddx = cwx - centerWX
+      const ddy = cwy - centerWY
 
-        const cell = maze[my]?.[mx]
-        if (cell === undefined) continue
+      if (Math.abs(ddx) > viewRadius || Math.abs(ddy) > viewRadius) continue
 
-        if (cell === 0) {
-          // Open path — faint green
-          ctx.fillStyle = 'rgba(40, 80, 40, 0.25)'
-        } else if (cell === EXIT) {
-          // Exit — gold
-          ctx.fillStyle = 'rgba(255, 215, 0, 0.5)'
-        } else if (cell === PORTAL) {
-          const portal = getPortalAt(mx, my)
-          if (portal) {
-            ctx.fillStyle = `rgba(${portal.color[0]}, ${portal.color[1]}, ${portal.color[2]}, 0.4)`
-          } else {
-            ctx.fillStyle = 'rgba(80, 40, 120, 0.3)'
-          }
-        } else if (cell === CIPHER_STONE || cell === MAP_TABLE || cell === BOOKSHELF) {
-          ctx.fillStyle = 'rgba(180, 150, 60, 0.4)'
-        } else {
-          // Wall — visible outline
-          ctx.fillStyle = 'rgba(30, 60, 30, 0.5)'
-        }
-        ctx.fillRect(mapX + mx * cellW, mapY + my * cellH, cellW + 0.5, cellH + 0.5)
+      const rk = regionKey(cwx, cwy)
+      const isGhost = ghostRegions.has(rk)
+
+      const screenX = mapX + (ddx + viewRadius) * cellSize
+      const screenY = mapY + (ddy + viewRadius) * cellSize
+
+      if (isGhost) {
+        ctx.fillStyle = 'rgba(60, 40, 60, 0.12)'
+      } else {
+        const cell = getWorldCell(cwx, cwy)
+        ctx.fillStyle = cell === 0
+          ? 'rgba(40, 80, 40, 0.25)'
+          : 'rgba(30, 60, 30, 0.45)'
       }
+      ctx.fillRect(screenX, screenY, cellSize + 0.5, cellSize + 0.5)
     }
 
-    // Player dot — bright green
-    const dotX = mapX + px * cellW
-    const dotY = mapY + py * cellH
+    // Player dot
+    const dotX = mapX + viewRadius * cellSize
+    const dotY = mapY + viewRadius * cellSize
     const pulse = 2 + Math.sin(time * 3) * 0.5
     ctx.fillStyle = 'rgba(100, 255, 100, 0.8)'
     ctx.beginPath()
     ctx.arc(dotX, dotY, pulse, 0, Math.PI * 2)
     ctx.fill()
 
-    // Direction indicator — small line from player dot
-    const dirLen = 5
+    // Direction indicator
     ctx.strokeStyle = 'rgba(100, 255, 100, 0.5)'
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(dotX, dotY)
-    ctx.lineTo(dotX + Math.cos(viewAngle) * dirLen, dotY + Math.sin(viewAngle) * dirLen)
+    ctx.lineTo(dotX + Math.cos(pa) * 5, dotY + Math.sin(pa) * 5)
     ctx.stroke()
 
+    ctx.restore()
+  }
+
+  function renderJumpScare(w: number, h: number): void {
+    if (!currentScare || !ctx) return
+
+    const elapsed = time - currentScare.triggeredAt
+    if (elapsed > currentScare.duration) {
+      currentScare = null
+      return
+    }
+
+    let alpha = 1
+    if (elapsed > 0.15) {
+      alpha = Math.max(0, 1 - (elapsed - 0.15) / (currentScare.duration - 0.15))
+    }
+
+    // Screen shake
+    const shakeX = (Math.random() - 0.5) * 20 * alpha
+    const shakeY = (Math.random() - 0.5) * 20 * alpha
+
+    ctx.save()
+    ctx.translate(shakeX, shakeY)
+
+    // Red flash
+    ctx.fillStyle = `rgba(80, 0, 0, ${alpha * 0.35})`
+    ctx.fillRect(0, 0, w, h)
+
+    // Image
+    if (currentScare.image) {
+      ctx.globalAlpha = alpha * 0.8
+      const imgW = w * 0.5
+      const imgH = h * 0.5
+      const imgX = (w - imgW) / 2 + (Math.random() - 0.5) * 10
+      const imgY = (h - imgH) / 2 + (Math.random() - 0.5) * 10
+      ctx.drawImage(currentScare.image, imgX, imgY, imgW, imgH)
+      ctx.globalAlpha = 1
+    }
+
+    // Scanlines
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.15})`
+    for (let y = 0; y < h; y += 4) {
+      ctx.fillRect(0, y, w, 2)
+    }
+
+    ctx.restore()
+  }
+
+  function renderCulturalInscription(w: number, h: number): void {
+    if (!ctx) return
+    // Show cultural inscription based on which region the player is in
+    const rx = Math.floor(px / REGION_SIZE)
+    const ry = Math.floor(py / REGION_SIZE)
+    const h2 = cellHash2(rx * REGION_SIZE + 5, ry * REGION_SIZE + 5)
+    if (h2 >= 0.20) return // only ~20% of regions have inscriptions
+
+    const idx = Math.floor(h2 * CULTURAL_INSCRIPTIONS.length / 0.20)
+    const text = CULTURAL_INSCRIPTIONS[idx % CULTURAL_INSCRIPTIONS.length]
+    const alpha = 0.04 + Math.sin(time * 0.4) * 0.015
+
+    ctx.save()
+    ctx.font = 'italic 11px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(200, 180, 150, ${alpha})`
+    ctx.textAlign = 'center'
+
+    const words = text.split(' ')
+    let line = ''
+    let lineY = h - 80
+    const maxLineW = Math.min(500, w * 0.7)
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word
+      if (ctx.measureText(test).width > maxLineW && line) {
+        ctx.fillText(line, w / 2, lineY)
+        line = word
+        lineY += 14
+      } else {
+        line = test
+      }
+    }
+    if (line) ctx.fillText(line, w / 2, lineY)
     ctx.restore()
   }
 
@@ -1017,15 +996,16 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.fillStyle = 'rgba(3, 2, 6, 1)'
     ctx.fillRect(0, 0, w, h)
 
-    // Ceiling gradient with subtle breathing
+    // Ceiling with tension-affected breathing
     const breathe = Math.sin(time * 0.2) * 2
+    const tensionFlicker = tension > 0.3 ? Math.random() * tension * 3 : 0
     const ceilGrad = ctx.createLinearGradient(0, 0, 0, h / 2)
-    ceilGrad.addColorStop(0, `rgba(${5 + breathe}, 3, ${10 + breathe}, 1)`)
-    ceilGrad.addColorStop(1, `rgba(${10 + breathe}, 8, ${18 + breathe}, 1)`)
+    ceilGrad.addColorStop(0, `rgba(${5 + breathe + tensionFlicker}, 3, ${10 + breathe}, 1)`)
+    ceilGrad.addColorStop(1, `rgba(${10 + breathe + tensionFlicker}, 8, ${18 + breathe}, 1)`)
     ctx.fillStyle = ceilGrad
     ctx.fillRect(0, 0, w, h / 2)
 
-    // Floor gradient
+    // Floor
     const floorGrad = ctx.createLinearGradient(0, h / 2, 0, h)
     floorGrad.addColorStop(0, 'rgba(8, 6, 12, 1)')
     floorGrad.addColorStop(1, 'rgba(3, 2, 6, 1)')
@@ -1034,65 +1014,39 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Raycasting
     const stripW = w / numRays
-
-    // Collect nearby inscription texts to show
     const visibleInscriptions: { text: string; screenX: number; dist: number; brightness: number }[] = []
-    // Collect portal strips to render doorway overlay
-    const portalStrips: { screenX: number; wallTop: number; wallHeight: number; stripW: number; portal: LabyrinthPortal; brightness: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
-      const rayAngle = viewAngle - fov / 2 + (i / numRays) * fov
+      const rayAngle = pa - fov / 2 + (i / numRays) * fov
       const hit = castRay(px, py, rayAngle)
 
-      const correctedDist = hit.dist * Math.cos(rayAngle - viewAngle)
+      const correctedDist = hit.dist * Math.cos(rayAngle - pa)
       const wallHeight = Math.min(h * 2, h / correctedDist)
       const wallTop = (h - wallHeight) / 2
       const brightness = Math.max(0, 1 - correctedDist / 10)
       const sideDim = hit.side ? 0.7 : 1.0
 
-      const [r, g, b] = getCellColor(hit.cell, brightness, sideDim, hit.hitX, hit.hitY)
+      // Tension flicker on distant walls
+      const flicker = tension > 0.4 && correctedDist > 4
+        ? 1 - Math.random() * tension * 0.15
+        : 1
 
+      const [r, g, b] = getCellColor(hit.cell, brightness * flicker, sideDim)
       ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
-      // Check for portal hit — render doorway overlay
-      if (hit.cell === PORTAL && hit.hitX !== undefined && hit.hitY !== undefined) {
-        const portal = getPortalAt(hit.hitX, hit.hitY)
-        if (portal) {
-          portalStrips.push({
-            screenX: i * stripW,
-            wallTop,
-            wallHeight,
-            stripW,
-            portal,
-            brightness,
-          })
-        }
-      }
-
-      // Check for inscription text on this ray
+      // Collect inscription text from nearby walls
       if (hit.cell === INSCRIPTION && correctedDist < 4) {
-        const hitX = Math.floor(px + Math.cos(rayAngle) * hit.dist)
-        const hitY = Math.floor(py + Math.sin(rayAngle) * hit.dist)
-        const key = `${hitX},${hitY}`
-        const text = wallTexts.get(key)
-        if (text) {
-          visibleInscriptions.push({
-            text,
-            screenX: i * stripW + stripW / 2,
-            dist: correctedDist,
-            brightness,
-          })
-        }
+        visibleInscriptions.push({
+          text: getInscriptionText(hit.hitX, hit.hitY),
+          screenX: i * stripW + stripW / 2,
+          dist: correctedDist,
+          brightness,
+        })
       }
     }
 
-    // Render portal doorway overlays
-    for (const ps of portalStrips) {
-      renderPortalDoorway(ps.screenX, ps.wallTop, ps.wallHeight, ps.stripW, ps.portal, ps.brightness)
-    }
-
-    // Render wall inscriptions (deduplicate by text)
+    // Render wall inscriptions
     const shownTexts = new Set<string>()
     for (const insc of visibleInscriptions) {
       if (shownTexts.has(insc.text)) continue
@@ -1104,7 +1058,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillStyle = `rgba(180, 160, 200, ${alpha})`
       ctx.textAlign = 'center'
 
-      // Render vertically (rotated) to look like wall writing
       ctx.save()
       ctx.translate(insc.screenX, h / 2)
       ctx.rotate(-Math.PI / 2)
@@ -1112,13 +1065,23 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.restore()
     }
 
-    // Fog overlay — distance-based darkening
+    // Fog overlay
     const fogGrad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.6)
     fogGrad.addColorStop(0, 'rgba(3, 2, 6, 0)')
     fogGrad.addColorStop(0.7, 'rgba(3, 2, 6, 0.1)')
-    fogGrad.addColorStop(1, 'rgba(3, 2, 6, 0.4)')
+    fogGrad.addColorStop(1, `rgba(${3 + tension * 15}, 2, 6, ${0.4 + tension * 0.15})`)
     ctx.fillStyle = fogGrad
     ctx.fillRect(0, 0, w, h)
+
+    // Portal room glow
+    if (nearbyPortal) {
+      const [pr, pg, pb] = nearbyPortal.color
+      const portalGlow = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.4)
+      portalGlow.addColorStop(0, `rgba(${pr}, ${pg}, ${pb}, ${0.03 + Math.sin(time * 1.5) * 0.01})`)
+      portalGlow.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = portalGlow
+      ctx.fillRect(0, 0, w, h)
+    }
 
     // Crosshair
     ctx.strokeStyle = 'rgba(255, 215, 0, 0.04)'
@@ -1130,8 +1093,14 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.lineTo(w / 2, h / 2 + 6)
     ctx.stroke()
 
-    // --- Render Wikipedia "forgotten knowledge" fragment ---
+    // Wikipedia fragment
     renderWikiFragment(w, h)
+
+    // Minimap
+    renderMinimap(w, h)
+
+    // Cultural inscription
+    renderCulturalInscription(w, h)
 
     // Title
     ctx.font = '12px "Cormorant Garamond", serif'
@@ -1139,73 +1108,35 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.textAlign = 'center'
     ctx.fillText('the labyrinth', w / 2, 25)
 
-    // Discovery count
-    const totalArtifacts = 3
-    const found = discovered.size
-    if (found > 0) {
-      ctx.font = '11px monospace'
-      ctx.fillStyle = `rgba(255, 215, 0, ${0.08 + Math.sin(time * 0.5) * 0.03})`
-      ctx.textAlign = 'right'
-      ctx.fillText(`${found}/${totalArtifacts} found`, w - 16, 20)
-    }
-
-    // Interaction prompt when near a special object or portal
-    if (nearbyObject) {
-      interactAlpha = Math.min(1, interactAlpha + 0.03)
-      const alpha = interactAlpha * (0.4 + Math.sin(time * 2) * 0.15)
-
-      let prompt = ''
-      let color = ''
-
-      if (nearbyObject.startsWith('portal:')) {
-        const targetRoom = nearbyObject.substring(7)
-        const portal = portals.find(p => p.targetRoom === targetRoom)
-        if (portal) {
-          prompt = `press E — a dark passage leads to ${portal.label}`
-          color = `rgba(${portal.color[0]}, ${portal.color[1]}, ${portal.color[2]}, ${alpha})`
-        }
-      } else {
-        switch (nearbyObject) {
-          case 'cipher':
-            prompt = 'press E — encoded inscriptions shimmer on the stone'
-            color = `rgba(80, 200, 120, ${alpha})`
-            break
-          case 'cartographer':
-            prompt = 'press E — a half-drawn map on the table'
-            color = `rgba(200, 170, 80, ${alpha})`
-            break
-          case 'library':
-            prompt = 'press E — books grow from the wall like roots'
-            color = `rgba(180, 80, 120, ${alpha})`
-            break
-        }
-      }
-
-      ctx.font = '12px "Cormorant Garamond", serif'
-      ctx.fillStyle = color
+    // Nearby inscription text
+    if (inscriptionText && inscriptionAlpha > 0.01) {
+      ctx.font = '14px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(180, 160, 200, ${inscriptionAlpha * 0.5})`
       ctx.textAlign = 'center'
-      ctx.fillText(prompt, w / 2, h - 40)
-    } else {
-      interactAlpha = Math.max(0, interactAlpha - 0.02)
+      ctx.fillText(inscriptionText, w / 2, h / 2 + 60)
     }
 
-    // Bottom hint (only if no nearby object)
-    if (!nearbyObject) {
+    // Portal interaction prompt
+    if (nearbyPortal) {
+      const [pr, pg, pb] = nearbyPortal.color
+      const alpha = 0.4 + Math.sin(time * 2) * 0.15
       ctx.font = '12px "Cormorant Garamond", serif'
-      ctx.fillStyle = 'rgba(140, 120, 160, 0.04)'
+      ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, ${alpha})`
       ctx.textAlign = 'center'
-      const hint = found < totalArtifacts
-        ? 'WASD to move · find artifacts hidden in the corridors'
-        : 'WASD to move · seek the golden exit'
-      ctx.fillText(hint, w / 2, h - 8)
+      ctx.fillText(`press E — a passage leads to ${nearbyPortal.label}`, w / 2, h - 40)
     }
 
-    // --- Cultural inscriptions: visible on walls when player is close ---
-    renderCulturalInscriptions(w, h)
+    // Hint
+    ctx.font = '12px "Cormorant Garamond", serif'
+    ctx.fillStyle = 'rgba(140, 120, 160, 0.04)'
+    ctx.textAlign = 'center'
+    ctx.fillText('WASD to move · the labyrinth is infinite · it forgets behind you', w / 2, h - 8)
 
-    // --- Minimap ---
-    renderMinimap(w, h)
+    // Jump scare overlay (on top of everything)
+    renderJumpScare(w, h)
   }
+
+  // ===== INPUT =====
 
   function handleKeyDown(e: KeyboardEvent) {
     if (!active) return
@@ -1215,31 +1146,14 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       e.preventDefault()
     }
 
-    // Interact with nearby objects or portals
-    if (key === 'e' && nearbyObject && deps.switchTo) {
-      if (nearbyObject.startsWith('portal:')) {
-        const targetRoom = nearbyObject.substring(7)
-        deps.switchTo(targetRoom)
-      } else {
-        discovered.add(nearbyObject)
-        // Persist discoveries
-        localStorage.setItem('oubli-labyrinth-discovered', JSON.stringify([...discovered]))
-        deps.switchTo(nearbyObject)
-      }
+    // Portal interaction
+    if (key === 'e' && nearbyPortal && deps.switchTo) {
+      deps.switchTo(nearbyPortal.room)
     }
   }
 
   function handleKeyUp(e: KeyboardEvent) {
     keys.delete(e.key.toLowerCase())
-  }
-
-  function handleMouseMove(e: MouseEvent) {
-    if (!active || !canvas) return
-    // Map horizontal mouse position to a look-angle offset
-    // Left edge = -PI/4, center = 0, right edge = +PI/4
-    const rect = canvas.getBoundingClientRect()
-    const normalizedX = (e.clientX - rect.left) / rect.width // 0..1
-    mouseLookAngle = (normalizedX - 0.5) * (Math.PI / 2)
   }
 
   return {
@@ -1262,7 +1176,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       window.addEventListener('keydown', handleKeyDown)
       window.addEventListener('keyup', handleKeyUp)
-      canvas.addEventListener('mousemove', handleMouseMove)
 
       const onResize = () => {
         if (canvas) {
@@ -1273,32 +1186,66 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       window.addEventListener('resize', onResize)
 
       overlay.appendChild(canvas)
+
+      // Navigation portals embedded in overlay
+      if (deps.switchTo) {
+        const portalData = [
+          { name: 'cipher', label: 'the cipher', color: '40, 160, 90', pos: 'top: 50px; left: 20px;' },
+          { name: 'cartographer', label: 'the cartographer', color: '170, 140, 60', pos: 'top: 50px; right: 120px;' },
+          { name: 'library', label: 'the library', color: '140, 50, 90', pos: 'top: 70px; left: 20px;' },
+        ]
+        for (const p of portalData) {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            position: absolute; ${p.pos}
+            pointer-events: auto; cursor: pointer;
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 10px; letter-spacing: 1px;
+            color: rgba(${p.color}, 0.0);
+            transition: color 0.5s ease;
+            padding: 3px 6px; z-index: 10;
+          `
+          el.textContent = p.label
+          el.addEventListener('mouseenter', () => {
+            el.style.color = `rgba(${p.color}, 0.25)`
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.color = `rgba(${p.color}, 0.0)`
+          })
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            deps.switchTo!(p.name)
+          })
+          overlay.appendChild(el)
+        }
+      }
+
       return overlay
     },
 
     activate() {
       active = true
-      maze = generateMaze(25, 25, getSeed())
       px = 1.5
       py = 1.5
       pa = 0
-      mouseLookAngle = 0
-      viewAngle = 0
       keys.clear()
       exploredCells.clear()
+      ghostRegions.clear()
+      tension = 0
+      tensionTarget = 0
+      currentScare = null
+      lastScareTime = -999
+      nearbyPortal = null
+      inscriptionText = ''
+      inscriptionAlpha = 0
 
-      // Reset Wikipedia state for fresh session feel (cache persists to avoid repeats)
+      // Reset wiki for fresh session
       currentFragment = null
       lastFetchTime = time
-      fetchIntervalSec = 8 + Math.random() * 10 // first fragment appears quickly (8-18s)
-
-      // Restore discoveries
-      try {
-        const saved = localStorage.getItem('oubli-labyrinth-discovered')
-        if (saved) discovered = new Set(JSON.parse(saved))
-      } catch { /* ignore */ }
+      fetchIntervalSec = 8 + Math.random() * 10
 
       initAudio()
+      loadScareAssets()
       render()
     },
 
@@ -1307,14 +1254,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       cancelAnimationFrame(frameId)
       keys.clear()
       currentFragment = null
+      currentScare = null
 
-      // Stop dripping water
       if (dripTimeout) {
         clearTimeout(dripTimeout)
         dripTimeout = null
       }
-
-      // Fade out audio
       if (ambienceGain && audioCtx) {
         ambienceGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1)
       }
@@ -1325,14 +1270,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       cancelAnimationFrame(frameId)
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
-      if (canvas) {
-        canvas.removeEventListener('mousemove', handleMouseMove)
-      }
       if (dripTimeout) {
         clearTimeout(dripTimeout)
         dripTimeout = null
       }
-      // Don't close shared AudioContext — it's managed by AudioBus
       audioCtx = null
       overlay?.remove()
     },
