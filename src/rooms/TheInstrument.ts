@@ -71,6 +71,33 @@ interface GhostKey {
   hue: number
 }
 
+interface LoopEvent {
+  time: number      // relative time within loop (0..loopLength)
+  semitone: number
+  velocity: number
+  duration: number  // in seconds
+}
+
+interface NoteTrail {
+  semitone: number
+  hue: number
+  alpha: number
+  x: number  // normalized 0..1 position in canvas
+}
+
+const CULTURAL_INSCRIPTIONS = [
+  'bob moog built the first modular synthesizer in 1964. sound as voltage. music as circuitry.',
+  'pauline oliveros: "listen to everything all the time and remind yourself when you are not listening."',
+  'wendy carlos, switched-on bach (1968): the first synth album to go platinum. classical music, transistorized.',
+  'the theremin (1920): you play it by not touching it. the first electronic instrument is pure gesture.',
+  'brian eno, music for airports (1978): "as ignorable as it is interesting." ambient as forgetting.',
+  'the ondes martenot: instrument of radiohead and messiaen. a ribbon you never quite control.',
+  'éliane radigue spent 3 years on a single ARP 2500 patch. one sound, perfected across months.',
+  'charli xcx "the moment" (2026): the sound of an era deciding whether to remember itself.',
+  'milan 2026 olympics chose fire over drones. humanity over AI. analog warmth as resistance.',
+  'the self-destructing plastic of 2026: materials programmed to forget their own form. sound could too.',
+]
+
 interface InstrumentDeps {
   onNote?: (freq: number, velocity: number) => void
   switchTo?: (name: string) => void
@@ -106,6 +133,34 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
   let noteFlash = 0
   let lastNoteHue = 0
   let lastNotePitch = 0.5 // normalized 0..1 based on semitone
+
+  // Cultural inscriptions
+  let inscriptionTimer = 0
+  let inscriptionIdx = Math.floor(Math.random() * CULTURAL_INSCRIPTIONS.length)
+
+  // Idle ambient pad — fades in when no notes are being played
+  let idlePadOsc1: OscillatorNode | null = null
+  let idlePadOsc2: OscillatorNode | null = null
+  let idlePadGain: GainNode | null = null
+  let idlePadFilter: BiquadFilterNode | null = null
+  let idleTime = 0  // seconds since last note
+  let idlePadActive = false
+
+  // Loop recorder — record a phrase, it plays back and degrades each pass
+  let loopRecording = false
+  let loopPlaying = false
+  let loopEvents: LoopEvent[] = []
+  let loopStartTime = 0
+  let loopLength = 0
+  let loopPlaybackStart = 0
+  let loopPass = 0  // how many times the loop has replayed
+  let loopDegradation = 0  // 0..1, increases each pass
+  let loopScheduledNotes: number[] = []  // timeout IDs for scheduled notes
+  let loopIndicatorAlpha = 0
+
+  // Note history trail — recent notes leave fading marks on the waveform
+  const noteTrails: NoteTrail[] = []
+  const MAX_TRAILS = 40
 
   // Note particles — spawned on noteOn, drift outward and fade
   const noteParticles: NoteParticle[] = []
@@ -198,6 +253,160 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     wetGain.connect(masterGain)
 
     masterGain.connect(getAudioDestination())
+
+    // Initialize idle ambient pad
+    initIdlePad(audioCtx)
+  }
+
+  function initIdlePad(ctx: AudioContext) {
+    idlePadGain = ctx.createGain()
+    idlePadGain.gain.value = 0
+    idlePadFilter = ctx.createBiquadFilter()
+    idlePadFilter.type = 'lowpass'
+    idlePadFilter.frequency.value = 400
+    idlePadFilter.Q.value = 1
+
+    // Two detuned oscillators: C2 and G2 (fundamental + fifth)
+    idlePadOsc1 = ctx.createOscillator()
+    idlePadOsc1.type = 'sine'
+    idlePadOsc1.frequency.value = 65.41 // C2
+    idlePadOsc2 = ctx.createOscillator()
+    idlePadOsc2.type = 'sine'
+    idlePadOsc2.frequency.value = 98.0  // G2
+    idlePadOsc2.detune.value = 3
+
+    idlePadOsc1.connect(idlePadFilter)
+    idlePadOsc2.connect(idlePadFilter)
+    idlePadFilter.connect(idlePadGain!)
+    idlePadGain!.connect(getAudioDestination())
+
+    idlePadOsc1.start()
+    idlePadOsc2.start()
+    idlePadActive = true
+  }
+
+  function updateIdlePad(dt: number) {
+    if (!idlePadGain || !audioCtx) return
+    if (activeNotes.size > 0 || loopPlaying) {
+      idleTime = 0
+    } else {
+      idleTime += dt
+    }
+    // Fade in pad after 3 seconds idle, max volume 0.04
+    const targetGain = idleTime > 3 ? Math.min(0.04, (idleTime - 3) * 0.004) : 0
+    idlePadGain.gain.linearRampToValueAtTime(targetGain, audioCtx.currentTime + 0.1)
+    // Slow filter sweep on the pad
+    if (idlePadFilter) {
+      const sweep = 300 + 200 * Math.sin(idleTime * 0.15)
+      idlePadFilter.frequency.linearRampToValueAtTime(sweep, audioCtx.currentTime + 0.1)
+    }
+  }
+
+  // --- Loop Recorder ---
+  function startLoopRecording() {
+    loopEvents = []
+    loopRecording = true
+    loopPlaying = false
+    loopStartTime = performance.now()
+    loopPass = 0
+    loopDegradation = 0
+    clearLoopSchedule()
+  }
+
+  function stopLoopRecording() {
+    loopRecording = false
+    loopLength = (performance.now() - loopStartTime) / 1000
+    if (loopEvents.length > 0 && loopLength > 0.2) {
+      loopPlaying = true
+      loopPass = 0
+      loopDegradation = 0
+      scheduleLoopPlayback()
+    }
+  }
+
+  function recordNoteEvent(semitone: number, velocity: number) {
+    if (!loopRecording) return
+    const relTime = (performance.now() - loopStartTime) / 1000
+    loopEvents.push({ time: relTime, semitone, velocity, duration: 0.15 })
+  }
+
+  function clearLoopSchedule() {
+    for (const id of loopScheduledNotes) {
+      clearTimeout(id)
+    }
+    loopScheduledNotes = []
+  }
+
+  function scheduleLoopPlayback() {
+    if (!loopPlaying || !audioCtx || !filterNode) return
+    clearLoopSchedule()
+    loopPlaybackStart = performance.now()
+
+    for (const ev of loopEvents) {
+      // Degradation: skip notes randomly, detune, reduce velocity
+      if (Math.random() < loopDegradation * 0.4) continue // drop notes
+
+      const detuneOffset = (Math.random() - 0.5) * loopDegradation * 100 // cents
+      const velScale = Math.max(0.05, 1 - loopDegradation * 0.6)
+
+      const id = window.setTimeout(() => {
+        if (!loopPlaying || !audioCtx || !filterNode) return
+        const freq = semitoneToFreq(ev.semitone)
+        const now = audioCtx.currentTime
+
+        const env = audioCtx.createGain()
+        env.gain.setValueAtTime(0, now)
+        env.gain.linearRampToValueAtTime(ev.velocity * velScale * 0.25, now + 0.01)
+        env.gain.setTargetAtTime(0.001, now + 0.01, ev.duration * 0.8)
+
+        const osc = audioCtx.createOscillator()
+        osc.type = waveType
+        osc.frequency.value = freq
+        osc.detune.value = detune + detuneOffset
+
+        osc.connect(env)
+        env.connect(filterNode!)
+
+        osc.start(now)
+        osc.stop(now + ev.duration + 0.3)
+
+        // Visual: note flash
+        noteFlash = Math.max(noteFlash, 0.3 * velScale)
+        lastNoteHue = (ev.semitone % 12) / 12 * 360
+
+        // Add to trail
+        noteTrails.push({
+          semitone: ev.semitone,
+          hue: lastNoteHue,
+          alpha: 0.5 * velScale,
+          x: ev.time / loopLength,
+        })
+        while (noteTrails.length > MAX_TRAILS) noteTrails.shift()
+      }, ev.time * 1000)
+
+      loopScheduledNotes.push(id)
+    }
+
+    // Schedule next pass
+    const nextPassId = window.setTimeout(() => {
+      if (!loopPlaying) return
+      loopPass++
+      loopDegradation = Math.min(0.95, loopPass * 0.08) // degrades ~8% per pass
+      if (loopDegradation >= 0.95) {
+        // Loop has fully decayed — silence
+        loopPlaying = false
+        clearLoopSchedule()
+      } else {
+        scheduleLoopPlayback()
+      }
+    }, loopLength * 1000)
+    loopScheduledNotes.push(nextPassId)
+  }
+
+  function stopLoop() {
+    loopPlaying = false
+    loopRecording = false
+    clearLoopSchedule()
   }
 
   function createReverb(ctx: AudioContext): ConvolverNode {
@@ -256,10 +465,25 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     // Notify external systems
     onNote?.(freq, 0.35)
 
+    // Record into loop if recording
+    recordNoteEvent(semitone, 0.35)
+
+    // Reset idle timer
+    idleTime = 0
+
     // Visual feedback
     noteFlash = 1.0
     lastNoteHue = (semitone % 12) / 12 * 360
     lastNotePitch = semitone / 18 // normalize across the 19 semitone range
+
+    // Add to note trail
+    noteTrails.push({
+      semitone,
+      hue: lastNoteHue,
+      alpha: 0.6,
+      x: 0.5 + (Math.random() - 0.5) * 0.3,
+    })
+    while (noteTrails.length > MAX_TRAILS) noteTrails.shift()
 
     // Spawn note particles at canvas center
     if (waveCanvas) {
@@ -329,6 +553,21 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     // Right-click to cycle wave type
     if (key === '`') {
       cycleWaveType()
+    }
+    // R to toggle loop recording
+    if (key === 'r') {
+      e.preventDefault()
+      if (loopRecording) {
+        stopLoopRecording()
+      } else if (loopPlaying) {
+        stopLoop()
+      } else {
+        startLoopRecording()
+      }
+    }
+    // Escape stops loop
+    if (key === 'escape' && (loopPlaying || loopRecording)) {
+      stopLoop()
     }
   }
 
@@ -682,11 +921,117 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       ctx.fillStyle = `hsla(${p.hue}, 70%, 65%, ${p.alpha})`
       ctx.fill()
     }
+
+    // === 6. NOTE HISTORY TRAIL (fading marks showing recent notes) ===
+    for (const trail of noteTrails) {
+      if (trail.alpha <= 0.01) continue
+      const tx = trail.x * w
+      const ty = h * 0.15 + (1 - trail.semitone / 18) * (h * 0.5)
+      const radius = 2 + trail.alpha * 4
+      const grad = ctx.createRadialGradient(tx, ty, 0, tx, ty, radius * 3)
+      grad.addColorStop(0, `hsla(${trail.hue}, 60%, 60%, ${trail.alpha * 0.3})`)
+      grad.addColorStop(1, `hsla(${trail.hue}, 40%, 40%, 0)`)
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.arc(tx, ty, radius * 3, 0, Math.PI * 2)
+      ctx.fill()
+      // Core dot
+      ctx.fillStyle = `hsla(${trail.hue}, 70%, 75%, ${trail.alpha * 0.5})`
+      ctx.beginPath()
+      ctx.arc(tx, ty, radius * 0.5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // === 7. LOOP RECORDER INDICATOR ===
+    if (loopIndicatorAlpha > 0.01) {
+      const lx = 14
+      const ly = 16
+      if (loopRecording) {
+        // Red recording dot
+        ctx.fillStyle = `rgba(255, 60, 60, ${loopIndicatorAlpha})`
+        ctx.beginPath()
+        ctx.arc(lx, ly, 5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.font = '11px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(255, 60, 60, ${loopIndicatorAlpha * 0.7})`
+        ctx.textAlign = 'left'
+        ctx.fillText('recording...', lx + 10, ly + 4)
+      } else if (loopPlaying) {
+        // Loop playback indicator — degrades visually
+        const passLabel = `loop pass ${loopPass + 1}`
+        const degradeLabel = `${Math.round(loopDegradation * 100)}% degraded`
+        ctx.font = '11px "Cormorant Garamond", serif'
+        ctx.textAlign = 'left'
+        // Loop progress bar
+        const barW = 80
+        const elapsed = ((performance.now() - loopPlaybackStart) / 1000) % loopLength
+        const progress = elapsed / loopLength
+        ctx.fillStyle = `rgba(255, 215, 0, ${loopIndicatorAlpha * 0.15})`
+        ctx.fillRect(lx, ly - 5, barW, 8)
+        ctx.fillStyle = `rgba(255, 215, 0, ${loopIndicatorAlpha * 0.4})`
+        ctx.fillRect(lx, ly - 5, barW * progress, 8)
+        // Labels
+        ctx.fillStyle = `rgba(255, 215, 0, ${loopIndicatorAlpha * 0.6})`
+        ctx.fillText(passLabel, lx, ly + 16)
+        ctx.fillStyle = `rgba(255, 150, 150, ${loopIndicatorAlpha * 0.5})`
+        ctx.fillText(degradeLabel, lx, ly + 30)
+      }
+    }
+
+    // === 8. CULTURAL INSCRIPTION ===
+    {
+      const text = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+      // Fade in/out over the 22-second cycle
+      let textAlpha = 0
+      if (inscriptionTimer < 1.5) textAlpha = inscriptionTimer / 1.5
+      else if (inscriptionTimer > 20) textAlpha = (22 - inscriptionTimer) / 2
+      else textAlpha = 1
+      textAlpha *= 0.04
+
+      if (textAlpha > 0.002) {
+        ctx.font = '11px "Cormorant Garamond", serif'
+        ctx.textAlign = 'center'
+        ctx.fillStyle = `rgba(255, 215, 0, ${textAlpha})`
+        ctx.fillText(text, w / 2, h - bandBarH - ghostKeyH - 22, w * 0.85)
+      }
+    }
   }
 
+  let lastAnimTime = 0
   function animate() {
     if (!active) return
     animFrameId = requestAnimationFrame(animate)
+
+    const now = performance.now()
+    const dt = lastAnimTime ? Math.min((now - lastAnimTime) / 1000, 0.1) : 0.016
+    lastAnimTime = now
+
+    // Update inscription timer
+    inscriptionTimer += dt
+    if (inscriptionTimer > 22) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+
+    // Update idle pad
+    updateIdlePad(dt)
+
+    // Fade note trails
+    for (let i = noteTrails.length - 1; i >= 0; i--) {
+      noteTrails[i].alpha -= dt * 0.08
+      if (noteTrails[i].alpha <= 0) noteTrails.splice(i, 1)
+    }
+
+    // Loop indicator pulse
+    if (loopRecording) {
+      loopIndicatorAlpha = 0.5 + 0.5 * Math.sin(now / 300)
+    } else if (loopPlaying) {
+      // Fade with degradation
+      loopIndicatorAlpha = Math.max(0.1, 0.6 * (1 - loopDegradation))
+    } else {
+      loopIndicatorAlpha *= 0.95
+    }
+
     renderWaveform()
   }
 
@@ -749,6 +1094,9 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
         <br>
         <span style="color: rgba(255, 20, 147, 0.35);">mouse</span>
         ↕ filter · ↔ echo
+        <br>
+        <span style="color: rgba(255, 20, 147, 0.35);">r</span>
+        record loop · plays back · degrades each pass
       `
       overlay.appendChild(hint)
 
@@ -871,6 +1219,12 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       for (const key of activeNotes.keys()) {
         noteOff(key)
       }
+      // Stop loop playback
+      stopLoop()
+      // Fade out idle pad
+      if (idlePadGain && audioCtx) {
+        idlePadGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5)
+      }
     },
 
     destroy() {
@@ -882,6 +1236,12 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       for (const key of activeNotes.keys()) {
         noteOff(key)
       }
+      stopLoop()
+      // Stop idle pad oscillators
+      try {
+        idlePadOsc1?.stop()
+        idlePadOsc2?.stop()
+      } catch { /* already stopped */ }
       overlay?.remove()
     },
   }
