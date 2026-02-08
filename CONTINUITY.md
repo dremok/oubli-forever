@@ -1208,6 +1208,29 @@ Surface: 36 | Hidden: 7
 - **Memory drift across neurons** (Northwestern) — same memory, different neurons each time
 - **WebGPU in all major browsers** (Jan 2026) — 10-15x faster rendering now possible
 
+### 102. TheChoir Deepened (617→1238 lines)
+- Cathedral reverb: 3-second convolution-style reverb impulse, early reflections + late decay
+- Arvo Pärt tintinnabuli method: voices follow harmonic rules — proximity voices create consonant intervals
+- Gyorgi Ligeti micropolyphony: dense texture when 8+ voices, subtle pitch drift clusters
+- Visual cathedral: stone pillars (parallax sway), stained glass rose window (hue-cycling), flickering candles
+- Ambient pad: warm C2-G2-C3 drone (sawtooth→lowpass), volume scales with voice count
+- Ghost voices: faint autonomous voices that drift and fade without user input
+- Culturally grounded: Pärt "Tabula Rasa", Ligeti "Atmosphères", cathedral acoustics
+
+### 103. TheProjectionRoom "Cutting Room Floor" (expanded)
+- Inspired by Iñárritu's "SUENO PERRO" (LACMA, Feb 2026): resurrecting discarded footage
+- Cutting room floor mode: 3-5 overlapping memory fragments, sepia tones
+- Projector motor audio synthesis, splice pops between fragments
+- 'C' key toggle between normal projection and cutting room floor
+- Film strip overlay with sprocket holes, visible splice marks
+
+### 104. TheTidePool Water Crisis Overlay
+- Inspired by UN "Global Water Bankruptcy" report (Jan 2026)
+- 20+ water crisis facts drift across the water surface
+- Subtle water level decline over session (visual metaphor for shrinking lakes)
+- Foghorn and drip audio synthesis
+- 50% of large lakes shrunk since 1990 — data as elegy
+
 ---
-*Last updated: Era 9, Feature 101 — Thread Trail system, passage bar readability, all 43 rooms deepened with audio/visual*
+*Last updated: Era 9, Feature 104 — Choir/ProjectionRoom/TidePool deepened with cultural depth*
 *"red threads stretch between the rooms you've visited. the house remembers your path."*

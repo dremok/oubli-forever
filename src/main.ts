@@ -80,6 +80,7 @@ import { AmbientTextures } from './sound/AmbientTextures'
 import { TimeCapsule } from './memory/TimeCapsule'
 import { HouseWeather } from './atmosphere/HouseWeather'
 import { RoomAmbience } from './sound/RoomAmbience'
+import { RoomAfterimage } from './effects/RoomAfterimage'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -548,8 +549,17 @@ houseWeather.setDegradationSource(() => {
   return mems.reduce((sum, m) => sum + m.degradation, 0) / mems.length
 })
 
+// Room afterimage — traces of previous room persist briefly
+const roomAfterimage = new RoomAfterimage()
+let _prevRoom = 'void'
+
 // Room change: toggle void-only text overlays
 roomManager.onRoomChange((room) => {
+  // Trigger afterimage for the room we're LEAVING
+  if (_prevRoom !== room) {
+    roomAfterimage.trigger(_prevRoom)
+  }
+  _prevRoom = room
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'
