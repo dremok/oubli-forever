@@ -30,6 +30,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface Memory {
   id: string
@@ -162,7 +163,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
 
   let triggers: Trigger[] = []
   let surfacedMemory: { text: string; trigger: string; alpha: number; y: number } | null = null
-  let ripples: { x: number; y: number; radius: number; alpha: number }[] = []
+  let ripples: { x: number; y: number; radius: number; alpha: number; warm: boolean }[] = []
   let spawnTimer = 0
 
   // --- Artwork state ---
@@ -172,6 +173,220 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
   let artworkSearchIndex = 0
   let artworkTimer = 0
   let artworkFetchInProgress = false
+
+  // --- Cursor tracking ---
+  let mouseX = -1000
+  let mouseY = -1000
+
+  // --- Audio state ---
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let metronomeGain: GainNode | null = null
+  let metronomeOsc: OscillatorNode | null = null
+  let metronomeInterval: ReturnType<typeof setInterval> | null = null
+  let reverbDelay: DelayNode | null = null
+  let reverbFeedback: GainNode | null = null
+  let reverbWet: GainNode | null = null
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // Simple reverb via delay + feedback for memory tones
+      reverbDelay = ac.createDelay(0.5)
+      reverbDelay.delayTime.value = 0.3
+      reverbFeedback = ac.createGain()
+      reverbFeedback.gain.value = 0.35
+      reverbWet = ac.createGain()
+      reverbWet.gain.value = 0.25
+      reverbDelay.connect(reverbFeedback)
+      reverbFeedback.connect(reverbDelay) // feedback loop
+      reverbDelay.connect(reverbWet)
+      reverbWet.connect(audioMaster)
+
+      // Warm ambient drone — triangle wave at ~100Hz
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0
+      droneGain.connect(audioMaster)
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'triangle'
+      droneOsc.frequency.value = 100
+      droneOsc.connect(droneGain)
+      droneOsc.start()
+
+      // Metronome — quiet ticking via short burst oscillator
+      metronomeGain = ac.createGain()
+      metronomeGain.gain.value = 0
+      metronomeGain.connect(audioMaster)
+      metronomeOsc = ac.createOscillator()
+      metronomeOsc.type = 'sine'
+      metronomeOsc.frequency.value = 800
+      metronomeOsc.connect(metronomeGain)
+      metronomeOsc.start()
+
+      audioInitialized = true
+
+      // Fade master in smoothly
+      const now = ac.currentTime
+      audioMaster.gain.setValueAtTime(0, now)
+      audioMaster.gain.linearRampToValueAtTime(1, now + 2)
+
+      // Fade drone in
+      droneGain.gain.setValueAtTime(0, now)
+      droneGain.gain.linearRampToValueAtTime(0.02, now + 3)
+
+      // Start metronome ticking (~0.5Hz = every 2 seconds)
+      startMetronome(ac)
+    } catch {
+      // Audio not available — degrade gracefully
+    }
+  }
+
+  function startMetronome(ac: AudioContext) {
+    if (metronomeInterval) clearInterval(metronomeInterval)
+    metronomeInterval = setInterval(() => {
+      if (!metronomeGain || !active) return
+      const now = ac.currentTime
+      // Brief click: ramp gain up then down quickly
+      metronomeGain.gain.setValueAtTime(0, now)
+      metronomeGain.gain.linearRampToValueAtTime(0.012, now + 0.005)
+      metronomeGain.gain.linearRampToValueAtTime(0, now + 0.06)
+    }, 2000)
+  }
+
+  function playTriggerTone(type: Trigger['type']) {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+
+      // Pitch varies by trigger type
+      let freq: number
+      switch (type) {
+        case 'sense': freq = 220 + Math.random() * 40; break   // smell-like: low
+        case 'sound': freq = 440 + Math.random() * 60; break   // mid
+        case 'word':  freq = 520 + Math.random() * 80; break   // mid-high
+        case 'color': freq = 660 + Math.random() * 100; break  // bright/high
+      }
+
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.04, now + 0.05)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5)
+
+      osc.connect(gain)
+      gain.connect(audioMaster)
+      osc.start(now)
+      osc.stop(now + 1.6)
+
+      // Cleanup
+      osc.onended = () => {
+        osc.disconnect()
+        gain.disconnect()
+      }
+    } catch { /* ignore */ }
+  }
+
+  function playMemoryTone() {
+    if (!audioInitialized || !audioMaster || !reverbDelay) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+
+      // Deep resonant tone with reverb
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = 140 + Math.random() * 30 // deep
+
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.06, now + 0.1)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5)
+
+      // Second harmonic for richness
+      const osc2 = ac.createOscillator()
+      osc2.type = 'sine'
+      osc2.frequency.value = osc.frequency.value * 2.01 // slight detune
+
+      const gain2 = ac.createGain()
+      gain2.gain.setValueAtTime(0, now)
+      gain2.gain.linearRampToValueAtTime(0.02, now + 0.15)
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 2.0)
+
+      // Dry path
+      osc.connect(gain)
+      gain.connect(audioMaster)
+      // Wet path (reverb)
+      gain.connect(reverbDelay)
+
+      osc2.connect(gain2)
+      gain2.connect(audioMaster)
+
+      osc.start(now)
+      osc.stop(now + 2.6)
+      osc2.start(now)
+      osc2.stop(now + 2.1)
+
+      osc.onended = () => { osc.disconnect(); gain.disconnect() }
+      osc2.onended = () => { osc2.disconnect(); gain2.disconnect() }
+    } catch { /* ignore */ }
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    if (metronomeInterval) {
+      clearInterval(metronomeInterval)
+      metronomeInterval = null
+    }
+    setTimeout(() => {
+      try { droneOsc?.stop() } catch { /* */ }
+      try { metronomeOsc?.stop() } catch { /* */ }
+      droneOsc?.disconnect()
+      droneGain?.disconnect()
+      metronomeOsc?.disconnect()
+      metronomeGain?.disconnect()
+      reverbDelay?.disconnect()
+      reverbFeedback?.disconnect()
+      reverbWet?.disconnect()
+      audioMaster?.disconnect()
+      droneOsc = null
+      droneGain = null
+      metronomeOsc = null
+      metronomeGain = null
+      reverbDelay = null
+      reverbFeedback = null
+      reverbWet = null
+      audioMaster = null
+      audioInitialized = false
+    }, 600)
+  }
+
+  // --- Mousemove handler ---
+  function handleMouseMove(e: MouseEvent) {
+    mouseX = e.clientX
+    mouseY = e.clientY
+  }
 
   // --- Portal glow animation state ---
   let portalElements: HTMLElement[] = []
@@ -272,6 +487,20 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
     return bestMatch || memories[Math.floor(Math.random() * memories.length)]
   }
 
+  function computeEmotionalCharge(trigger: Trigger, memory: Memory): number {
+    // Measure word overlap between trigger and memory — the "insula tagging" strength
+    if (trigger.type === 'color' || trigger.type === 'sound') return Math.random() * 0.4
+    const triggerWords = trigger.text.toLowerCase().split(/\s+/).filter(w => w.length >= 3)
+    const memWords = memory.currentText.toLowerCase().split(/\s+/)
+    let overlap = 0
+    for (const tw of triggerWords) {
+      for (const mw of memWords) {
+        if (mw.includes(tw) || tw.includes(mw)) overlap++
+      }
+    }
+    return Math.min(1, overlap / Math.max(1, triggerWords.length))
+  }
+
   function handleClick(e: MouseEvent) {
     if (!canvas || surfacedMemory) return
 
@@ -283,6 +512,9 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       const clickRadius = t.type === 'color' ? t.size * 2 : t.size * 3
 
       if (dx * dx + dy * dy < clickRadius * clickRadius) {
+        // Play trigger tone
+        playTriggerTone(t.type)
+
         // Found a trigger — surface a memory
         const memory = findAssociatedMemory(t)
         if (memory) {
@@ -293,13 +525,24 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
             y: canvas.height * 0.6,
           }
 
-          // Ripple effect
-          ripples.push({
-            x: t.x,
-            y: t.y,
-            radius: 0,
-            alpha: 0.3,
-          })
+          // Play deeper memory tone
+          playMemoryTone()
+
+          // Emotional charge — warm gold for strong, cool blue for weak
+          const charge = computeEmotionalCharge(t, memory)
+          const isWarm = charge > 0.3
+
+          // Concentric ripple burst (emotional charge visualization)
+          const rippleCount = 3 + Math.floor(charge * 4) // 3-7 ripples
+          for (let r = 0; r < rippleCount; r++) {
+            ripples.push({
+              x: t.x,
+              y: t.y,
+              radius: r * 8, // staggered start radii
+              alpha: 0.35 - r * 0.03,
+              warm: isWarm,
+            })
+          }
         }
 
         // Remove the trigger
@@ -527,7 +770,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       spawnTimer = 0
     }
 
-    // Update and draw triggers
+    // Update and draw triggers — with cursor-as-sense proximity effect
     triggers = triggers.filter(t => {
       t.x += t.vx
       t.y += t.vy
@@ -535,38 +778,86 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
 
       if (t.y > h + 30 || t.alpha <= 0) return false
 
+      // Cursor proximity — how close is the cursor to this trigger?
+      const cdx = mouseX - t.x
+      const cdy = mouseY - t.y
+      const cursorDist = Math.sqrt(cdx * cdx + cdy * cdy)
+      const proximityRadius = 180
+      const proximity = Math.max(0, 1 - cursorDist / proximityRadius) // 1 = on top, 0 = far
+
+      // Sway toward cursor when near
+      if (proximity > 0.1) {
+        t.x += cdx * proximity * 0.003
+        t.y += cdy * proximity * 0.001
+      }
+
+      // Brightness boost from proximity
+      const brightnessBoost = proximity * 0.4
+      // Pulse when very close
+      const pulse = proximity > 0.5 ? Math.sin(time * 4) * proximity * 0.08 : 0
+      const effectiveAlpha = Math.min(1, t.alpha + brightnessBoost + pulse)
+      // Size pulse
+      const sizeBoost = 1 + proximity * 0.15
+
       if (t.type === 'color') {
         // Color blob
-        const grad = c.createRadialGradient(t.x, t.y, 0, t.x, t.y, t.size)
-        grad.addColorStop(0, `hsla(${t.hue}, 50%, 50%, ${t.alpha * 0.3})`)
+        const effectiveSize = t.size * sizeBoost
+        const grad = c.createRadialGradient(t.x, t.y, 0, t.x, t.y, effectiveSize)
+        grad.addColorStop(0, `hsla(${t.hue}, 50%, 50%, ${effectiveAlpha * 0.3})`)
         grad.addColorStop(1, 'transparent')
         c.fillStyle = grad
         c.beginPath()
-        c.arc(t.x, t.y, t.size, 0, Math.PI * 2)
+        c.arc(t.x, t.y, effectiveSize, 0, Math.PI * 2)
         c.fill()
       } else {
         // Text trigger
-        c.font = `${t.size}px "Cormorant Garamond", serif`
-        c.fillStyle = `hsla(${t.hue}, 40%, 60%, ${t.alpha})`
+        const effectiveSize = t.size * sizeBoost
+        c.font = `${effectiveSize}px "Cormorant Garamond", serif`
+        c.fillStyle = `hsla(${t.hue}, 40%, ${60 + proximity * 15}%, ${effectiveAlpha})`
         c.textAlign = 'center'
         c.fillText(t.text, t.x, t.y)
+
+        // Glow halo when cursor is near
+        if (proximity > 0.3) {
+          const glowAlpha = (proximity - 0.3) * 0.08
+          c.shadowColor = `hsla(${t.hue}, 50%, 60%, ${glowAlpha})`
+          c.shadowBlur = 12 * proximity
+          c.fillText(t.text, t.x, t.y)
+          c.shadowColor = 'transparent'
+          c.shadowBlur = 0
+        }
       }
 
       return true
     })
 
-    // Draw ripples
+    // Draw ripples — emotional charge visualization
+    // Warm gold for strong emotional connection, cool blue for weak
     ripples = ripples.filter(r => {
-      r.radius += 2
-      r.alpha -= 0.008
+      r.radius += 1.8
+      r.alpha -= 0.005
 
       if (r.alpha <= 0) return false
 
-      c.strokeStyle = `rgba(255, 215, 0, ${r.alpha})`
-      c.lineWidth = 1
+      const color = r.warm
+        ? `rgba(255, 200, 60, ${r.alpha})`   // warm gold
+        : `rgba(120, 160, 220, ${r.alpha})`   // cool blue
+      c.strokeStyle = color
+      c.lineWidth = 1.2
       c.beginPath()
       c.arc(r.x, r.y, r.radius, 0, Math.PI * 2)
       c.stroke()
+
+      // Inner glow fill for the first frames
+      if (r.radius < 60) {
+        const fill = r.warm
+          ? `rgba(255, 215, 80, ${r.alpha * 0.06})`
+          : `rgba(100, 150, 220, ${r.alpha * 0.06})`
+        c.fillStyle = fill
+        c.beginPath()
+        c.arc(r.x, r.y, r.radius, 0, Math.PI * 2)
+        c.fill()
+      }
 
       return true
     })
@@ -695,6 +986,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', handleClick)
+      canvas.addEventListener('mousemove', handleMouseMove)
 
       const onResize = () => {
         if (canvas) {
@@ -812,6 +1104,11 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       ripples = []
       spawnTimer = 0
       artworkTimer = 0
+      mouseX = -1000
+      mouseY = -1000
+
+      // Initialize audio (warm drone + metronome)
+      initAudio()
 
       // Seed initial triggers
       for (let i = 0; i < 4; i++) {
@@ -835,11 +1132,17 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      fadeAudioOut()
+      if (metronomeInterval) {
+        clearInterval(metronomeInterval)
+        metronomeInterval = null
+      }
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
       portalElements = []
       overlay?.remove()
     },

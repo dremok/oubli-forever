@@ -14,10 +14,17 @@
  * Inspired by: Morse code, maritime communication, lighthouses as
  * liminal spaces (between land and sea, safety and danger),
  * semaphore, signal fires, the desperate need to communicate
- * across distance and darkness
+ * across distance and darkness.
+ *
+ * Audio inspired by Samson Young's "Liquid Borders" (EMPAC 2026) —
+ * field recordings of border fence vibrations, hydrophone recordings
+ * of the Shenzhen River. The idea that borders have sounds, and that
+ * sound carries across boundaries. Maritime foghorns as warnings
+ * across distance.
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext } from '../sound/AudioBus'
 
 const MORSE: Record<string, string> = {
   'a': '.-', 'b': '-...', 'c': '-.-.', 'd': '-..', 'e': '.', 'f': '..-.',
@@ -56,6 +63,14 @@ interface LighthouseDeps {
   switchTo?: (name: string) => void
 }
 
+// ── Cursor trail point ────────────────────────────────────────
+interface TrailPoint {
+  x: number
+  y: number
+  birth: number // time when created
+  alpha: number
+}
+
 export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -79,6 +94,22 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
   let shoreLink: HTMLElement | null = null
   let shoreLinkVisible = false
 
+  // Cursor tracking for wind modulation + signal trail
+  let cursorX = 0
+  let cursorY = 0
+  let cursorNormY = 0.5 // 0 = top, 1 = bottom
+  const cursorTrail: TrailPoint[] = []
+  const TRAIL_LIFETIME = 4 // seconds
+
+  // Ripple effect from cursor near water
+  interface Ripple {
+    x: number
+    y: number
+    birth: number
+    radius: number
+  }
+  const ripples: Ripple[] = []
+
   // Landmark definitions for beam-illumination navigation
   const landmarks = [
     { label: 'radio tower', room: 'radio', xFrac: 0.15 },
@@ -94,6 +125,261 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
   const SYMBOL_GAP = 8
   const LETTER_GAP = 20
   const WORD_GAP = 40
+
+  // ── Audio state ─────────────────────────────────────────────
+  let audioCtx: AudioContext | null = null
+  // Ocean waves
+  let waveSource: AudioBufferSourceNode | null = null
+  let waveGain: GainNode | null = null
+  let waveLfo: OscillatorNode | null = null
+  let waveLfoGain: GainNode | null = null
+  // Wind
+  let windSource: AudioBufferSourceNode | null = null
+  let windGain: GainNode | null = null
+  let windFilter: BiquadFilterNode | null = null
+  // Foghorn
+  let foghornInterval: ReturnType<typeof setTimeout> | null = null
+  let foghornActive = false
+  // Morse clicks
+  let morseClickBuffer: AudioBuffer | null = null
+
+  // ── Audio setup ─────────────────────────────────────────────
+
+  function createBrownNoiseBuffer(ctx: AudioContext, durationSec: number): AudioBuffer {
+    const bufferSize = ctx.sampleRate * durationSec
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    let last = 0
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1
+      last = (last + 0.02 * white) / 1.02
+      data[i] = last * 3.5
+    }
+    return buffer
+  }
+
+  function createClickBuffer(ctx: AudioContext): AudioBuffer {
+    const len = Math.floor(ctx.sampleRate * 0.005) // 5ms click
+    const buffer = ctx.createBuffer(1, len, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < len; i++) {
+      const env = 1 - i / len // linear decay
+      data[i] = (Math.random() * 2 - 1) * env * 0.6
+    }
+    return buffer
+  }
+
+  async function startAudio() {
+    try {
+      audioCtx = await getAudioContext()
+      if (!audioCtx) return
+
+      // ── Ocean waves: brown noise + LFO amplitude modulation ──
+      const waveBuf = createBrownNoiseBuffer(audioCtx, 2)
+      waveSource = audioCtx.createBufferSource()
+      waveSource.buffer = waveBuf
+      waveSource.loop = true
+
+      const waveFilter = audioCtx.createBiquadFilter()
+      waveFilter.type = 'lowpass'
+      waveFilter.frequency.value = 350
+      waveFilter.Q.value = 0.4
+
+      waveGain = audioCtx.createGain()
+      waveGain.gain.value = 0 // fade in
+
+      // LFO for wave swell: ~0.15Hz, modulates gain between ~0.02 and ~0.08
+      waveLfo = audioCtx.createOscillator()
+      waveLfo.type = 'sine'
+      waveLfo.frequency.value = 0.15
+      waveLfoGain = audioCtx.createGain()
+      waveLfoGain.gain.value = 0.03 // modulation depth
+
+      waveSource.connect(waveFilter)
+      waveFilter.connect(waveGain)
+      waveGain.connect(audioCtx.destination)
+
+      // Route LFO into the wave gain param
+      waveLfo.connect(waveLfoGain)
+      waveLfoGain.connect(waveGain.gain)
+      waveGain.gain.setValueAtTime(0.05, audioCtx.currentTime)
+
+      waveSource.start()
+      waveLfo.start()
+
+      // Fade in
+      waveGain.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime + 3)
+
+      // ── Wind: bandpass filtered noise, cursor-modulated ──
+      const windBuf = createBrownNoiseBuffer(audioCtx, 2)
+      windSource = audioCtx.createBufferSource()
+      windSource.buffer = windBuf
+      windSource.loop = true
+
+      windFilter = audioCtx.createBiquadFilter()
+      windFilter.type = 'bandpass'
+      windFilter.frequency.value = 400
+      windFilter.Q.value = 2.5
+
+      windGain = audioCtx.createGain()
+      windGain.gain.value = 0
+
+      windSource.connect(windFilter)
+      windFilter.connect(windGain)
+      windGain.connect(audioCtx.destination)
+
+      windSource.start()
+      windGain.gain.linearRampToValueAtTime(0.015, audioCtx.currentTime + 2)
+
+      // ── Morse click buffer (pre-create) ──
+      morseClickBuffer = createClickBuffer(audioCtx)
+
+      // ── Foghorn schedule ──
+      scheduleFoghorn()
+    } catch {
+      // Audio failed — continue without sound
+    }
+  }
+
+  function scheduleFoghorn() {
+    if (!active) return
+    const delay = 30000 + Math.random() * 30000 // 30-60 seconds
+    foghornInterval = setTimeout(() => {
+      if (active && audioCtx) {
+        playFoghorn()
+        scheduleFoghorn()
+      }
+    }, delay)
+  }
+
+  function playFoghorn() {
+    if (!audioCtx || foghornActive) return
+    foghornActive = true
+
+    // Deep sawtooth tone at 85Hz
+    const osc = audioCtx.createOscillator()
+    osc.type = 'sawtooth'
+    osc.frequency.value = 85
+
+    // Low-pass filter for warmth
+    const filter = audioCtx.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.value = 200
+    filter.Q.value = 1.5
+
+    // Reverb via convolver (impulse response)
+    const reverbLen = audioCtx.sampleRate * 4 // 4-second reverb tail
+    const reverbBuf = audioCtx.createBuffer(2, reverbLen, audioCtx.sampleRate)
+    for (let ch = 0; ch < 2; ch++) {
+      const data = reverbBuf.getChannelData(ch)
+      for (let i = 0; i < reverbLen; i++) {
+        const decay = Math.exp(-i / (audioCtx.sampleRate * 1.2))
+        data[i] = (Math.random() * 2 - 1) * decay * 0.4
+      }
+    }
+    const convolver = audioCtx.createConvolver()
+    convolver.buffer = reverbBuf
+
+    // Gain envelope: 2 seconds on, then fade
+    const hornGain = audioCtx.createGain()
+    const now = audioCtx.currentTime
+    hornGain.gain.setValueAtTime(0, now)
+    hornGain.gain.linearRampToValueAtTime(0.08, now + 0.3) // attack
+    hornGain.gain.setValueAtTime(0.08, now + 1.7) // sustain
+    hornGain.gain.linearRampToValueAtTime(0, now + 2.0) // release
+
+    // Dry + wet paths
+    const dryGain = audioCtx.createGain()
+    dryGain.gain.value = 0.7
+    const wetGain = audioCtx.createGain()
+    wetGain.gain.value = 0.4
+
+    osc.connect(filter)
+    filter.connect(hornGain)
+    hornGain.connect(dryGain)
+    dryGain.connect(audioCtx.destination)
+    hornGain.connect(convolver)
+    convolver.connect(wetGain)
+    wetGain.connect(audioCtx.destination)
+
+    osc.start(now)
+    osc.stop(now + 2.0)
+
+    // Clean up after reverb tail finishes
+    setTimeout(() => {
+      foghornActive = false
+      try {
+        osc.disconnect()
+        filter.disconnect()
+        hornGain.disconnect()
+        convolver.disconnect()
+        dryGain.disconnect()
+        wetGain.disconnect()
+      } catch { /* already disconnected */ }
+    }, 6500)
+  }
+
+  function playMorseClick(isDash: boolean) {
+    if (!audioCtx || !morseClickBuffer) return
+    const src = audioCtx.createBufferSource()
+    src.buffer = morseClickBuffer
+    const g = audioCtx.createGain()
+    g.gain.value = isDash ? 0.12 : 0.08
+    src.connect(g)
+    g.connect(audioCtx.destination)
+    src.start()
+    // For dashes, play a second click at the end of the dash duration
+    if (isDash) {
+      const src2 = audioCtx.createBufferSource()
+      src2.buffer = morseClickBuffer
+      const g2 = audioCtx.createGain()
+      g2.gain.value = 0.06
+      src2.connect(g2)
+      g2.connect(audioCtx.destination)
+      src2.start(audioCtx.currentTime + DASH_DURATION / 60) // dash duration in seconds
+    }
+  }
+
+  function updateWindFromCursor() {
+    if (!windGain || !audioCtx) return
+    // Higher cursor = more wind (0 at bottom, max at top)
+    const windLevel = (1 - cursorNormY) * 0.06 + 0.005
+    windGain.gain.linearRampToValueAtTime(windLevel, audioCtx.currentTime + 0.1)
+  }
+
+  function stopAudio() {
+    if (foghornInterval) {
+      clearTimeout(foghornInterval)
+      foghornInterval = null
+    }
+
+    if (audioCtx) {
+      const now = audioCtx.currentTime
+
+      if (waveGain) {
+        waveGain.gain.linearRampToValueAtTime(0, now + 1.5)
+      }
+      if (windGain) {
+        windGain.gain.linearRampToValueAtTime(0, now + 1.5)
+      }
+
+      setTimeout(() => {
+        try { waveSource?.stop() } catch { /* ok */ }
+        try { waveLfo?.stop() } catch { /* ok */ }
+        try { windSource?.stop() } catch { /* ok */ }
+        waveSource = null
+        waveLfo = null
+        waveLfoGain = null
+        waveGain = null
+        windSource = null
+        windFilter = null
+        windGain = null
+        morseClickBuffer = null
+      }, 2000)
+    }
+  }
+
+  // ── Morse helpers ───────────────────────────────────────────
 
   function textToMorse(text: string): string[] {
     const queue: string[] = []
@@ -157,10 +443,12 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       case 'dot':
         lightOn = true
         symbolTimer = DOT_DURATION
+        playMorseClick(false)
         break
       case 'dash':
         lightOn = true
         symbolTimer = DASH_DURATION
+        playMorseClick(true)
         break
       case 'symbol_gap':
         lightOn = false
@@ -189,6 +477,33 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
         break
     }
   }
+
+  // ── Beam illumination helpers ───────────────────────────────
+
+  /** Returns 0-1 for how much a point at (px, py) is within a beam cone */
+  function beamIlluminationAt(px: number, py: number, lightX: number, lightY: number): number {
+    const beamWidth = 0.12
+    let maxIl = 0
+    for (let b = 0; b < 2; b++) {
+      const angle = beamAngle + b * Math.PI
+      const dx = px - lightX
+      const dy = py - lightY
+      const pointAngle = Math.atan2(dy, dx)
+      let diff = pointAngle - angle
+      diff = diff - Math.floor((diff + Math.PI) / (2 * Math.PI)) * 2 * Math.PI
+      const absDiff = Math.abs(diff)
+      if (absDiff < beamWidth * 2) {
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        // Closer = brighter, inside cone = brighter
+        const coneFactor = Math.max(0, 1 - absDiff / (beamWidth * 2))
+        const distFactor = Math.max(0, 1 - dist / 800)
+        maxIl = Math.max(maxIl, coneFactor * distFactor)
+      }
+    }
+    return maxIl
+  }
+
+  // ── Render ──────────────────────────────────────────────────
 
   function render() {
     if (!canvas || !ctx || !active) return
@@ -229,19 +544,67 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
     ctx.lineTo(w, horizonY)
     ctx.stroke()
 
-    // Water shimmer
-    for (let i = 0; i < 30; i++) {
-      const wx = Math.sin(time * 0.5 + i * 0.7) * w * 0.4 + w / 2
-      const wy = horizonY + 10 + i * ((h - horizonY - 10) / 30)
-      const wAlpha = 0.02 + Math.sin(time * 1.5 + i) * 0.01
-      ctx.fillStyle = `rgba(30, 50, 80, ${wAlpha})`
+    // Light source position (used for beam illumination calculations)
+    const towerX = w / 2
+    const towerTop = horizonY - 120
+    const lightX = towerX
+    const lightY = towerTop + 7
+    const lightIntensity = lightOn ? 1 : 0.05
+
+    // ── Water surface with beam illumination + ripple distortions ──
+    for (let i = 0; i < 40; i++) {
+      const baseWx = Math.sin(time * 0.5 + i * 0.7) * w * 0.4 + w / 2
+      const wy = horizonY + 10 + i * ((h - horizonY - 10) / 40)
+
+      // Check for ripple displacement
+      let rippleOffset = 0
+      for (const rp of ripples) {
+        const rdx = baseWx - rp.x
+        const rdy = wy - rp.y
+        const dist = Math.sqrt(rdx * rdx + rdy * rdy)
+        const age = time - rp.birth
+        const wavefront = rp.radius
+        const ringDist = Math.abs(dist - wavefront)
+        if (ringDist < 15 && age < 2.5) {
+          const strength = (1 - age / 2.5) * (1 - ringDist / 15)
+          rippleOffset += Math.sin(dist * 0.5 - time * 8) * strength * 6
+        }
+      }
+
+      const wx = baseWx + rippleOffset
+      const baseAlpha = 0.02 + Math.sin(time * 1.5 + i) * 0.01
+
+      // Beam brightening on water
+      const waterBeamIl = lightIntensity > 0.1 ? beamIlluminationAt(wx, wy, lightX, lightY) : 0
+      const waterBoost = waterBeamIl * 0.06
+      const alpha = baseAlpha + waterBoost
+
+      const br = Math.round(30 + waterBeamIl * 80)
+      const bg = Math.round(50 + waterBeamIl * 60)
+      const bb = Math.round(80 + waterBeamIl * 40)
+      ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, ${alpha})`
       ctx.fillRect(wx - 20, wy, 40, 1)
     }
 
+    // ── Ripple rings (subtle expanding circles near water) ──
+    for (let ri = ripples.length - 1; ri >= 0; ri--) {
+      const rp = ripples[ri]
+      const age = time - rp.birth
+      if (age > 2.5) {
+        ripples.splice(ri, 1)
+        continue
+      }
+      rp.radius += 0.8 // expand
+      const alpha = (1 - age / 2.5) * 0.08
+      ctx.strokeStyle = `rgba(60, 90, 140, ${alpha})`
+      ctx.lineWidth = 0.5
+      ctx.beginPath()
+      ctx.arc(rp.x, rp.y, rp.radius, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
     // Lighthouse tower
-    const towerX = w / 2
     const towerBase = horizonY - 5
-    const towerTop = horizonY - 120
     const towerWidth = 16
 
     // Tower body
@@ -261,15 +624,10 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
     ctx.fillStyle = 'rgba(40, 35, 30, 0.4)'
     ctx.fillRect(towerX - towerWidth, towerTop, towerWidth * 2, 15)
 
-    // Light source
-    const lightX = towerX
-    const lightY = towerTop + 7
-    const lightIntensity = lightOn ? 1 : 0.05
-
     // Light beam
     if (lightIntensity > 0.1) {
       const beamLen = Math.max(w, h) * 1.5
-      const beamWidth = 0.12
+      const beamW = 0.12
 
       // Two beams (lighthouse rotates)
       for (let b = 0; b < 2; b++) {
@@ -287,15 +645,51 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
         ctx.beginPath()
         ctx.moveTo(lightX, lightY)
         ctx.lineTo(
-          lightX + Math.cos(angle - beamWidth) * beamLen,
-          lightY + Math.sin(angle - beamWidth) * beamLen,
+          lightX + Math.cos(angle - beamW) * beamLen,
+          lightY + Math.sin(angle - beamW) * beamLen,
         )
         ctx.lineTo(
-          lightX + Math.cos(angle + beamWidth) * beamLen,
-          lightY + Math.sin(angle + beamWidth) * beamLen,
+          lightX + Math.cos(angle + beamW) * beamLen,
+          lightY + Math.sin(angle + beamW) * beamLen,
         )
         ctx.fill()
       }
+    }
+
+    // ── Lens flare at light source ──
+    if (lightIntensity > 0.1) {
+      // Main bright core
+      const flareCore = ctx.createRadialGradient(lightX, lightY, 0, lightX, lightY, 8)
+      flareCore.addColorStop(0, `rgba(255, 255, 240, ${0.9 * lightIntensity})`)
+      flareCore.addColorStop(0.5, `rgba(255, 250, 200, ${0.3 * lightIntensity})`)
+      flareCore.addColorStop(1, 'transparent')
+      ctx.fillStyle = flareCore
+      ctx.beginPath()
+      ctx.arc(lightX, lightY, 8, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Horizontal streak (anamorphic flare)
+      const streakLen = 40 + lightIntensity * 30
+      const streakGrad = ctx.createLinearGradient(lightX - streakLen, lightY, lightX + streakLen, lightY)
+      streakGrad.addColorStop(0, 'transparent')
+      streakGrad.addColorStop(0.3, `rgba(255, 250, 220, ${0.06 * lightIntensity})`)
+      streakGrad.addColorStop(0.5, `rgba(255, 250, 220, ${0.15 * lightIntensity})`)
+      streakGrad.addColorStop(0.7, `rgba(255, 250, 220, ${0.06 * lightIntensity})`)
+      streakGrad.addColorStop(1, 'transparent')
+      ctx.fillStyle = streakGrad
+      ctx.fillRect(lightX - streakLen, lightY - 1.5, streakLen * 2, 3)
+
+      // Secondary ghost (offset from light, subtle)
+      const ghostDist = 35
+      const ghostX = lightX + Math.cos(beamAngle) * ghostDist
+      const ghostY = lightY + Math.sin(beamAngle) * ghostDist
+      const ghostGrad = ctx.createRadialGradient(ghostX, ghostY, 0, ghostX, ghostY, 12)
+      ghostGrad.addColorStop(0, `rgba(200, 220, 255, ${0.04 * lightIntensity})`)
+      ghostGrad.addColorStop(1, 'transparent')
+      ctx.fillStyle = ghostGrad
+      ctx.beginPath()
+      ctx.arc(ghostX, ghostY, 12, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     // Light source glow
@@ -309,20 +703,59 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
     ctx.arc(lightX, lightY, glowSize, 0, Math.PI * 2)
     ctx.fill()
 
-    // Stars (above horizon)
-    ctx.fillStyle = 'rgba(200, 210, 230, 0.15)'
+    // ── Stars with beam illumination ──
     for (let i = 0; i < 50; i++) {
       const sx = (Math.sin(i * 127.1) * 0.5 + 0.5) * w
       const sy = (Math.sin(i * 311.7) * 0.5 + 0.5) * horizonY * 0.9
-      const twinkle = Math.sin(time * 2 + i * 1.3) > 0.7 ? 0.3 : 0.1
-      ctx.fillStyle = `rgba(200, 210, 230, ${twinkle})`
-      ctx.fillRect(sx, sy, 1, 1)
+      const baseTwinkle = Math.sin(time * 2 + i * 1.3) > 0.7 ? 0.3 : 0.1
+
+      // Stars caught in the beam glow brighter
+      const starBeamIl = lightIntensity > 0.1 ? beamIlluminationAt(sx, sy, lightX, lightY) : 0
+      const starAlpha = baseTwinkle + starBeamIl * 0.5
+
+      const sr = Math.round(200 + starBeamIl * 55)
+      const sg = Math.round(210 + starBeamIl * 40)
+      const sb = Math.round(230 + starBeamIl * 25)
+      ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, ${starAlpha})`
+      const starSize = 1 + starBeamIl * 1.5
+      ctx.fillRect(sx - starSize / 2, sy - starSize / 2, starSize, starSize)
+    }
+
+    // ── Cursor signal trail ──
+    // Remove expired trail points
+    for (let ti = cursorTrail.length - 1; ti >= 0; ti--) {
+      const age = time - cursorTrail[ti].birth
+      if (age > TRAIL_LIFETIME) {
+        cursorTrail.splice(ti, 1)
+      }
+    }
+
+    // Draw trail
+    for (const pt of cursorTrail) {
+      const age = time - pt.birth
+      const life = 1 - age / TRAIL_LIFETIME
+      const alpha = life * life * 0.25 // quadratic fade
+      const size = 2 + life * 3
+
+      const trailGrad = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, size)
+      trailGrad.addColorStop(0, `rgba(255, 240, 180, ${alpha})`)
+      trailGrad.addColorStop(0.6, `rgba(255, 220, 140, ${alpha * 0.3})`)
+      trailGrad.addColorStop(1, 'transparent')
+      ctx.fillStyle = trailGrad
+      ctx.beginPath()
+      ctx.arc(pt.x, pt.y, size, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     // Decoded message (appears letter by letter)
     if (decodedSoFar) {
       ctx.font = '16px "Cormorant Garamond", serif'
-      ctx.fillStyle = `rgba(255, 250, 200, ${0.3 + (lightOn ? 0.2 : 0)})`
+      // Text caught in beam glows brighter
+      const textBeamIl = lightIntensity > 0.1
+        ? beamIlluminationAt(w / 2, h * 0.25, lightX, lightY)
+        : 0
+      const textAlpha = 0.3 + (lightOn ? 0.2 : 0) + textBeamIl * 0.3
+      ctx.fillStyle = `rgba(255, 250, 200, ${textAlpha})`
       ctx.textAlign = 'center'
       ctx.fillText(decodedSoFar, w / 2, h * 0.25)
     }
@@ -334,7 +767,7 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       ctx.textAlign = 'center'
       const morseStr = currentMessage ? textToMorse(currentMessage.slice(0, decodedSoFar.length + 1))
         .filter(s => s === 'dot' || s === 'dash')
-        .map(s => s === 'dot' ? '·' : '—')
+        .map(s => s === 'dot' ? '\u00B7' : '\u2014')
         .join(' ') : ''
       ctx.fillText(morseStr.slice(-30), w / 2, h * 0.3)
     }
@@ -554,7 +987,7 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
     ctx.font = '9px monospace'
     ctx.fillStyle = 'rgba(255, 250, 200, 0.06)'
     ctx.textAlign = 'left'
-    ctx.fillText(lightOn ? '■ transmitting' : '□ silence', 12, h - 18)
+    ctx.fillText(lightOn ? '\u25A0 transmitting' : '\u25A1 silence', 12, h - 18)
     ctx.textAlign = 'right'
     ctx.fillText(autoMode ? 'auto' : 'manual', w - 12, h - 18)
   }
@@ -588,6 +1021,40 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
         inputText += lower
         e.preventDefault()
       }
+    }
+  }
+
+  // ── Mouse move handler for wind + trail + ripples ──────────
+  let lastTrailTime = 0
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!active || !canvas) return
+    cursorX = e.clientX
+    cursorY = e.clientY
+    cursorNormY = cursorY / canvas.height
+
+    // Update wind
+    updateWindFromCursor()
+
+    // Add trail point (throttle to every ~50ms worth of time)
+    if (time - lastTrailTime > 0.05) {
+      cursorTrail.push({ x: cursorX, y: cursorY, birth: time, alpha: 1 })
+      lastTrailTime = time
+      // Limit trail length
+      if (cursorTrail.length > 80) cursorTrail.shift()
+    }
+
+    // Ripples when cursor moves near/below water
+    const horizonY = canvas.height * 0.65
+    if (cursorY > horizonY - 20 && Math.random() < 0.15) {
+      ripples.push({
+        x: cursorX,
+        y: Math.max(cursorY, horizonY + 5),
+        birth: time,
+        radius: 2,
+      })
+      // Limit ripple count
+      if (ripples.length > 12) ripples.shift()
     }
   }
 
@@ -630,8 +1097,11 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
         }
       })
 
-      // Cursor changes when hovering an illuminated landmark
+      // Cursor changes when hovering an illuminated landmark + signal trail + ripples
       canvas.addEventListener('mousemove', (e) => {
+        // Signal trail + wind + ripples
+        handleMouseMove(e)
+
         if (!canvas || !deps.switchTo) return
         let overLandmark = false
         const horizonY = canvas.height * 0.65
@@ -688,17 +1158,20 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
         shoreLink.style.opacity = '0'
         shoreLink.style.pointerEvents = 'none'
       }
+      startAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      stopAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      stopAudio()
       window.removeEventListener('keydown', handleKey)
       overlay?.remove()
     },

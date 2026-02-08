@@ -16,11 +16,14 @@
  * Inspired by: Book burning (as catharsis, not censorship), Japanese
  * oharai purification rituals, burning letters from ex-lovers,
  * the Phoenix myth, thermodynamics (entropy always increases),
- * Marie Kondo's "does it spark joy?" reframed as "does it still hurt?"
+ * Marie Kondo's "does it spark joy?" reframed as "does it still hurt?",
+ * EMPAC "staging grounds" festival (Feb 2026) — Korakrit Arunanondchai's
+ * thermal imaging installation where presence lingers as heat residue.
  */
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface FurnaceDeps {
   getMemories: () => StoredMemory[]
@@ -59,6 +62,25 @@ interface IronPortal {
   glowIntensity: number
 }
 
+interface HeatPoint {
+  x: number
+  y: number
+  timestamp: number
+}
+
+interface AshParticle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  size: number
+  alpha: number
+  rotation: number
+  rotSpeed: number
+  /** true = glowing ember, false = grey ash */
+  isEmber: boolean
+}
+
 export function createFurnaceRoom(deps: FurnaceDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -74,6 +96,24 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
   let listEl: HTMLElement | null = null
   let statusEl: HTMLElement | null = null
 
+  // --- Audio state ---
+  let audioCtxRef: AudioContext | null = null
+  let audioMaster: GainNode | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneFilter: BiquadFilterNode | null = null
+  let crackleInterval: ReturnType<typeof setTimeout> | null = null
+  let audioInitialized = false
+
+  // --- Heat trail state (EMPAC thermal trace) ---
+  const heatTrail: HeatPoint[] = []
+  const HEAT_TRAIL_MAX = 100
+  const HEAT_TRAIL_LIFETIME = 10000 // 10 seconds in ms
+
+  // --- Floating ash/ember particles ---
+  let ashParticles: AshParticle[] = []
+  const ASH_COUNT_TARGET = 30
+
   // Iron brand portal navigation
   const ironPortals: IronPortal[] = [
     { name: 'disintegration', label: 'the disintegration loops', fx: 0.18, fy: 0.22, hue: 30, shape: 'tuning-fork', glowIntensity: 0 },
@@ -85,6 +125,314 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
   let clickedIron = -1
   let clickedIronTime = 0
   let ironSparks: { x: number; y: number; vx: number; vy: number; alpha: number; hue: number }[] = []
+
+  // --- Audio functions ---
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      audioCtxRef = ac
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // Deep furnace drone — low sawtooth ~60Hz, heavily filtered
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'sawtooth'
+      droneOsc.frequency.value = 60
+      droneFilter = ac.createBiquadFilter()
+      droneFilter.type = 'lowpass'
+      droneFilter.frequency.value = 120
+      droneFilter.Q.value = 2
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0.06
+
+      droneOsc.connect(droneFilter)
+      droneFilter.connect(droneGain)
+      droneGain.connect(audioMaster)
+      droneOsc.start()
+
+      // Fade master in
+      audioMaster.gain.setTargetAtTime(1, ac.currentTime, 0.8)
+
+      // Start crackling loop
+      scheduleCrackle()
+
+      audioInitialized = true
+    } catch {
+      /* audio init failed — room still works without sound */
+    }
+  }
+
+  function scheduleCrackle() {
+    if (!active || !audioCtxRef || !audioMaster) return
+    const delay = 100 + Math.random() * 200 // 100-300ms
+    crackleInterval = setTimeout(() => {
+      if (!active || !audioCtxRef || !audioMaster) return
+      playCrackle()
+      scheduleCrackle()
+    }, delay)
+  }
+
+  function playCrackle() {
+    if (!audioCtxRef || !audioMaster) return
+    const ac = audioCtxRef
+    try {
+      // Crackling: short burst of bandpass-filtered noise
+      const bufferLen = Math.floor(ac.sampleRate * (0.02 + Math.random() * 0.04))
+      const buffer = ac.createBuffer(1, bufferLen, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferLen; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferLen)
+      }
+
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+
+      const bandpass = ac.createBiquadFilter()
+      bandpass.type = 'bandpass'
+      bandpass.frequency.value = 800 + Math.random() * 1200 // 800-2000Hz
+      bandpass.Q.value = 1 + Math.random() * 2
+
+      const crackGain = ac.createGain()
+      // Louder when burning
+      const baseVol = 0.04 + fireIntensity * 0.06
+      crackGain.gain.value = baseVol * (0.3 + Math.random() * 0.7)
+
+      source.connect(bandpass)
+      bandpass.connect(crackGain)
+      crackGain.connect(audioMaster)
+      source.start()
+      source.onended = () => {
+        source.disconnect()
+        bandpass.disconnect()
+        crackGain.disconnect()
+      }
+    } catch {
+      /* ignore crackle errors */
+    }
+  }
+
+  function playEmberSizzle() {
+    if (!audioCtxRef || !audioMaster) return
+    const ac = audioCtxRef
+    try {
+      // Brief high-frequency noise burst — sizzle on burn event
+      const bufferLen = Math.floor(ac.sampleRate * 0.15)
+      const buffer = ac.createBuffer(1, bufferLen, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferLen; i++) {
+        const env = Math.exp(-i / (bufferLen * 0.2))
+        data[i] = (Math.random() * 2 - 1) * env
+      }
+
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+
+      const hipass = ac.createBiquadFilter()
+      hipass.type = 'highpass'
+      hipass.frequency.value = 3000 + Math.random() * 2000
+      hipass.Q.value = 0.7
+
+      const sizzGain = ac.createGain()
+      sizzGain.gain.value = 0.08
+
+      source.connect(hipass)
+      hipass.connect(sizzGain)
+      sizzGain.connect(audioMaster)
+      source.start()
+      source.onended = () => {
+        source.disconnect()
+        hipass.disconnect()
+        sizzGain.disconnect()
+      }
+    } catch {
+      /* ignore sizzle errors */
+    }
+  }
+
+  function updateAudioIntensity() {
+    // Drone gets louder and filter opens when burning intensely
+    if (!audioCtxRef || !droneGain || !droneFilter) return
+    const t = audioCtxRef.currentTime
+    const intensity = fireIntensity
+    droneGain.gain.setTargetAtTime(0.06 + intensity * 0.08, t, 0.3)
+    droneFilter.frequency.setTargetAtTime(120 + intensity * 180, t, 0.3)
+  }
+
+  function fadeAudioOut() {
+    if (audioMaster && audioCtxRef) {
+      audioMaster.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.4)
+    }
+    if (crackleInterval !== null) {
+      clearTimeout(crackleInterval)
+      crackleInterval = null
+    }
+  }
+
+  function cleanupAudio() {
+    if (crackleInterval !== null) {
+      clearTimeout(crackleInterval)
+      crackleInterval = null
+    }
+    try { droneOsc?.stop() } catch { /* already stopped */ }
+    droneOsc?.disconnect()
+    droneFilter?.disconnect()
+    droneGain?.disconnect()
+    audioMaster?.disconnect()
+    droneOsc = null
+    droneFilter = null
+    droneGain = null
+    audioMaster = null
+    audioInitialized = false
+    audioCtxRef = null
+  }
+
+  // --- Ash/ember particle helpers ---
+  function spawnAshParticle() {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+    const fireX = w / 2
+    const fireY = h * 0.55
+    const isEmber = Math.random() < 0.4
+    ashParticles.push({
+      x: fireX + (Math.random() - 0.5) * (60 + fireIntensity * 80),
+      y: fireY - Math.random() * 30,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: -0.3 - Math.random() * 0.8 - fireIntensity * 0.5,
+      size: isEmber ? 1 + Math.random() * 2 : 2 + Math.random() * 3,
+      alpha: isEmber ? 0.5 + Math.random() * 0.4 : 0.15 + Math.random() * 0.15,
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.03,
+      isEmber,
+    })
+  }
+
+  // --- Heat trail rendering ---
+  function renderHeatTrail() {
+    if (!ctx || !canvas) return
+    const now = Date.now()
+    // Prune old heat points
+    while (heatTrail.length > 0 && now - heatTrail[0].timestamp > HEAT_TRAIL_LIFETIME) {
+      heatTrail.shift()
+    }
+
+    for (const pt of heatTrail) {
+      const age = (now - pt.timestamp) / HEAT_TRAIL_LIFETIME // 0 = fresh, 1 = expired
+      if (age >= 1) continue
+
+      // Color transitions: fresh = bright orange-white → warm red → cool blue → black
+      const radius = 12 + age * 8
+      let r: number, g: number, b: number, a: number
+      if (age < 0.2) {
+        // Hot: orange-white
+        const t = age / 0.2
+        r = 255
+        g = Math.floor(220 - t * 120)
+        b = Math.floor(100 - t * 80)
+        a = (1 - age) * 0.12
+      } else if (age < 0.5) {
+        // Warm: orange → red
+        const t = (age - 0.2) / 0.3
+        r = Math.floor(255 - t * 80)
+        g = Math.floor(100 - t * 80)
+        b = Math.floor(20 + t * 30)
+        a = (1 - age) * 0.10
+      } else {
+        // Cooling: red → blue → black
+        const t = (age - 0.5) / 0.5
+        r = Math.floor(175 - t * 155)
+        g = Math.floor(20 + t * 20)
+        b = Math.floor(50 + t * 130)
+        a = (1 - age) * 0.08
+      }
+
+      const grad = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, radius)
+      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${a})`)
+      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  // --- Ash particles rendering ---
+  function renderAshParticles() {
+    if (!ctx) return
+    for (let i = ashParticles.length - 1; i >= 0; i--) {
+      const p = ashParticles[i]
+      p.x += p.vx
+      p.y += p.vy
+      p.vx += (Math.random() - 0.5) * 0.05 // gentle drift
+      p.vy -= 0.003 // slight upward acceleration
+      p.alpha -= 0.001
+      p.rotation += p.rotSpeed
+
+      if (p.alpha <= 0 || p.y < -20) {
+        ashParticles.splice(i, 1)
+        continue
+      }
+
+      ctx.save()
+      ctx.translate(p.x, p.y)
+      ctx.rotate(p.rotation)
+
+      if (p.isEmber) {
+        // Glowing ember — small bright dot
+        ctx.beginPath()
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2)
+        const hue = 20 + Math.random() * 20
+        ctx.fillStyle = `hsla(${hue}, 90%, 60%, ${p.alpha})`
+        ctx.fill()
+        // Tiny glow
+        ctx.beginPath()
+        ctx.arc(0, 0, p.size * 2.5, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(${hue}, 80%, 50%, ${p.alpha * 0.2})`
+        ctx.fill()
+      } else {
+        // Grey ash flake — irregular shape
+        ctx.beginPath()
+        ctx.moveTo(-p.size * 0.5, -p.size * 0.3)
+        ctx.lineTo(p.size * 0.3, -p.size * 0.5)
+        ctx.lineTo(p.size * 0.5, p.size * 0.2)
+        ctx.lineTo(-p.size * 0.2, p.size * 0.4)
+        ctx.closePath()
+        ctx.fillStyle = `rgba(120, 110, 100, ${p.alpha})`
+        ctx.fill()
+      }
+
+      ctx.restore()
+    }
+
+    // Spawn new particles to maintain count
+    while (ashParticles.length < ASH_COUNT_TARGET) {
+      spawnAshParticle()
+    }
+  }
+
+  // --- Heat shimmer effect ---
+  function renderHeatShimmer() {
+    if (!ctx || !canvas) return
+    const w = canvas.width
+    const h = canvas.height
+    const fireX = w / 2
+    const fireY = h * 0.55
+    // Very subtle: thin vertical distortion bands above the fire
+    const shimmerCount = 3 + Math.floor(fireIntensity * 4)
+    for (let i = 0; i < shimmerCount; i++) {
+      const sx = fireX + (Math.random() - 0.5) * (40 + fireIntensity * 60)
+      const sy = fireY - 40 - Math.random() * (80 + fireIntensity * 60)
+      const sw = 2 + Math.random() * 4
+      const sh = 15 + Math.random() * 25
+      const shimmerAlpha = 0.01 + fireIntensity * 0.015
+      ctx.fillStyle = `rgba(255, 200, 120, ${shimmerAlpha})`
+      ctx.fillRect(sx, sy, sw, sh)
+    }
+  }
 
   function render() {
     if (!canvas || !ctx || !active) return
@@ -105,6 +453,9 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     bg.addColorStop(1, 'rgba(5, 2, 1, 1)')
     ctx.fillStyle = bg
     ctx.fillRect(0, 0, w, h)
+
+    // Heat trail — EMPAC thermal trace (render before fire so fire draws over it)
+    renderHeatTrail()
 
     // Fire glow on ground
     ctx.beginPath()
@@ -165,6 +516,15 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     glow.addColorStop(1, 'rgba(255, 50, 10, 0)')
     ctx.fillStyle = glow
     ctx.fill()
+
+    // Heat shimmer — subtle distortion above fire
+    renderHeatShimmer()
+
+    // Floating ash and embers
+    renderAshParticles()
+
+    // Update audio intensity each frame
+    updateAudioIntensity()
 
     // Burning characters — text that's actively disintegrating
     for (let i = burningChars.length - 1; i >= 0; i--) {
@@ -401,6 +761,9 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     const w = canvas.width
     const fireY = canvas.height * 0.55
 
+    // Ember sizzle on burn start
+    playEmberSizzle()
+
     // Place characters in an arc above the fire
     const text = memory.currentText
     const chars = text.split('')
@@ -423,11 +786,16 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       burnProgress += 0.02
       fireIntensity = Math.min(1, fireIntensity + 0.01)
 
+      // Occasional sizzle during active burn
+      if (Math.random() < 0.15) playEmberSizzle()
+
       if (burnProgress >= 1) {
         clearInterval(burnInterval)
         // Accelerate degradation on the actual memory
         deps.accelerateDegradation(memory.id, 0.3)
         selectedMemory = null
+        // Final sizzle
+        playEmberSizzle()
         if (statusEl) {
           statusEl.textContent = 'it is done. the fire remembers nothing.'
           setTimeout(() => {
@@ -471,9 +839,13 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       `
       item.addEventListener('mouseenter', () => {
         item.style.background = 'rgba(255, 60, 10, 0.08)'
+        item.style.boxShadow = 'inset 0 0 20px rgba(255, 80, 20, 0.06)'
+        textEl.style.color = 'rgba(255, 200, 120, 0.55)'
       })
       item.addEventListener('mouseleave', () => {
         item.style.background = 'transparent'
+        item.style.boxShadow = 'none'
+        textEl.style.color = 'rgba(255, 180, 100, 0.35)'
       })
 
       const textEl = document.createElement('div')
@@ -614,6 +986,20 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       }
       window.addEventListener('resize', onResize)
 
+      // Cursor tracking for heat trail — EMPAC thermal trace
+      overlay.addEventListener('mousemove', (e) => {
+        if (!canvas) return
+        const rect = canvas.getBoundingClientRect()
+        const mx = (e.clientX - rect.left) * (canvas.width / rect.width)
+        const my = (e.clientY - rect.top) * (canvas.height / rect.height)
+
+        // Record heat trail point
+        heatTrail.push({ x: mx, y: my, timestamp: Date.now() })
+        if (heatTrail.length > HEAT_TRAIL_MAX) {
+          heatTrail.shift()
+        }
+      })
+
       // Iron brand portal — mouse interaction via overlay
       if (deps.switchTo) {
         const hitRadius = 28
@@ -672,19 +1058,24 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       hoveredIron = -1
       clickedIron = -1
       ironSparks = []
+      ashParticles = []
+      heatTrail.length = 0
       for (const p of ironPortals) p.glowIntensity = 0
       rebuildList()
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      fadeAudioOut()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      cleanupAudio()
       overlay?.remove()
     },
   }

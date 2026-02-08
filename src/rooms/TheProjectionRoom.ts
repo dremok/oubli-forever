@@ -12,6 +12,10 @@
  * alignment marks, the artifacts of cinema's mechanical substrate.
  *
  * Inspired by:
+ * - Baz Luhrmann's EPiC (Feb 2026) — 68 boxes of Elvis footage found
+ *   in a Kansas salt mine vault, thought permanently lost, restored
+ *   over 2 years. Lost footage in liminal state: "new" to us but
+ *   55 years old. The projector becomes an instrument of recovery.
  * - "Eternal Sunshine of the Spotless Mind" (2004) — memories erased
  *   while you watch, the edges dissolving, Joel running through
  *   crumbling scenes trying to preserve one last memory of Clementine
@@ -25,10 +29,15 @@
  *   images, "I remember that January in Tokyo"
  * - Tyler Durden's cigarette burns in Fight Club
  *
+ * Audio: projector rattle (18Hz mechanical pulse), film grain hiss
+ * (high-pass white noise), frame advance clicks, degradation artifacts
+ * (pops, crackle, silence drops). Reel changes trigger SMPTE leaders.
+ *
  * USES MEMORIES. Cinematic. Destructive viewing.
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface Memory {
   id: string
@@ -59,6 +68,16 @@ interface Canister {
   hovered: boolean
 }
 
+interface FilmScratchParticle {
+  x: number       // normalized 0-1 within screen area
+  startY: number  // normalized 0-1
+  length: number  // normalized 0-1
+  alpha: number
+  birth: number   // time when spawned
+  lifetime: number // 0.1-0.3 seconds
+  width: number
+}
+
 export function createProjectionRoom(deps: ProjectionDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -75,6 +94,33 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
   let leaderCount = 5
   let leaderTime = 0
   let projectorFlicker = 0
+
+  // --- Audio state ---
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  // Projector rattle (periodic low-freq clicks)
+  let rattleOsc: OscillatorNode | null = null
+  let rattleGain: GainNode | null = null
+  // Film grain hiss (high-pass white noise)
+  let hissSource: AudioBufferSourceNode | null = null
+  let hissGain: GainNode | null = null
+  let hissFilter: BiquadFilterNode | null = null
+  // Frame advance clicks
+  let clickInterval: ReturnType<typeof setInterval> | null = null
+  // Degradation artifacts
+  let artifactInterval: ReturnType<typeof setInterval> | null = null
+  let popGain: GainNode | null = null
+  // Silence drop
+  let silenceDropActive = false
+
+  // --- Film scratch particles ---
+  let scratchParticles: FilmScratchParticle[] = []
+  let lastScratchSpawn = 0
+
+  // --- Reel change ---
+  let inReelChange = false
+  let reelChangeTime = 0
+  let reelChangeSmpteNum = 0
 
   // Film canister shelf navigation
   const canisters: Canister[] = [
@@ -113,6 +159,371 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
         frameSkips: Math.floor(mem.degradation * 5),
       }
     })
+  }
+
+  // --- Audio system ---
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      // Master gain for this room
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+      // Fade in
+      audioMaster.gain.linearRampToValueAtTime(1.0, ac.currentTime + 0.5)
+
+      // --- Projector rattle: low frequency pulse at ~18Hz ---
+      // Use a square wave at 18Hz shaped by a gain envelope to mimic mechanical rattle
+      rattleOsc = ac.createOscillator()
+      rattleOsc.type = 'square'
+      rattleOsc.frequency.value = 18
+      rattleGain = ac.createGain()
+      rattleGain.gain.value = 0.012 // very subtle
+      // Low-pass filter to soften the square wave
+      const rattleFilter = ac.createBiquadFilter()
+      rattleFilter.type = 'lowpass'
+      rattleFilter.frequency.value = 120
+      rattleFilter.Q.value = 0.7
+      rattleOsc.connect(rattleFilter)
+      rattleFilter.connect(rattleGain)
+      rattleGain.connect(audioMaster)
+      rattleOsc.start()
+
+      // --- Film grain hiss: white noise through high-pass filter ---
+      const bufferSize = ac.sampleRate * 2
+      const noiseBuffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const noiseData = noiseBuffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        noiseData[i] = Math.random() * 2 - 1
+      }
+      hissSource = ac.createBufferSource()
+      hissSource.buffer = noiseBuffer
+      hissSource.loop = true
+      hissFilter = ac.createBiquadFilter()
+      hissFilter.type = 'highpass'
+      hissFilter.frequency.value = 3000
+      hissFilter.Q.value = 0.5
+      hissGain = ac.createGain()
+      hissGain.gain.value = 0.03
+      hissSource.connect(hissFilter)
+      hissFilter.connect(hissGain)
+      hissGain.connect(audioMaster)
+      hissSource.start()
+
+      // --- Pop gain for degradation artifacts and frame clicks ---
+      popGain = ac.createGain()
+      popGain.gain.value = 1.0
+      popGain.connect(audioMaster)
+
+      // --- Frame advance clicks: occasional mechanical click ---
+      startFrameClicks(ac)
+
+      // --- Degradation artifacts ---
+      startArtifacts(ac)
+
+      audioInitialized = true
+    } catch {
+      // Audio not available — continue silently
+    }
+  }
+
+  function playClick(ac: AudioContext) {
+    if (!popGain || !active) return
+    // Short noise burst with sharp envelope — mechanical click
+    const clickBuffer = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.008), ac.sampleRate)
+    const clickData = clickBuffer.getChannelData(0)
+    for (let i = 0; i < clickData.length; i++) {
+      const env = 1 - (i / clickData.length) // sharp attack, fast decay
+      clickData[i] = (Math.random() * 2 - 1) * env
+    }
+    const src = ac.createBufferSource()
+    src.buffer = clickBuffer
+    const clickGain = ac.createGain()
+    clickGain.gain.value = 0.06
+    // Bandpass to make it sound mechanical
+    const bp = ac.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.frequency.value = 800 + Math.random() * 400
+    bp.Q.value = 2
+    src.connect(bp)
+    bp.connect(clickGain)
+    clickGain.connect(popGain)
+    src.start()
+  }
+
+  function startFrameClicks(ac: AudioContext) {
+    // Random clicks every 2-6 seconds
+    function scheduleNext() {
+      if (!active) return
+      const delay = 2000 + Math.random() * 4000
+      clickInterval = setTimeout(() => {
+        playClick(ac)
+        scheduleNext()
+      }, delay)
+    }
+    scheduleNext()
+  }
+
+  function playPop(ac: AudioContext) {
+    if (!popGain || !active) return
+    // Vinyl-style pop — short impulse
+    const popBuffer = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.003), ac.sampleRate)
+    const popData = popBuffer.getChannelData(0)
+    popData[0] = 0.8
+    popData[1] = -0.6
+    for (let i = 2; i < popData.length; i++) {
+      popData[i] = (Math.random() * 2 - 1) * (1 - i / popData.length) * 0.3
+    }
+    const src = ac.createBufferSource()
+    src.buffer = popBuffer
+    const pGain = ac.createGain()
+    pGain.gain.value = 0.08
+    src.connect(pGain)
+    pGain.connect(popGain)
+    src.start()
+  }
+
+  function playCrackle(ac: AudioContext) {
+    if (!popGain || !active) return
+    // Crackle — burst of tiny pops
+    const count = 3 + Math.floor(Math.random() * 5)
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => playPop(ac), i * (10 + Math.random() * 30))
+    }
+  }
+
+  function triggerSilenceDrop() {
+    // Brief silence (mute master for 0.1-0.3s)
+    if (!audioMaster || silenceDropActive) return
+    silenceDropActive = true
+    const prevVol = audioMaster.gain.value
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.setValueAtTime(prevVol, now)
+    audioMaster.gain.linearRampToValueAtTime(0, now + 0.01)
+    const duration = 0.1 + Math.random() * 0.2
+    audioMaster.gain.linearRampToValueAtTime(prevVol, now + duration)
+    setTimeout(() => { silenceDropActive = false }, duration * 1000 + 50)
+  }
+
+  function startArtifacts(ac: AudioContext) {
+    function scheduleNext() {
+      if (!active) return
+      // More artifacts for more degraded current frame
+      const degradation = frames.length > 0
+        ? frames[currentFrame % frames.length].memory.degradation
+        : 0
+      // Interval: 4-10s at low degradation, 0.5-3s at high degradation
+      const minDelay = 500 + (1 - degradation) * 3500
+      const maxDelay = 3000 + (1 - degradation) * 7000
+      const delay = minDelay + Math.random() * (maxDelay - minDelay)
+
+      artifactInterval = setTimeout(() => {
+        if (!active || degradation < 0.1) { scheduleNext(); return }
+        // Choose artifact type
+        const roll = Math.random()
+        if (roll < 0.4) {
+          playPop(ac)
+        } else if (roll < 0.7) {
+          playCrackle(ac)
+        } else {
+          triggerSilenceDrop()
+        }
+        scheduleNext()
+      }, delay)
+    }
+    scheduleNext()
+  }
+
+  function playReelChangeAudio(ac: AudioContext) {
+    if (!audioMaster) return
+    // Speed up projector rattle briefly then slow down
+    if (rattleOsc) {
+      const now = ac.currentTime
+      rattleOsc.frequency.setValueAtTime(18, now)
+      rattleOsc.frequency.linearRampToValueAtTime(40, now + 0.2) // speed up
+      rattleOsc.frequency.linearRampToValueAtTime(10, now + 0.6) // slow down
+      rattleOsc.frequency.linearRampToValueAtTime(18, now + 1.0) // back to normal
+    }
+    // Also a louder mechanical thunk for the reel mount
+    const thunkBuffer = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.04), ac.sampleRate)
+    const thunkData = thunkBuffer.getChannelData(0)
+    for (let i = 0; i < thunkData.length; i++) {
+      const env = Math.exp(-i / (ac.sampleRate * 0.01))
+      thunkData[i] = (Math.random() * 2 - 1) * env
+    }
+    const src = ac.createBufferSource()
+    src.buffer = thunkBuffer
+    const thunkGain = ac.createGain()
+    thunkGain.gain.value = 0.12
+    const thunkFilter = ac.createBiquadFilter()
+    thunkFilter.type = 'lowpass'
+    thunkFilter.frequency.value = 400
+    src.connect(thunkFilter)
+    thunkFilter.connect(thunkGain)
+    thunkGain.connect(audioMaster)
+    src.start()
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(0, now + 0.3)
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    if (clickInterval) { clearTimeout(clickInterval); clickInterval = null }
+    if (artifactInterval) { clearTimeout(artifactInterval); artifactInterval = null }
+    setTimeout(() => {
+      try { rattleOsc?.stop() } catch { /* already stopped */ }
+      try { hissSource?.stop() } catch { /* already stopped */ }
+      rattleOsc?.disconnect()
+      rattleGain?.disconnect()
+      hissSource?.disconnect()
+      hissFilter?.disconnect()
+      hissGain?.disconnect()
+      popGain?.disconnect()
+      audioMaster?.disconnect()
+      rattleOsc = null
+      rattleGain = null
+      hissSource = null
+      hissFilter = null
+      hissGain = null
+      popGain = null
+      audioMaster = null
+      audioInitialized = false
+    }, 400)
+  }
+
+  // --- Film scratch particles ---
+  function spawnScratchParticles(degradation: number) {
+    // More scratches for more degraded memories
+    const count = 2 + Math.floor(Math.random() * 4 * Math.max(0.2, degradation))
+    for (let i = 0; i < count; i++) {
+      scratchParticles.push({
+        x: Math.random(),
+        startY: Math.random() * 0.3,
+        length: 0.4 + Math.random() * 0.6,
+        alpha: 0.15 + Math.random() * 0.25 + degradation * 0.15,
+        birth: time,
+        lifetime: 0.1 + Math.random() * 0.2,
+        width: 0.5 + Math.random() * 1.0,
+      })
+    }
+  }
+
+  function updateAndDrawScratchParticles(c: CanvasRenderingContext2D, w: number, h: number, degradation: number) {
+    // Spawn new scratches periodically — more often with higher degradation
+    const spawnInterval = Math.max(0.3, 2.0 - degradation * 1.5)
+    if (time - lastScratchSpawn > spawnInterval) {
+      spawnScratchParticles(degradation)
+      lastScratchSpawn = time
+    }
+
+    const screenX = 30
+    const screenW = w - 60
+
+    // Draw and prune
+    scratchParticles = scratchParticles.filter(p => {
+      const age = time - p.birth
+      if (age > p.lifetime) return false
+
+      // Fade based on age
+      const lifeFrac = age / p.lifetime
+      const fadeAlpha = p.alpha * (1 - lifeFrac * lifeFrac)
+
+      const sx = screenX + p.x * screenW
+      const sy = p.startY * h
+      const ey = sy + p.length * h
+
+      // Sepia/white color mix
+      const r = 200 + Math.floor(Math.random() * 40)
+      const g = 185 + Math.floor(Math.random() * 30)
+      const b = 160 + Math.floor(Math.random() * 20)
+
+      c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${fadeAlpha})`
+      c.lineWidth = p.width
+      c.beginPath()
+      c.moveTo(sx, sy)
+      // Slight wobble
+      c.lineTo(sx + (Math.random() - 0.5) * 2, ey)
+      c.stroke()
+
+      return true
+    })
+  }
+
+  // --- Reel change mechanic ---
+  function startReelChange() {
+    inReelChange = true
+    reelChangeTime = 0
+    reelChangeSmpteNum = 3 + Math.floor(Math.random() * 5) // random countdown start 3-7
+    // Trigger audio effect
+    if (audioInitialized) {
+      getAudioContext().then(ac => playReelChangeAudio(ac))
+    }
+  }
+
+  function drawReelChange(c: CanvasRenderingContext2D, w: number, h: number) {
+    reelChangeTime += 0.016
+
+    const screenX = 30
+    const screenW = w - 60
+
+    if (reelChangeTime < 0.3) {
+      // Phase 1: screen goes dark
+      const darkAlpha = Math.min(1, reelChangeTime / 0.15)
+      c.fillStyle = `rgba(3, 2, 1, ${darkAlpha * 0.95})`
+      c.fillRect(screenX, 0, screenW, h)
+    } else if (reelChangeTime < 0.7) {
+      // Phase 2: SMPTE leader countdown numbers flash
+      c.fillStyle = 'rgba(3, 2, 1, 0.95)'
+      c.fillRect(screenX, 0, screenW, h)
+
+      const flashPhase = reelChangeTime - 0.3
+      // Rapidly cycling numbers
+      const num = reelChangeSmpteNum - Math.floor(flashPhase * 8)
+      const flicker = Math.sin(flashPhase * 60) > 0 ? 1 : 0.3
+
+      c.font = `bold ${Math.min(screenW * 0.2, 120)}px monospace`
+      c.fillStyle = `rgba(200, 180, 140, ${0.2 * flicker})`
+      c.textAlign = 'center'
+      c.textBaseline = 'middle'
+      c.fillText(String(Math.max(1, num)), w / 2, h / 2)
+
+      // Cross target
+      c.strokeStyle = `rgba(200, 180, 140, ${0.08 * flicker})`
+      c.lineWidth = 1
+      c.beginPath()
+      c.moveTo(w / 2 - 40, h / 2)
+      c.lineTo(w / 2 + 40, h / 2)
+      c.moveTo(w / 2, h / 2 - 40)
+      c.lineTo(w / 2, h / 2 + 40)
+      c.stroke()
+
+      // Circle
+      c.beginPath()
+      c.arc(w / 2, h / 2, 50, 0, Math.PI * 2)
+      c.stroke()
+
+      c.textBaseline = 'alphabetic'
+    } else {
+      // Phase 3: fade back in — end reel change
+      const fadeIn = (reelChangeTime - 0.7) / 0.3
+      if (fadeIn >= 1) {
+        inReelChange = false
+      } else {
+        c.fillStyle = `rgba(3, 2, 1, ${0.95 * (1 - fadeIn)})`
+        c.fillRect(screenX, 0, screenW, h)
+      }
+    }
   }
 
   function drawSprocketHoles(c: CanvasRenderingContext2D, w: number, h: number) {
@@ -462,8 +873,9 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     const frame = frames[currentFrame % frames.length]
     frameTime += 0.016
 
-    // Advance to next frame
-    if (frameTime > FRAME_DURATION) {
+    // Advance to next frame — with reel change effect
+    if (frameTime > FRAME_DURATION && !inReelChange) {
+      startReelChange()
       frameTime = 0
       currentFrame++
       if (currentFrame >= frames.length) currentFrame = 0
@@ -534,6 +946,9 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       c.stroke()
     }
 
+    // Transient film scratch particles (flash across the screen)
+    updateAndDrawScratchParticles(c, w, h, degradation)
+
     // Cigarette burn (top-right corner, for heavily degraded memories)
     if (frame.burnRadius > 0) {
       const burnX = w * 0.85
@@ -598,11 +1013,16 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       'blessed are the forgetful — Nietzsche / Eternal Sunshine',
       '"I remember that January in Tokyo" — Sans Soleil',
       'the Zone gives everyone what they ask for — Stalker',
+      '68 boxes in a Kansas salt mine — lost footage, found again — EPiC',
+      'new to us but 55 years old — the liminal state of recovered film',
     ]
     const quoteIdx = Math.floor(time * 0.03) % quotes.length
     c.font = '8px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText(quotes[quoteIdx], w / 2, h - 4)
+
+    // Reel change overlay (dark + SMPTE leader between memories)
+    if (inReelChange) drawReelChange(c, w, h)
 
     // Film canister shelf navigation
     if (deps.switchTo) drawShelfAndCanisters(c, w, h)
@@ -648,14 +1068,16 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
           }
         }
 
-        // Default: advance reel
+        // Default: advance reel with reel change effect
+        if (inReelChange) return // ignore clicks during reel change
         if (inLeader) {
           inLeader = false
           frameTime = 0
-        } else {
+        } else if (frames.length > 0) {
+          startReelChange()
           frameTime = 0
           currentFrame++
-          if (frames.length > 0 && currentFrame >= frames.length) currentFrame = 0
+          if (currentFrame >= frames.length) currentFrame = 0
         }
       })
 
@@ -691,22 +1113,28 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     activate() {
       active = true
       inLeader = true
+      inReelChange = false
       leaderTime = 0
       leaderCount = 5
       currentFrame = 0
       frameTime = 0
+      scratchParticles = []
+      lastScratchSpawn = 0
       buildFrames()
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
       overlay?.remove()
     },
   }
