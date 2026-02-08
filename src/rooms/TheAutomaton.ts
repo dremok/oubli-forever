@@ -60,6 +60,26 @@ const CULTURAL_INSCRIPTIONS = [
   'perseverance AI drive: first rover drive planned entirely by AI. automata on mars.',
 ]
 
+// Rule sets for different cellular automata
+interface RuleSet {
+  name: string
+  birth: Set<number>
+  survive: Set<number>
+  notation: string
+  description: string
+}
+
+const RULE_SETS: RuleSet[] = [
+  { name: 'conway', birth: new Set([3]), survive: new Set([2, 3]),
+    notation: 'B3/S23', description: 'conway\'s game of life — the original' },
+  { name: 'highlife', birth: new Set([3, 6]), survive: new Set([2, 3]),
+    notation: 'B36/S23', description: 'highlife — self-replicating patterns emerge' },
+  { name: 'day & night', birth: new Set([3, 6, 7, 8]), survive: new Set([3, 4, 6, 7, 8]),
+    notation: 'B3678/S34678', description: 'day & night — alive and dead are symmetric' },
+  { name: 'seeds', birth: new Set([2]), survive: new Set([]),
+    notation: 'B2/S', description: 'seeds — nothing survives, only explodes' },
+]
+
 export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   let inscriptionTimer = 0
   let inscriptionIdx = 0
@@ -74,6 +94,14 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   let frameCount = 0
   let paused = false
   let hoveredPortal = -1
+
+  // Rule mutation
+  let currentRuleIdx = 0
+  let ruleTransitionAlpha = 0 // for rule change flash
+
+  // Population history graph
+  const popHistory: number[] = []
+  const POP_HISTORY_MAX = 200
 
   // --- Audio state ---
   let audioReady = false
@@ -350,8 +378,9 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
         const neighbors = countNeighbors(r, c)
         const alive = grid[r][c] > 0
 
+        const rules = RULE_SETS[currentRuleIdx]
         if (alive) {
-          if (neighbors === 2 || neighbors === 3) {
+          if (rules.survive.has(neighbors)) {
             next[r][c] = grid[r][c] // survive, keep birth generation
           } else {
             next[r][c] = 0 // die
@@ -371,7 +400,7 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
             }
           }
         } else {
-          if (neighbors === 3) {
+          if (rules.birth.has(neighbors)) {
             next[r][c] = generation + 1 // born
             birthsThisStep++
             // Track newborn for glow effect
@@ -396,6 +425,17 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
       updateDroneFrequency()
       updatePortalAudio()
     }
+
+    // Track population for graph
+    let liveCells = 0
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] > 0) liveCells++
+      }
+    }
+    lastLiveCells = liveCells
+    popHistory.push(liveCells)
+    if (popHistory.length > POP_HISTORY_MAX) popHistory.shift()
 
     // Grid pulse brightness peaks on step then decays
     gridPulseBrightness = 0.02
@@ -723,11 +763,66 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     ctx.fillText(`speed: ${11 - speed}`, w - 12, h - 30)
     ctx.fillText(paused ? 'paused' : 'running', w - 12, h - 18)
 
-    // Hints
+    // Hints (updated with rule mutation keys)
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 160, 200, 0.05)'
     ctx.textAlign = 'center'
-    ctx.fillText('click to seed life · scroll to change speed · space to pause · r to reset', w / 2, h - 8)
+    ctx.fillText('click to seed · scroll speed · space pause · r reset · 6-9 mutate rules', w / 2, h - 8)
+
+    // === RULE INDICATOR ===
+    {
+      const rules = RULE_SETS[currentRuleIdx]
+      // Flash on rule change
+      ruleTransitionAlpha *= 0.96
+      const flashAlpha = ruleTransitionAlpha * 0.5
+      if (flashAlpha > 0.01) {
+        ctx.fillStyle = `rgba(200, 160, 255, ${flashAlpha})`
+        ctx.fillRect(0, 0, w, h)
+      }
+      // Rule label
+      const ruleAlpha = 0.06 + ruleTransitionAlpha * 0.3
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(200, 160, 255, ${ruleAlpha})`
+      ctx.textAlign = 'right'
+      ctx.fillText(rules.notation, w - 12, 25)
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(200, 160, 255, ${ruleAlpha * 0.6})`
+      ctx.fillText(rules.description, w - 12, 40)
+    }
+
+    // === POPULATION GRAPH (bottom-right) ===
+    if (popHistory.length > 2) {
+      const graphW = 120
+      const graphH = 40
+      const graphX = w - graphW - 14
+      const graphY = h - 80
+      const maxPop = Math.max(1, ...popHistory)
+
+      // Background
+      ctx.fillStyle = 'rgba(10, 5, 20, 0.3)'
+      ctx.fillRect(graphX, graphY, graphW, graphH)
+      ctx.strokeStyle = 'rgba(180, 160, 200, 0.06)'
+      ctx.lineWidth = 0.5
+      ctx.strokeRect(graphX, graphY, graphW, graphH)
+
+      // Draw population line
+      ctx.beginPath()
+      for (let i = 0; i < popHistory.length; i++) {
+        const x = graphX + (i / POP_HISTORY_MAX) * graphW
+        const y = graphY + graphH - (popHistory[i] / maxPop) * graphH
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      ctx.strokeStyle = 'rgba(255, 180, 220, 0.2)'
+      ctx.lineWidth = 1
+      ctx.stroke()
+
+      // Label
+      ctx.font = '9px monospace'
+      ctx.fillStyle = 'rgba(180, 160, 200, 0.06)'
+      ctx.textAlign = 'right'
+      ctx.fillText('population', graphX + graphW, graphY - 3)
+    }
 
     // Portal zones — stable life patterns that glow and act as navigation
     if (deps?.switchTo) {
@@ -890,6 +985,15 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
         }
         if (e.key === 'r' || e.key === 'R') {
           initGrid()
+        }
+        // Rule mutation: 6-9 switch rule sets
+        const ruleKeys: Record<string, number> = { '6': 0, '7': 1, '8': 2, '9': 3 }
+        if (ruleKeys[e.key] !== undefined) {
+          const newIdx = ruleKeys[e.key]
+          if (newIdx !== currentRuleIdx) {
+            currentRuleIdx = newIdx
+            ruleTransitionAlpha = 1.0
+          }
         }
       }
       window.addEventListener('keydown', onKey)
