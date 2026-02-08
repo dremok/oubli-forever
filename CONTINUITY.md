@@ -1172,11 +1172,42 @@ Surface: 36 | Hidden: 7
 - Canvas-drawn font sizes: same mapping across 38 files (229 occurrences)
 - All navigation text, room labels, info displays now readable
 
-### 99. Room Deepening — Batch 6 (in progress)
-- TheVoid: adding room-specific audio, cursor proximity portal effects, ripples, vignette
-- TheInstrument: adding note particles, ambient glow, keyboard ghost hints, cursor indicators
-- TheDisintegrationLoops: adding tape hiss, machine rumble, film grain, cursor degradation
+### 99. Room Deepening — Batch 6 (complete)
+- TheVoid: room-specific audio (42/56/73Hz), cursor proximity portal effects, ripples, vignette
+- TheInstrument: note particles, ambient glow, keyboard ghost hints, cursor crosshair
+- TheDisintegrationLoops: tape hiss, machine rumble, film grain, scan lines, cursor degradation
+
+### 100. Passage Bar Readability
+- Font sizes: 13px→16px for links, 11px→14px separators, 12px→15px dividers
+- Resting opacity: 0.08→0.18, hover: 0.65→0.85
+- Link colors: brighter gold (0.3-0.5 alpha), brighter pink hover (0.7)
+- Fixed pointer-events: none bug that prevented hover-to-brighten effect
+- Room indicator (top-right): 12px→15px, brighter
+
+### 101. Thread Trail System (`src/navigation/ThreadTrail.ts`)
+- Inspired by Chiharu Shiota's "Threads of Life" (Hayward Gallery, Feb 2026)
+- Red threads record every room-to-room navigation in localStorage
+- During transitions: brief SVG red thread animation stretches across screen
+- In Cartographer: thread web rendered as red catenary curves overlaying the map
+  - Thread thickness/opacity scales with traversal frequency
+  - Subtle sag + time-based sway for organic thread feel
+  - Detail panel shows thread count per room
+  - Legend entry for "your thread"
+- Your path through the house becomes a visible personal web
+- Culturally grounded: Shiota weaves massive floor-to-ceiling webs of red thread
+  connecting ordinary objects (shoes, keys, beds) — representing invisible connections
+
+### Cultural Inspiration (Feb 2026 Research)
+- **Chiharu Shiota "Threads of Life"** (Hayward Gallery, Feb 17, 2026) → Thread Trail
+- **Inarritu "SUENO PERRO"** (LACMA, Feb 22, 2026) — discarded footage resurrected
+- **Tracey Emin "A Second Life"** (Tate Modern, Feb 26, 2026) — confessional art
+- **"2026 is the new 2016"** — mass nostalgia for pre-algorithmic era
+- **Webb Helix Nebula** — dying star shedding memory layers in concentric rings
+- **Global Water Bankruptcy** (UN Jan 2026) — 50% of large lakes shrunk since 1990
+- **Accelerated Long-Term Forgetting** (ALF) — newly characterized neuropsychiatric symptom
+- **Memory drift across neurons** (Northwestern) — same memory, different neurons each time
+- **WebGPU in all major browsers** (Jan 2026) — 10-15x faster rendering now possible
 
 ---
-*Last updated: Era 9, Feature 99 — 20+ rooms deepened with audio/visual, font readability pass, final thin rooms being enhanced*
-*"every room speaks its own language. the house is alive."*
+*Last updated: Era 9, Feature 101 — Thread Trail system, passage bar readability, all 43 rooms deepened with audio/visual*
+*"red threads stretch between the rooms you've visited. the house remembers your path."*

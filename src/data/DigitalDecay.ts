@@ -70,6 +70,11 @@ const HISTORICAL_URLS = [
   { url: 'bump.com', epitaph: 'phone-to-phone sharing by touching, bumped off 2014' },
   { url: 'color.com', epitaph: '$41M for proximity photo sharing, faded to nothing' },
   { url: 'dodgeball.com', epitaph: 'location sharing via SMS, precursor to foursquare, abandoned 2009' },
+  { url: 'bandcamp.com/fridays', epitaph: 'bandcamp fridays ended when epic games sold it, 2024' },
+  { url: 'cohost.org', epitaph: 'the anti-algorithm social network, couldn\'t sustain itself 2024' },
+  { url: 'ello.co', epitaph: 'the ad-free social network, pivoted, faded, gone 2023' },
+  { url: 'medium.com/circa-2014', epitaph: 'when everyone could write beautifully, before the paywall' },
+  { url: 'periscope.tv', epitaph: 'live streaming pioneer, absorbed into twitter, extinct 2021' },
 ]
 
 // Philosophical fragments about digital impermanence
@@ -89,6 +94,10 @@ const DECAY_MEDITATIONS = [
   'HTTP 410 Gone — the server remembers forgetting',
   'the wayback machine is the last witness',
   'we archive everything and remember nothing',
+  'in 2026, half of all 2020 URLs are already gone',
+  'the great meme reset: culture trying to forget itself',
+  'AI hallucinations are the internet\'s false memories',
+  'model collapse: when AI forgets what was real',
 ]
 
 export class DigitalDecay {

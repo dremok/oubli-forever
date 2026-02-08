@@ -72,6 +72,40 @@ const fragments: string[] = [
   "the void knows what time it is. it breathes differently at night.",
   "speak into the darkness. hold the space. let it hear you.",
   "your memories become constellations in the deep",
+
+  // Feb 2026 — neuroscience of memory drift
+  "the same memory never activates the same neurons twice",
+  "memories drift between neurons like nomads",
+  "your brain stores nothing in the same place twice",
+  "excitable neurons hold memories longer. calm ones let go.",
+  "accelerated forgetting: when the mind drops everything after thirty minutes",
+
+  // Feb 2026 — cultural moment
+  "2026 is the new 2016. everyone is remembering the last time they forgot.",
+  "nostalgia for the time before the feeds curated us",
+  "the last moment of shared culture was a decade ago",
+  "we chose to forget so we could begin again",
+
+  // Feb 2026 — environmental memory loss
+  "half of all lakes have forgotten their shores",
+  "the glaciers remember shapes the mountains have forgotten",
+  "aquifers drain in silence. no one hears water leave.",
+  "the colorado river no longer reaches the sea",
+
+  // Feb 2026 — cosmic observation
+  "a dying star sheds its memories in concentric rings",
+  "the helix nebula: the eye of god, slowly closing",
+  "strange red dots in deep space are black holes hiding in plain sight",
+
+  // Thread trail — self-aware house
+  "red threads stretch between the rooms you've visited",
+  "the house is weaving itself from your path",
+  "every door you open leaves a thread behind",
+
+  // Art references — Feb 2026 exhibitions
+  "chiharu shiota wraps the world in red thread. connection as art.",
+  "iñárritu found a million feet of film he forgot to use",
+  "tracey emin calls it a second life. what do you call yours?",
 ]
 
 export class Whispers {
