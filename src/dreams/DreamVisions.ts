@@ -23,6 +23,14 @@ const DREAM_IMAGES = [
   '/assets/generated/seance-candle.jpg',
   '/assets/generated/darkroom-safelight.jpg',
   '/assets/generated/ruins-texture.jpg',
+  '/assets/generated/well-depths.jpg',
+  '/assets/generated/glacier-aurora.jpg',
+  '/assets/generated/clocktower-gears.jpg',
+  '/assets/generated/loom-threads.jpg',
+  '/assets/generated/tidepool-bioluminescence.jpg',
+  '/assets/generated/labyrinth-fog.jpg',
+  '/assets/generated/mirror-shattered.jpg',
+  '/assets/generated/radio-static.jpg',
 ]
 
 export class DreamVisions {

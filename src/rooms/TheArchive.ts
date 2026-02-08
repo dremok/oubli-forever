@@ -162,7 +162,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       if (book.firstPublishYear) parts.push(`first published ${book.firstPublishYear}`)
       if (book.editionCount > 0) parts.push(`${book.editionCount} edition${book.editionCount === 1 ? '' : 's'}`)
       if (book.pageCount) parts.push(`~${book.pageCount} pages`)
-      meta.textContent = parts.join(' · ')
+      meta.textContent = parts.join(' \u00b7 ')
       textCol.appendChild(meta)
 
       // Subjects
@@ -190,6 +190,9 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       container.appendChild(card)
     }
   }
+
+  // Reference to the restricted drawer element for revealing after N searches
+  let restrictedDrawer: HTMLElement | null = null
 
   return {
     name: 'archive',
@@ -359,60 +362,117 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       hint.textContent = 'every book is a memory someone refused to let die'
       overlay.appendChild(hint)
 
-      // Passage links to connected rooms
-      if (deps?.switchTo) {
-        const passageRow = document.createElement('div')
-        passageRow.style.cssText = `
-          display: flex; gap: 16px; justify-content: center;
-          width: 480px; max-width: 90vw; margin-bottom: 20px;
-        `
-        const passages = [
-          { label: 'library', room: 'library' },
-          { label: 'cartographer', room: 'cartographer' },
-          { label: 'gallery', room: 'palimpsestgallery' },
-          { label: 'date paintings', room: 'datepaintings' },
-        ]
-        for (const p of passages) {
-          const link = document.createElement('span')
-          link.style.cssText = `
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 10px; font-style: italic;
-            color: rgba(180, 160, 120, 0.1);
-            cursor: pointer; transition: color 0.3s ease;
-            letter-spacing: 1px;
-          `
-          link.textContent = p.label
-          link.addEventListener('mouseenter', () => { link.style.color = 'rgba(180, 160, 120, 0.4)' })
-          link.addEventListener('mouseleave', () => { link.style.color = 'rgba(180, 160, 120, 0.1)' })
-          link.addEventListener('click', () => deps.switchTo!(p.room))
-          passageRow.appendChild(link)
-        }
-        overlay.appendChild(passageRow)
+      // ── Filing cabinet drawer navigation ──
+      // Positioned along the right edge, styled as archival drawer labels
+      const drawerRail = document.createElement('div')
+      drawerRail.style.cssText = `
+        position: fixed;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        z-index: 10;
+        pointer-events: auto;
+      `
+
+      const drawerDefs: { code: string; hint: string; room: string; restricted?: boolean }[] = [
+        { code: 'CAT.', hint: 'cataloguing', room: 'cartographer' },
+        { code: 'REF.', hint: 'reference section', room: 'library' },
+        { code: 'IMG.', hint: 'image archive', room: 'palimpsestgallery' },
+        { code: 'DATE', hint: 'date index', room: 'datepaintings' },
+      ]
+
+      // Add restricted drawer for catacombs descent if available
+      if (deps?.onDescend) {
+        drawerDefs.push({ code: 'RSTR', hint: 'restricted', room: '', restricted: true })
       }
 
-      // Hidden descent link — appears after 2+ searches
-      const descent = document.createElement('div')
-      descent.style.cssText = `
-        font-family: 'Cormorant Garamond', serif;
-        font-weight: 300; font-size: 11px; font-style: italic;
-        color: rgba(180, 160, 120, 0);
-        letter-spacing: 2px;
-        cursor: pointer;
-        transition: color 1s ease;
-        margin-bottom: 40px;
-        text-align: center;
-      `
-      descent.textContent = '\u25bc descend deeper'
-      descent.addEventListener('mouseenter', () => {
-        if (searchCount >= 2) descent.style.color = 'rgba(180, 160, 120, 0.4)'
-      })
-      descent.addEventListener('mouseleave', () => {
-        if (searchCount >= 2) descent.style.color = 'rgba(180, 160, 120, 0.12)'
-      })
-      descent.addEventListener('click', () => {
-        if (searchCount >= 2 && deps?.onDescend) deps.onDescend()
-      })
-      overlay.appendChild(descent)
+      for (const drawer of drawerDefs) {
+        const el = document.createElement('div')
+        const isRestricted = drawer.restricted === true
+        el.style.cssText = `
+          font-family: 'Courier New', monospace;
+          font-size: 10px;
+          letter-spacing: 1.5px;
+          color: ${isRestricted ? 'rgba(160, 100, 80, 0)' : 'rgba(180, 160, 120, 0.18)'};
+          background: ${isRestricted ? 'rgba(60, 20, 15, 0)' : 'rgba(30, 25, 18, 0.6)'};
+          border: 1px solid ${isRestricted ? 'rgba(160, 100, 80, 0)' : 'rgba(180, 160, 120, 0.06)'};
+          border-right: none;
+          padding: 8px 10px 8px 12px;
+          cursor: ${isRestricted ? 'default' : 'pointer'};
+          transition: transform 0.3s ease, color 0.3s ease, background 0.3s ease,
+                      border-color 0.3s ease;
+          transform: translateX(0px);
+          white-space: nowrap;
+          user-select: none;
+          pointer-events: ${isRestricted ? 'none' : 'auto'};
+        `
+        el.textContent = drawer.code
+
+        // Hint text that appears on hover
+        const hintEl = document.createElement('span')
+        hintEl.style.cssText = `
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 9px;
+          font-style: italic;
+          color: rgba(180, 160, 120, 0);
+          margin-left: 6px;
+          transition: color 0.3s ease;
+          letter-spacing: 0.5px;
+        `
+        hintEl.textContent = drawer.hint
+        el.appendChild(hintEl)
+
+        if (!isRestricted) {
+          el.addEventListener('mouseenter', () => {
+            el.style.transform = 'translateX(-8px)'
+            el.style.color = 'rgba(180, 160, 120, 0.6)'
+            el.style.background = 'rgba(40, 32, 22, 0.85)'
+            el.style.borderColor = 'rgba(180, 160, 120, 0.2)'
+            hintEl.style.color = 'rgba(180, 160, 120, 0.35)'
+          })
+          el.addEventListener('mouseleave', () => {
+            el.style.transform = 'translateX(0px)'
+            el.style.color = 'rgba(180, 160, 120, 0.18)'
+            el.style.background = 'rgba(30, 25, 18, 0.6)'
+            el.style.borderColor = 'rgba(180, 160, 120, 0.06)'
+            hintEl.style.color = 'rgba(180, 160, 120, 0)'
+          })
+          el.addEventListener('click', () => {
+            if (deps?.switchTo) deps.switchTo(drawer.room)
+          })
+        } else {
+          // Restricted drawer: hover and click only work after 5+ searches
+          el.addEventListener('mouseenter', () => {
+            if (searchCount >= 5) {
+              el.style.transform = 'translateX(-8px)'
+              el.style.color = 'rgba(160, 100, 80, 0.6)'
+              el.style.background = 'rgba(60, 20, 15, 0.7)'
+              el.style.borderColor = 'rgba(160, 100, 80, 0.25)'
+              hintEl.style.color = 'rgba(160, 100, 80, 0.35)'
+            }
+          })
+          el.addEventListener('mouseleave', () => {
+            if (searchCount >= 5) {
+              el.style.transform = 'translateX(0px)'
+              el.style.color = 'rgba(160, 100, 80, 0.2)'
+              el.style.background = 'rgba(60, 20, 15, 0.4)'
+              el.style.borderColor = 'rgba(160, 100, 80, 0.08)'
+              hintEl.style.color = 'rgba(160, 100, 80, 0)'
+            }
+          })
+          el.addEventListener('click', () => {
+            if (searchCount >= 5 && deps?.onDescend) deps.onDescend()
+          })
+          // Store reference so we can reveal it after enough searches
+          restrictedDrawer = el
+        }
+
+        drawerRail.appendChild(el)
+      }
+      overlay.appendChild(drawerRail)
 
       async function doSearch() {
         const query = input.value.trim()
@@ -445,9 +505,13 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
           const data = await searchBooks(query)
           renderResults(data, results, status)
           searchCount++
-          // Reveal descent link after 2 searches
-          if (searchCount >= 2 && deps?.onDescend) {
-            descent.style.color = 'rgba(180, 160, 120, 0.12)'
+          // Reveal restricted drawer after 5 searches
+          if (searchCount >= 5 && restrictedDrawer) {
+            restrictedDrawer.style.color = 'rgba(160, 100, 80, 0.2)'
+            restrictedDrawer.style.background = 'rgba(60, 20, 15, 0.4)'
+            restrictedDrawer.style.borderColor = 'rgba(160, 100, 80, 0.08)'
+            restrictedDrawer.style.pointerEvents = 'auto'
+            restrictedDrawer.style.cursor = 'pointer'
           }
         } catch (err) {
           const errMsg = err instanceof Error && err.name === 'AbortError'

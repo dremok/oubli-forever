@@ -630,48 +630,76 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     }
   }
 
+  // Draw a directional arrow chevron at (x, y) pointing in direction angle (radians)
+  function drawArrowChevron(x: number, y: number, angle: number, size: number, alpha: number) {
+    if (!ctx) return
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(angle)
+    ctx.beginPath()
+    ctx.moveTo(-size, -size * 0.6)
+    ctx.lineTo(0, 0)
+    ctx.lineTo(-size, size * 0.6)
+    ctx.strokeStyle = `rgba(100, 200, 240, ${alpha})`
+    ctx.lineWidth = 1.2
+    ctx.stroke()
+    ctx.restore()
+  }
+
   function drawCurrentParticles(w: number, h: number) {
     if (!ctx) return
     const isWellHovered = hoveredCurrent === 'well'
     const isTidepoolHovered = hoveredCurrent === 'tidepool'
 
     // --- Well current (upward column) ---
+    const wellCenterX = w * 0.5
+
     // Source glow (bottom of column)
-    const wellSourceX = w * 0.5
     const wellSourceY = h * 0.55
-    const srcGlow = ctx.createRadialGradient(wellSourceX, wellSourceY, 0, wellSourceX, wellSourceY, 25)
-    srcGlow.addColorStop(0, `rgba(80, 180, 220, ${isWellHovered ? 0.12 : 0.05})`)
+    const srcGlow = ctx.createRadialGradient(wellCenterX, wellSourceY, 0, wellCenterX, wellSourceY, 25)
+    srcGlow.addColorStop(0, `rgba(80, 180, 220, ${isWellHovered ? 0.15 : 0.05})`)
     srcGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
     ctx.fillStyle = srcGlow
-    ctx.fillRect(wellSourceX - 25, wellSourceY - 25, 50, 50)
+    ctx.fillRect(wellCenterX - 25, wellSourceY - 25, 50, 50)
 
     // Destination glow (top, at the water surface)
-    const wellDestX = w * 0.5
     const wellDestY = 25
-    const destRadius = isWellHovered ? 40 : 25
-    const destGlow = ctx.createRadialGradient(wellDestX, wellDestY, 0, wellDestX, wellDestY, destRadius)
-    destGlow.addColorStop(0, `rgba(80, 180, 220, ${isWellHovered ? 0.25 : 0.08})`)
+    const destRadius = isWellHovered ? 45 : 25
+    const destGlow = ctx.createRadialGradient(wellCenterX, wellDestY, 0, wellCenterX, wellDestY, destRadius)
+    destGlow.addColorStop(0, `rgba(80, 180, 220, ${isWellHovered ? 0.30 : 0.08})`)
     destGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
     ctx.fillStyle = destGlow
-    ctx.fillRect(wellDestX - destRadius, wellDestY - destRadius, destRadius * 2, destRadius * 2)
+    ctx.fillRect(wellCenterX - destRadius, wellDestY - destRadius, destRadius * 2, destRadius * 2)
 
-    // Room name at destination
-    const wellLabelAlpha = isWellHovered
-      ? 0.5
-      : 0.06 + Math.sin(time * 0.5) * 0.03
-    ctx.font = '10px "Cormorant Garamond", serif'
-    ctx.fillStyle = `rgba(120, 200, 240, ${wellLabelAlpha})`
-    ctx.textAlign = 'center'
-    ctx.fillText('the well', wellDestX, wellDestY + 4)
+    // Upward arrow chevrons along the column (animated, scrolling upward)
+    const wellArrowCount = isWellHovered ? 6 : 4
+    for (let i = 0; i < wellArrowCount; i++) {
+      // Each arrow scrolls upward continuously
+      const period = 3.0  // seconds for full cycle
+      const normalT = ((time / period + i / wellArrowCount) % 1)
+      const arrowY = wellSourceY - normalT * (wellSourceY - wellDestY - 10)
+      const arrowAlpha = isWellHovered
+        ? 0.35 * Math.sin(normalT * Math.PI)
+        : 0.12 * Math.sin(normalT * Math.PI)
+      const wobbleX = Math.sin(time * 1.2 + i * 1.5) * 3
+      drawArrowChevron(wellCenterX + wobbleX, arrowY, -Math.PI / 2, 6, arrowAlpha)
+    }
+
+    // Label — only visible on hover
+    if (isWellHovered) {
+      ctx.font = '12px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(140, 220, 255, 0.55)`
+      ctx.textAlign = 'center'
+      ctx.fillText('ascend to the well', wellCenterX, wellDestY + 5)
+    }
 
     // Particles
     for (const p of wellCurrentParticles) {
-      const brightness = isWellHovered ? 1.4 : 1.0
+      const brightness = isWellHovered ? 1.5 : 1.0
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
       ctx.fillStyle = `rgba(80, 180, 220, ${p.alpha * brightness})`
       ctx.fill()
-      // Subtle glow around each particle
       if (p.alpha > 0.08) {
         const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3)
         pg.addColorStop(0, `rgba(80, 180, 220, ${p.alpha * 0.3 * brightness})`)
@@ -682,41 +710,52 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     }
 
     // --- Tidepool current (rightward stream) ---
-    // Source glow (left side)
     const tpSourceX = w * 0.45
     const tpSourceY = h * 0.5
+    const tpDestX = w - 20
+    const tpDestY = h * 0.5
+
+    // Source glow (left side)
     const tpSrcGlow = ctx.createRadialGradient(tpSourceX, tpSourceY, 0, tpSourceX, tpSourceY, 20)
-    tpSrcGlow.addColorStop(0, `rgba(80, 180, 220, ${isTidepoolHovered ? 0.10 : 0.04})`)
+    tpSrcGlow.addColorStop(0, `rgba(80, 180, 220, ${isTidepoolHovered ? 0.12 : 0.04})`)
     tpSrcGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
     ctx.fillStyle = tpSrcGlow
     ctx.fillRect(tpSourceX - 20, tpSourceY - 20, 40, 40)
 
     // Destination glow (right edge)
-    const tpDestX = w - 20
-    const tpDestY = h * 0.5
-    const tpDestRadius = isTidepoolHovered ? 45 : 28
+    const tpDestRadius = isTidepoolHovered ? 50 : 28
     const tpDestGlow = ctx.createRadialGradient(tpDestX, tpDestY, 0, tpDestX, tpDestY, tpDestRadius)
-    tpDestGlow.addColorStop(0, `rgba(80, 180, 220, ${isTidepoolHovered ? 0.25 : 0.08})`)
+    tpDestGlow.addColorStop(0, `rgba(80, 180, 220, ${isTidepoolHovered ? 0.30 : 0.08})`)
     tpDestGlow.addColorStop(1, 'rgba(80, 180, 220, 0)')
     ctx.fillStyle = tpDestGlow
     ctx.fillRect(tpDestX - tpDestRadius, tpDestY - tpDestRadius, tpDestRadius * 2, tpDestRadius * 2)
 
-    // Room name at destination
-    const tpLabelAlpha = isTidepoolHovered
-      ? 0.5
-      : 0.05 + Math.sin(time * 0.4 + 1) * 0.02
-    ctx.save()
-    ctx.translate(tpDestX, tpDestY)
-    ctx.rotate(Math.PI / 2)
-    ctx.font = '10px "Cormorant Garamond", serif'
-    ctx.fillStyle = `rgba(120, 200, 240, ${tpLabelAlpha})`
-    ctx.textAlign = 'center'
-    ctx.fillText('the tide pool', 0, 0)
-    ctx.restore()
+    // Rightward arrow chevrons along the stream (animated, scrolling right)
+    const tpArrowCount = isTidepoolHovered ? 6 : 4
+    const streamLen = tpDestX - tpSourceX
+    for (let i = 0; i < tpArrowCount; i++) {
+      const period = 4.0
+      const normalT = ((time / period + i / tpArrowCount) % 1)
+      const arrowX = tpSourceX + normalT * streamLen
+      // Vertical wobble matching the stream
+      const arrowWobbleY = Math.sin(time * 1.0 + i * 1.8) * 5
+      const arrowAlpha = isTidepoolHovered
+        ? 0.35 * Math.sin(normalT * Math.PI)
+        : 0.12 * Math.sin(normalT * Math.PI)
+      drawArrowChevron(arrowX, tpSourceY + arrowWobbleY, 0, 6, arrowAlpha)
+    }
+
+    // Label — only visible on hover
+    if (isTidepoolHovered) {
+      ctx.font = '12px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(140, 220, 255, 0.55)`
+      ctx.textAlign = 'center'
+      ctx.fillText('follow the current to the tide pool', tpDestX - 120, tpDestY - 18)
+    }
 
     // Particles
     for (const p of tidepoolCurrentParticles) {
-      const brightness = isTidepoolHovered ? 1.4 : 1.0
+      const brightness = isTidepoolHovered ? 1.5 : 1.0
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
       ctx.fillStyle = `rgba(80, 180, 220, ${p.alpha * brightness})`
@@ -736,22 +775,21 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Well destination: near top-center
-    const wellDestX = w * 0.5
-    const wellDestY = 25
-    const wellDx = mx - wellDestX
-    const wellDy = my - wellDestY
-    if (wellDx * wellDx + wellDy * wellDy < 50 * 50) {
+    // Well current: vertical column from h*0.55 up to y=25, centered at w*0.5
+    // Hit region: a vertical strip ~60px wide along the column
+    const wellCenterX = w * 0.5
+    const wellTopY = 10
+    const wellBottomY = h * 0.55 + 30
+    if (Math.abs(mx - wellCenterX) < 35 && my > wellTopY && my < wellBottomY) {
       hoveredCurrent = 'well'
       return
     }
 
-    // Tidepool destination: near right edge, vertical center
-    const tpDestX = w - 20
-    const tpDestY = h * 0.5
-    const tpDx = mx - tpDestX
-    const tpDy = my - tpDestY
-    if (tpDx * tpDx + tpDy * tpDy < 50 * 50) {
+    // Tidepool current: horizontal stream from w*0.45 to right edge, at h*0.5
+    // Hit region: a horizontal strip ~50px tall along the stream
+    const tpLeft = w * 0.45 - 15
+    const tpCenterY = h * 0.5
+    if (mx > tpLeft && mx < w && Math.abs(my - tpCenterY) < 30) {
       hoveredCurrent = 'tidepool'
       return
     }
