@@ -106,6 +106,45 @@ const fragments: string[] = [
   "chiharu shiota wraps the world in red thread. connection as art.",
   "iñárritu found a million feet of film he forgot to use",
   "tracey emin calls it a second life. what do you call yours?",
+
+  // Feb 2026 — dark matter map (JWST COSMOS-Web, Feb 3)
+  "the universe remembers its invisible architecture",
+  "dark matter filaments: the scaffold everything visible grew on",
+  "galaxies formed along threads they could never see",
+  "voids in the dark matter map — places where nothing chose to be",
+  "the clearest picture of dark matter looks like a neural network",
+
+  // Feb 2026 — gravitational wave GW250114
+  "two black holes collided and spacetime rang like a bell",
+  "GW250114: the clearest gravitational wave ever heard",
+  "when massive things die, the universe hums for a moment",
+  "black hole spectroscopy: reading the tones of oblivion",
+
+  // Feb 2026 — coral reef collapse
+  "84% of earth's coral reefs are bleaching. memory made of calcium, dissolving.",
+  "in the chagos archipelago, 95% of the reef is dead",
+  "2026 may be the year the reefs finally collapse",
+  "coral grows one centimeter per year and dies in one summer",
+
+  // Feb 2026 — Alzheimer's jumbled replay
+  "in alzheimer's, the brain still replays memories at night — but scrambled",
+  "a broken projector still spinning, showing nothing recognizable",
+  "there is an enzyme that tags dying memories for removal. the garbage man.",
+  "memory loss begins years before anyone notices. invisible corruption.",
+
+  // Feb 2026 — Project Hail Mary
+  "he woke alone in space with no memory of how he got there",
+  "identity is the last thing memory surrenders",
+
+  // Feb 2026 — Sydney Biennale "Rememory"
+  "rememory: toni morrison's word for when trauma recalls itself",
+  "83 artists from 37 countries, all trying to remember what was erased",
+  "first nations artists reconstructing what colonizers tried to delete",
+
+  // Room afterimage — the house bleeds
+  "you carry traces of every room you've been in",
+  "the furnace left embers in your vision. the tide pool left ripples.",
+  "rooms bleed into each other like memories bleed into consciousness",
 ]
 
 export class Whispers {

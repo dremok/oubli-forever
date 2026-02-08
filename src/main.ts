@@ -81,6 +81,7 @@ import { TimeCapsule } from './memory/TimeCapsule'
 import { HouseWeather } from './atmosphere/HouseWeather'
 import { RoomAmbience } from './sound/RoomAmbience'
 import { RoomAfterimage } from './effects/RoomAfterimage'
+import { SpacetimeRipple } from './effects/SpacetimeRipple'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -551,6 +552,8 @@ houseWeather.setDegradationSource(() => {
 
 // Room afterimage — traces of previous room persist briefly
 const roomAfterimage = new RoomAfterimage()
+// Spacetime ripple — the house warps on significant events (GW250114 inspired)
+const spacetimeRipple = new SpacetimeRipple()
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -559,6 +562,8 @@ roomManager.onRoomChange((room) => {
   if (_prevRoom !== room) {
     roomAfterimage.trigger(_prevRoom)
   }
+  // Trigger spacetime ripple when entering destructive rooms
+  spacetimeRipple.triggerRoomEvent(room)
   _prevRoom = room
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
