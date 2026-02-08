@@ -33,7 +33,7 @@ const ALL_ITEMS: GuideItem[] = [
   { key: 'type', action: 'type + enter', result: 'give a memory to the void', position: 'center' },
   { key: 'voice', action: 'hold spacebar', result: 'speak into the darkness', position: 'center' },
   { key: 'click', action: 'click anywhere', result: 'the void sings', position: 'center' },
-  { key: 'rooms', action: 'navigation bar below', result: 'rooms to explore', position: 'center' },
+  { key: 'rooms', action: 'navigation bar above', result: 'rooms to explore', position: 'center' },
   { key: 'keys', action: 'a  m  h  t', result: 'ascii · memories · heatmap · trails', position: 'center' },
 ]
 
@@ -53,7 +53,7 @@ export class GentleGuide {
     this.overlay.style.cssText = `
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       z-index: 600; pointer-events: none;
-      display: flex; align-items: center; justify-content: center;
+      display: flex; align-items: center; justify-content: flex-start;
       opacity: 0;
       transition: opacity 2s ease;
     `
@@ -115,11 +115,11 @@ export class GentleGuide {
   private renderItems(items: GuideItem[]) {
     let html = `
       <div style="
-        text-align: center;
+        text-align: left;
         font-family: 'Cormorant Garamond', serif;
         font-weight: 300;
         max-width: 400px;
-        padding: 30px;
+        padding: 30px 30px 30px 40px;
       ">
     `
 
