@@ -343,11 +343,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     return PORTAL_TARGETS[idx % PORTAL_TARGETS.length]
   }
 
-  function getInscriptionText(wx: number, wy: number): string {
+  function getInscriptionText(wx: number, wy: number): { text: string; isMemory: boolean } {
     const memTexts = deps.getMemories?.().map(m => m.currentText).filter(t => t.length > 3) ?? []
     const allTexts = [...WALL_FRAGMENTS, ...memTexts.slice(0, 10)]
     const idx = Math.floor(cellHash2(wx + 3, wy + 7) * allTexts.length)
-    return allTexts[idx % allTexts.length]
+    const text = allTexts[idx % allTexts.length]
+    const isMemory = idx >= WALL_FRAGMENTS.length
+    return { text, isMemory }
   }
 
   // ===== REGION MANAGEMENT =====
@@ -1394,13 +1396,63 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         if (getWorldCell(wx, wy) === INSCRIPTION) {
           const dist = Math.hypot(px - (wx + 0.5), py - (wy + 0.5))
           if (dist < checkRadius) {
-            inscriptionText = getInscriptionText(wx, wy)
+            inscriptionText = getInscriptionText(wx, wy).text
             inscriptionAlpha = Math.min(0.6, 1 - dist / checkRadius)
             break
           }
         }
       }
       if (inscriptionText) break
+    }
+  }
+
+  // ===== HAND-DRAWN TEXT RENDERING =====
+
+  /** Render text in a hand-drawn/scratched style — memories scrawled on walls */
+  function drawHandwrittenText(c: CanvasRenderingContext2D, text: string, fontSize: number, alpha: number, wx: number, wy: number) {
+    const chars = text.split('')
+    const totalWidth = chars.length * fontSize * 0.55
+    let xOffset = -totalWidth / 2
+
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i]
+      // Seeded randomness per character position (consistent per wall)
+      const seed1 = cellHash2(wx * 100 + i * 7, wy * 100 + i * 13)
+      const seed2 = cellHash2(wx * 100 + i * 13, wy * 100 + i * 7)
+      const seed3 = cellHash2(wx * 100 + i * 19, wy * 100 + i * 23)
+
+      // Per-character jitter
+      const charRotation = (seed1 - 0.5) * 0.25    // slight tilt
+      const yJitter = (seed2 - 0.5) * fontSize * 0.3 // wobble baseline
+      const sizeJitter = 0.85 + seed3 * 0.3          // size variation
+      const alphaJitter = 0.7 + seed1 * 0.3          // opacity variation
+
+      const charSize = fontSize * sizeJitter
+
+      c.save()
+      c.translate(xOffset, yJitter)
+      c.rotate(charRotation)
+
+      // Warm amber color for memories (like chalk or charcoal on stone)
+      const warmth = 0.5 + seed2 * 0.5
+      const r = Math.floor(200 + warmth * 40)
+      const g = Math.floor(160 + warmth * 30)
+      const b = Math.floor(80 + warmth * 20)
+      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter})`
+
+      // Use Caveat (handwriting font) with fallback to cursive
+      c.font = `${Math.floor(charSize)}px "Caveat", cursive`
+      c.textAlign = 'center'
+      c.textBaseline = 'middle'
+
+      // Draw character twice with slight offset for thicker "scratched" feel
+      c.fillText(ch, 0, 0)
+      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.3})`
+      c.fillText(ch, (seed3 - 0.5) * 1.5, (seed1 - 0.5) * 1.5)
+
+      c.restore()
+
+      xOffset += charSize * 0.55 + (seed2 - 0.5) * 2 // irregular spacing
     }
   }
 
@@ -2538,7 +2590,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Raycasting
     const stripW = w / numRays
-    const visibleInscriptions: { text: string; screenX: number; dist: number; brightness: number }[] = []
+    const visibleInscriptions: { text: string; isMemory: boolean; screenX: number; dist: number; brightness: number; wx: number; wy: number }[] = []
     const visibleObjects: { obj: typeof WALL_OBJECTS[0]; screenX: number; wallTop: number; wallHeight: number; dist: number; brightness: number; wx: number; wy: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
@@ -2574,11 +2626,15 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       // Collect inscription text from nearby walls
       if (hit.cell === INSCRIPTION && correctedDist < 4) {
+        const insc = getInscriptionText(hit.hitX, hit.hitY)
         visibleInscriptions.push({
-          text: getInscriptionText(hit.hitX, hit.hitY),
+          text: insc.text,
+          isMemory: insc.isMemory,
           screenX: i * stripW + stripW / 2,
           dist: correctedDist,
           brightness,
+          wx: hit.hitX,
+          wy: hit.hitY,
         })
       }
 
@@ -2603,7 +2659,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       }
     }
 
-    // Render wall inscriptions
+    // Render wall inscriptions (memories use hand-drawn style)
     const shownTexts = new Set<string>()
     for (const insc of visibleInscriptions) {
       if (shownTexts.has(insc.text)) continue
@@ -2611,14 +2667,21 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       const fontSize = Math.max(8, Math.min(14, 16 / insc.dist))
       const alpha = Math.min(0.6, insc.brightness * 0.8) * (0.5 + Math.sin(time * 0.5 + insc.screenX * 0.01) * 0.3)
-      ctx.font = `${fontSize}px "Cormorant Garamond", serif`
-      ctx.fillStyle = `rgba(180, 160, 200, ${alpha})`
-      ctx.textAlign = 'center'
 
       ctx.save()
       ctx.translate(insc.screenX, midLine)
       ctx.rotate(-Math.PI / 2)
-      ctx.fillText(insc.text.substring(0, 20), 0, 0)
+
+      if (insc.isMemory) {
+        // Hand-drawn style for user memories — per-character jitter with handwriting font
+        drawHandwrittenText(ctx, insc.text.substring(0, 24), fontSize * 1.2, alpha, insc.wx, insc.wy)
+      } else {
+        // Standard inscription rendering
+        ctx.font = `${fontSize}px "Cormorant Garamond", serif`
+        ctx.fillStyle = `rgba(180, 160, 200, ${alpha})`
+        ctx.textAlign = 'center'
+        ctx.fillText(insc.text.substring(0, 20), 0, 0)
+      }
       ctx.restore()
     }
 
