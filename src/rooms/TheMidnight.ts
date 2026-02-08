@@ -22,6 +22,11 @@
  * (January 2026), Venice Biennale 2026 "In Minor Keys" —
  * quiet registers, ambient audio that shifts with the hour,
  * falling moon-dust particles, click-to-illuminate interaction.
+ *
+ * Enhanced with real astronomical twilight data from Sunrise-Sunset API.
+ * The room now knows exactly where you are in the solar cycle —
+ * astronomical twilight, nautical twilight, civil twilight, day, night —
+ * and adjusts its visual treatment accordingly.
  */
 
 import type { Room } from './RoomManager'
@@ -101,6 +106,266 @@ const HOURLY_POEMS: string[] = [
   'eleven is midnight\'s shadow.\nthe anticipation of ending.\neverything winds down.\nthe clock begins to lean forward.',
 ]
 
+// --- Twilight phase enum ---
+const enum TwilightPhase {
+  Night = 0,             // deepest black, full stars
+  AstronomicalTwilight,  // deep black, stars visible
+  NauticalTwilight,      // deep blue, horizon barely visible
+  CivilTwilight,         // purple/pink gradient
+  Day,                   // room is "asleep" — dimmer, quieter
+}
+
+// --- Twilight data types ---
+interface SunData {
+  sunrise: string
+  sunset: string
+  civil_twilight_begin: string
+  civil_twilight_end: string
+  nautical_twilight_begin: string
+  nautical_twilight_end: string
+  astronomical_twilight_begin: string
+  astronomical_twilight_end: string
+  solar_noon: string
+  day_length: number
+}
+
+interface TwilightCache {
+  data: SunData
+  fetchedAt: number
+  lat: number
+  lng: number
+}
+
+const CACHE_KEY = 'oubli_midnight_twilight'
+const CACHE_DURATION = 3600000 // 1 hour
+
+function loadCachedTwilight(): TwilightCache | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const cache: TwilightCache = JSON.parse(raw)
+    if (Date.now() - cache.fetchedAt > CACHE_DURATION) return null
+    return cache
+  } catch {
+    return null
+  }
+}
+
+function saveTwilightCache(data: SunData, lat: number, lng: number) {
+  try {
+    const cache: TwilightCache = { data, fetchedAt: Date.now(), lat, lng }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // localStorage full or unavailable
+  }
+}
+
+async function getUserCoords(): Promise<{ lat: number; lng: number } | null> {
+  if (!navigator.geolocation) return null
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => resolve(null), 3000)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(timeoutId)
+        resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      },
+      () => {
+        clearTimeout(timeoutId)
+        resolve(null)
+      },
+      { timeout: 3000, maximumAge: 600000 }
+    )
+  })
+}
+
+async function fetchTwilightData(lat: number, lng: number): Promise<SunData | null> {
+  try {
+    const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&formatted=0`
+    const resp = await fetch(url)
+    if (!resp.ok) return null
+    const json = await resp.json()
+    if (json.status !== 'OK') return null
+    return json.results as SunData
+  } catch {
+    return null
+  }
+}
+
+function getTwilightPhase(sunData: SunData | null, now: Date): TwilightPhase {
+  if (!sunData) {
+    // Fallback: use hour-based approximation
+    const h = now.getHours()
+    if (h >= 9 && h <= 16) return TwilightPhase.Day
+    if (h >= 7 && h <= 8 || h >= 17 && h <= 18) return TwilightPhase.CivilTwilight
+    if (h >= 5 && h <= 6 || h >= 19 && h <= 20) return TwilightPhase.NauticalTwilight
+    if (h >= 4 && h <= 4 || h >= 21 && h <= 21) return TwilightPhase.AstronomicalTwilight
+    return TwilightPhase.Night
+  }
+
+  const t = now.getTime()
+  const parse = (s: string) => new Date(s).getTime()
+
+  const astroBegin = parse(sunData.astronomical_twilight_begin)
+  const nautBegin = parse(sunData.nautical_twilight_begin)
+  const civilBegin = parse(sunData.civil_twilight_begin)
+  const sunrise = parse(sunData.sunrise)
+  const sunset = parse(sunData.sunset)
+  const civilEnd = parse(sunData.civil_twilight_end)
+  const nautEnd = parse(sunData.nautical_twilight_end)
+  const astroEnd = parse(sunData.astronomical_twilight_end)
+
+  // Morning sequence: astro -> naut -> civil -> sunrise -> day
+  // Evening sequence: sunset -> civil -> naut -> astro -> night
+  if (t >= sunrise && t <= sunset) return TwilightPhase.Day
+  if ((t >= civilBegin && t < sunrise) || (t > sunset && t <= civilEnd)) return TwilightPhase.CivilTwilight
+  if ((t >= nautBegin && t < civilBegin) || (t > civilEnd && t <= nautEnd)) return TwilightPhase.NauticalTwilight
+  if ((t >= astroBegin && t < nautBegin) || (t > nautEnd && t <= astroEnd)) return TwilightPhase.AstronomicalTwilight
+  return TwilightPhase.Night
+}
+
+// Returns a 0-1 interpolation within the current phase (0 = just entered, 1 = about to leave)
+function getTwilightProgress(sunData: SunData | null, now: Date): number {
+  if (!sunData) return 0.5
+  const t = now.getTime()
+  const parse = (s: string) => new Date(s).getTime()
+
+  const astroBegin = parse(sunData.astronomical_twilight_begin)
+  const nautBegin = parse(sunData.nautical_twilight_begin)
+  const civilBegin = parse(sunData.civil_twilight_begin)
+  const sunrise = parse(sunData.sunrise)
+  const sunset = parse(sunData.sunset)
+  const civilEnd = parse(sunData.civil_twilight_end)
+  const nautEnd = parse(sunData.nautical_twilight_end)
+  const astroEnd = parse(sunData.astronomical_twilight_end)
+
+  const lerp = (a: number, b: number) => {
+    if (b <= a) return 0.5
+    return Math.max(0, Math.min(1, (t - a) / (b - a)))
+  }
+
+  // Morning phases
+  if (t >= astroBegin && t < nautBegin) return lerp(astroBegin, nautBegin)
+  if (t >= nautBegin && t < civilBegin) return lerp(nautBegin, civilBegin)
+  if (t >= civilBegin && t < sunrise) return lerp(civilBegin, sunrise)
+  if (t >= sunrise && t <= sunset) return lerp(sunrise, sunset)
+  // Evening phases
+  if (t > sunset && t <= civilEnd) return lerp(sunset, civilEnd)
+  if (t > civilEnd && t <= nautEnd) return lerp(civilEnd, nautEnd)
+  if (t > nautEnd && t <= astroEnd) return lerp(nautEnd, astroEnd)
+  return 0.5
+}
+
+interface TimeUntilEvent {
+  label: string
+  seconds: number
+}
+
+function getNextEvents(sunData: SunData | null, now: Date): TimeUntilEvent[] {
+  const events: TimeUntilEvent[] = []
+  const t = now.getTime()
+
+  // Always calculate time until next midnight
+  const nextMidnight = new Date(now)
+  nextMidnight.setHours(24, 0, 0, 0)
+  const secsToMidnight = Math.floor((nextMidnight.getTime() - t) / 1000)
+  // If it's already past midnight, show time since
+  if (now.getHours() === 0 && now.getMinutes() < 30) {
+    const sinceMidnight = now.getMinutes() * 60 + now.getSeconds()
+    events.push({ label: 'since midnight', seconds: sinceMidnight })
+  } else {
+    events.push({ label: 'until midnight', seconds: secsToMidnight })
+  }
+
+  if (sunData) {
+    const parse = (s: string) => new Date(s).getTime()
+    const sunrise = parse(sunData.sunrise)
+    const sunset = parse(sunData.sunset)
+
+    if (t < sunrise) {
+      events.push({ label: 'until sunrise', seconds: Math.floor((sunrise - t) / 1000) })
+    } else if (t < sunset) {
+      events.push({ label: 'until sunset', seconds: Math.floor((sunset - t) / 1000) })
+    } else {
+      // After sunset — next sunrise is tomorrow, approximate +24h from today's
+      const tomorrowSunrise = sunrise + 86400000
+      events.push({ label: 'until sunrise', seconds: Math.floor((tomorrowSunrise - t) / 1000) })
+    }
+  }
+
+  return events
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 0) seconds = 0
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
+  if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`
+  return `${s}s`
+}
+
+// --- Phase-based visual parameters ---
+interface PhaseVisuals {
+  bgR: number; bgG: number; bgB: number   // background color
+  starAlpha: number                        // star visibility multiplier
+  starCount: number                        // how many stars to draw
+  horizonR: number; horizonG: number; horizonB: number  // horizon glow color
+  horizonAlpha: number                     // horizon glow intensity
+  vividnessOverride: number                // replaces old hour-based vividness
+  phaseLabel: string                       // subtle phase description
+}
+
+function getPhaseVisuals(phase: TwilightPhase, progress: number): PhaseVisuals {
+  switch (phase) {
+    case TwilightPhase.Night:
+      return {
+        bgR: 2, bgG: 2, bgB: 8,
+        starAlpha: 0.04, starCount: 120,
+        horizonR: 10, horizonG: 8, horizonB: 20,
+        horizonAlpha: 0.02,
+        vividnessOverride: 1.0,
+        phaseLabel: 'true night. the stars are watching.',
+      }
+    case TwilightPhase.AstronomicalTwilight:
+      return {
+        bgR: 3, bgG: 3, bgB: 12 + Math.floor(progress * 8),
+        starAlpha: 0.035 - progress * 0.015, starCount: 100 - Math.floor(progress * 40),
+        horizonR: 15, horizonG: 10, horizonB: 35,
+        horizonAlpha: 0.04 + progress * 0.03,
+        vividnessOverride: 0.9 - progress * 0.1,
+        phaseLabel: 'astronomical twilight. the deepest blue.',
+      }
+    case TwilightPhase.NauticalTwilight:
+      return {
+        bgR: 5 + Math.floor(progress * 10), bgG: 5 + Math.floor(progress * 8), bgB: 25 + Math.floor(progress * 20),
+        starAlpha: 0.02 - progress * 0.015, starCount: 50 - Math.floor(progress * 30),
+        horizonR: 40 + Math.floor(progress * 40), horizonG: 20 + Math.floor(progress * 20), horizonB: 60 + Math.floor(progress * 30),
+        horizonAlpha: 0.08 + progress * 0.06,
+        vividnessOverride: 0.7 - progress * 0.15,
+        phaseLabel: 'nautical twilight. the horizon stirs.',
+      }
+    case TwilightPhase.CivilTwilight:
+      return {
+        bgR: 20 + Math.floor(progress * 25), bgG: 12 + Math.floor(progress * 15), bgB: 40 + Math.floor(progress * 15),
+        starAlpha: Math.max(0, 0.005 - progress * 0.005), starCount: Math.max(0, 15 - Math.floor(progress * 15)),
+        horizonR: 120 + Math.floor(progress * 60), horizonG: 60 + Math.floor(progress * 40), horizonB: 80 + Math.floor(progress * 20),
+        horizonAlpha: 0.15 + progress * 0.1,
+        vividnessOverride: 0.45 - progress * 0.15,
+        phaseLabel: 'civil twilight. pink and purple seep in.',
+      }
+    case TwilightPhase.Day:
+      return {
+        bgR: 18 + Math.floor(Math.sin(progress * Math.PI) * 8), bgG: 16 + Math.floor(Math.sin(progress * Math.PI) * 6), bgB: 22,
+        starAlpha: 0, starCount: 0,
+        horizonR: 180, horizonG: 160, horizonB: 140,
+        horizonAlpha: 0.03,
+        vividnessOverride: 0.1 + Math.sin(progress * Math.PI) * 0.05,
+        phaseLabel: 'daylight. this room is asleep.',
+      }
+  }
+}
+
 // --- Particle system ---
 interface Particle {
   x: number
@@ -131,6 +396,11 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
   let frameId = 0
   let time = 0
   let towerHovered = false
+  let dawnPortalHovered = false
+
+  // --- Twilight state ---
+  let twilightData: SunData | null = null
+  let twilightFetching = false
 
   // --- Audio state ---
   let audioInitialized = false
@@ -163,6 +433,23 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
   let midnightFlash = 0      // brightness flash at midnight strike
   let lastCheckedMinute = -1
 
+  // --- Dawn portal hit-test ---
+  function getDawnPortalBounds(w: number, h: number) {
+    // The dawn portal sits at the right side of the horizon,
+    // a warm glow you walk toward
+    const cx = w * 0.85
+    const cy = h - 50
+    const radius = 60
+    return { cx, cy, radius }
+  }
+
+  function isInsideDawnPortal(px: number, py: number, w: number, h: number): boolean {
+    const { cx, cy, radius } = getDawnPortalBounds(w, h)
+    const dx = px - cx
+    const dy = py - cy
+    return dx * dx + dy * dy <= radius * radius
+  }
+
   // --- Clock tower silhouette hit-test helpers ---
   function getTowerBounds(w: number, h: number, vividness: number) {
     const cx = w * 0.5
@@ -185,11 +472,37 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     return 0.1 + 0.9 * ((Math.cos(hour / 12 * Math.PI) + 1) / 2)
   }
 
+  // --- Twilight fetch ---
+  async function fetchTwilight() {
+    if (twilightFetching) return
+    twilightFetching = true
+
+    // Check cache first
+    const cached = loadCachedTwilight()
+    if (cached) {
+      twilightData = cached.data
+      twilightFetching = false
+      return
+    }
+
+    // Try geolocation with 3s timeout, fallback to NYC
+    const coords = await getUserCoords()
+    const lat = coords?.lat ?? 40.7128
+    const lng = coords?.lng ?? -74.0060
+
+    const data = await fetchTwilightData(lat, lng)
+    if (data) {
+      twilightData = data
+      saveTwilightCache(data, lat, lng)
+    }
+    twilightFetching = false
+  }
+
   // --- Audio ---
-  function createNoiseBuffer(ctx: AudioContext, duration: number): AudioBuffer {
-    const sampleRate = ctx.sampleRate
+  function createNoiseBuffer(audioContext: AudioContext, duration: number): AudioBuffer {
+    const sampleRate = audioContext.sampleRate
     const length = sampleRate * duration
-    const buffer = ctx.createBuffer(1, length, sampleRate)
+    const buffer = audioContext.createBuffer(1, length, sampleRate)
     const data = buffer.getChannelData(0)
     for (let i = 0; i < length; i++) {
       data[i] = Math.random() * 2 - 1
@@ -455,15 +768,28 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
   function handleClick(e: MouseEvent) {
     if (!canvas || !active) return
 
-    // Check clock tower silhouette click
+    // Check dawn portal click (clocktower portal)
+    if (deps?.switchTo) {
+      if (isInsideDawnPortal(e.clientX, e.clientY, canvas.width, canvas.height)) {
+        deps.switchTo('clocktower')
+        return
+      }
+    }
+
+    // Check clock tower silhouette click (legacy, kept for center tower)
     if (deps?.switchTo) {
       const now = new Date()
       const hour = now.getHours()
-      const viv = getHourVividness(hour)
+      const phase = getTwilightPhase(twilightData, now)
+      const progress = getTwilightProgress(twilightData, now)
+      const pv = getPhaseVisuals(phase, progress)
+      const viv = Math.min(1, pv.vividnessOverride + clickBoost + midnightFlash * 0.5)
       if (isInsideTower(e.clientX, e.clientY, canvas.width, canvas.height, viv)) {
         deps.switchTo('clocktower')
         return
       }
+      // Suppress unused variable warning
+      void hour
     }
 
     // Click-to-illuminate
@@ -523,6 +849,75 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     lastCheckedMinute = minute
   }
 
+  // --- Dawn portal drawing ---
+  function drawDawnPortal(c: CanvasRenderingContext2D, w: number, h: number, phase: TwilightPhase, progress: number) {
+    if (!deps?.switchTo) return
+
+    const { cx, cy, radius } = getDawnPortalBounds(w, h)
+
+    // The portal looks like a dawn horizon glow — warm colors that pulse
+    // More vivid when it's actually near dawn in real life
+    const isDawnAdjacent = phase === TwilightPhase.CivilTwilight ||
+                           phase === TwilightPhase.NauticalTwilight ||
+                           phase === TwilightPhase.AstronomicalTwilight
+    const basePulse = 0.5 + Math.sin(time * 0.8) * 0.15
+    const portalIntensity = isDawnAdjacent ? basePulse * 1.2 : basePulse * 0.6
+    const hoverBoost = dawnPortalHovered ? 0.3 : 0
+
+    // Outer glow — warm amber/orange
+    const outerGrad = c.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.5)
+    outerGrad.addColorStop(0, `rgba(255, 180, 80, ${(0.06 + hoverBoost * 0.08) * portalIntensity})`)
+    outerGrad.addColorStop(0.4, `rgba(255, 120, 60, ${(0.04 + hoverBoost * 0.05) * portalIntensity})`)
+    outerGrad.addColorStop(0.7, `rgba(200, 60, 80, ${(0.02 + hoverBoost * 0.03) * portalIntensity})`)
+    outerGrad.addColorStop(1, 'rgba(200, 60, 80, 0)')
+    c.fillStyle = outerGrad
+    c.fillRect(cx - radius * 1.5, cy - radius * 1.5, radius * 3, radius * 1.8)
+
+    // Horizon line — a bright arc at the bottom of the glow
+    c.beginPath()
+    c.moveTo(cx - radius, cy)
+    c.quadraticCurveTo(cx, cy - radius * 0.3 - Math.sin(time * 0.5) * 4, cx + radius, cy)
+    c.strokeStyle = `rgba(255, 200, 120, ${(0.1 + hoverBoost * 0.15) * portalIntensity})`
+    c.lineWidth = 1.5
+    c.stroke()
+
+    // Inner core — bright white-yellow
+    const innerGrad = c.createRadialGradient(cx, cy - 5, 0, cx, cy - 5, radius * 0.5)
+    innerGrad.addColorStop(0, `rgba(255, 240, 200, ${(0.08 + hoverBoost * 0.1) * portalIntensity})`)
+    innerGrad.addColorStop(1, 'rgba(255, 200, 120, 0)')
+    c.fillStyle = innerGrad
+    c.beginPath()
+    c.arc(cx, cy - 5, radius * 0.5, 0, Math.PI * 2)
+    c.fill()
+
+    // Rays of light emanating upward
+    const rayCount = 5
+    for (let i = 0; i < rayCount; i++) {
+      const angle = -Math.PI * 0.2 - (Math.PI * 0.6 / (rayCount - 1)) * i
+      const rayLen = radius * (0.6 + Math.sin(time * 0.7 + i * 1.3) * 0.2)
+      const rayAlpha = (0.03 + hoverBoost * 0.04) * portalIntensity
+      c.beginPath()
+      c.moveTo(cx, cy - 5)
+      c.lineTo(cx + Math.cos(angle) * rayLen, cy - 5 + Math.sin(angle) * rayLen)
+      c.strokeStyle = `rgba(255, 220, 150, ${rayAlpha})`
+      c.lineWidth = 0.8
+      c.stroke()
+    }
+
+    // Label on hover
+    if (dawnPortalHovered) {
+      c.font = '11px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(255, 220, 160, ${0.4 + Math.sin(time) * 0.1})`
+      c.textAlign = 'center'
+      c.fillText('walk toward the dawn', cx, cy - radius * 0.7 - 8)
+      c.font = '9px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(255, 200, 140, ${0.25})`
+      c.fillText('the clock tower', cx, cy - radius * 0.7 + 5)
+    }
+
+    void progress
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -532,7 +927,14 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     const h = canvas.height
     const now = new Date()
     const hour = now.getHours()
-    const baseVividness = getHourVividness(hour)
+
+    // Get twilight-based visuals
+    const phase = getTwilightPhase(twilightData, now)
+    const progress = getTwilightProgress(twilightData, now)
+    const pv = getPhaseVisuals(phase, progress)
+
+    // Vividness now driven by twilight phase instead of just hour
+    const baseVividness = twilightData ? pv.vividnessOverride : getHourVividness(hour)
     const vividness = Math.min(1, baseVividness + clickBoost + midnightFlash * 0.5)
 
     // Decay midnight flash
@@ -548,24 +950,44 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
 
     ctx.clearRect(0, 0, w, h)
 
-    // Background — deeper at midnight, washed out at noon
-    // Midnight flash briefly brightens the room
+    // Background — twilight-aware colors
     const flashAdd = midnightFlash * 20
-    const bgDark = Math.floor(5 * vividness + flashAdd)
-    const bgLight = Math.floor(3 + (1 - vividness) * 15 + flashAdd * 0.3)
-    ctx.fillStyle = `rgb(${Math.min(255, bgLight)}, ${Math.min(255, bgLight)}, ${Math.min(255, bgDark + bgLight)})`
+    const bgR = Math.min(255, pv.bgR + Math.floor(flashAdd * 0.3))
+    const bgG = Math.min(255, pv.bgG + Math.floor(flashAdd * 0.2))
+    const bgB = Math.min(255, pv.bgB + Math.floor(flashAdd))
+    ctx.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`
     ctx.fillRect(0, 0, w, h)
 
-    // Stars (more visible at night)
-    if (vividness > 0.3) {
-      for (let i = 0; i < 60; i++) {
+    // Horizon gradient at the bottom — twilight color bleeds upward
+    if (pv.horizonAlpha > 0.01) {
+      const horizGrad = ctx.createLinearGradient(0, h, 0, h * 0.7)
+      horizGrad.addColorStop(0, `rgba(${pv.horizonR}, ${pv.horizonG}, ${pv.horizonB}, ${pv.horizonAlpha})`)
+      horizGrad.addColorStop(1, `rgba(${pv.horizonR}, ${pv.horizonG}, ${pv.horizonB}, 0)`)
+      ctx.fillStyle = horizGrad
+      ctx.fillRect(0, h * 0.7, w, h * 0.3)
+    }
+
+    // Stars — count and brightness driven by twilight phase
+    if (pv.starCount > 0 && pv.starAlpha > 0.001) {
+      for (let i = 0; i < pv.starCount; i++) {
         const sx = (Math.sin(i * 83.7) * 0.5 + 0.5) * w
-        const sy = (Math.sin(i * 47.3) * 0.5 + 0.5) * h
-        const brightness = vividness * (0.02 + Math.sin(time * 0.5 + i) * 0.01)
+        const sy = (Math.sin(i * 47.3) * 0.5 + 0.5) * h * 0.85 // keep stars above horizon
+        const twinkle = Math.sin(time * 0.5 + i * 2.1) * 0.4 + 0.6
+        const brightness = pv.starAlpha * twinkle
+        if (brightness < 0.002) continue
         ctx.beginPath()
-        ctx.arc(sx, sy, 0.5 + vividness, 0, Math.PI * 2)
+        const starSize = 0.4 + (i % 3) * 0.4
+        ctx.arc(sx, sy, starSize, 0, Math.PI * 2)
         ctx.fillStyle = `rgba(200, 200, 240, ${brightness})`
         ctx.fill()
+
+        // Brighter stars get a halo during deep night
+        if (phase === TwilightPhase.Night && starSize > 1 && brightness > 0.02) {
+          ctx.beginPath()
+          ctx.arc(sx, sy, starSize * 3, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(180, 180, 240, ${brightness * 0.15})`
+          ctx.fill()
+        }
       }
     }
 
@@ -589,7 +1011,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     ctx.font = '48px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 220, ${vividness * 0.3})`
     ctx.textAlign = 'center'
-    const hourStr = String(hour).padStart(2, '0') + ':00'
+    const hourStr = String(hour).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0')
     ctx.fillText(hourStr, w / 2, h * 0.2)
 
     // --- Doomsday clock reference (22:00 - 01:00) ---
@@ -607,7 +1029,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     }
 
     // Poem
-    const poem = HOURLY_POEMS[hour] || ''
+    const poem = HOURLY_POEMS[now.getHours()] || ''
     const lines = poem.split('\n')
     ctx.font = '16px "Cormorant Garamond", serif'
     ctx.textAlign = 'center'
@@ -649,7 +1071,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
         meter += '\u00B7'
       }
     }
-    ctx.fillText(`presence: ${meter}`, w / 2, h * 0.7)
+    ctx.fillText(`presence: ${meter}`, w / 2, h * 0.62)
 
     // Presence / click meter (shows remaining click energy)
     if (presenceMeter < 0.99) {
@@ -660,20 +1082,37 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
       }
       ctx.font = '8px monospace'
       ctx.fillStyle = `rgba(180, 180, 220, ${0.15})`
-      ctx.fillText(`illuminate: ${pMeter}`, w / 2, h * 0.73)
+      ctx.fillText(`illuminate: ${pMeter}`, w / 2, h * 0.65)
     }
 
-    // Hint about vividness
+    // --- Time-until events (subtle) ---
+    const events = getNextEvents(twilightData, now)
+    const eventY = h * 0.68
+    ctx.font = '8px monospace'
+    ctx.textAlign = 'center'
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i]
+      const alpha = vividness * 0.07
+      ctx.fillStyle = `rgba(200, 190, 220, ${alpha})`
+      ctx.fillText(`${formatDuration(ev.seconds)} ${ev.label}`, w / 2, eventY + i * 14)
+    }
+
+    // Twilight phase hint
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 220, ${vividness * 0.06})`
-    ctx.fillText(
-      vividness > 0.7
-        ? 'the midnight hour. the room is most itself.'
-        : vividness > 0.4
-        ? 'the room is dimming. come back when the sun sets.'
-        : 'barely here. the daylight dissolves this place. [click to illuminate]',
-      w / 2, h * 0.8
-    )
+    ctx.textAlign = 'center'
+    if (twilightData) {
+      ctx.fillText(pv.phaseLabel, w / 2, h * 0.78)
+    } else {
+      ctx.fillText(
+        vividness > 0.7
+          ? 'the midnight hour. the room is most itself.'
+          : vividness > 0.4
+          ? 'the room is dimming. come back when the sun sets.'
+          : 'barely here. the daylight dissolves this place. [click to illuminate]',
+        w / 2, h * 0.78
+      )
+    }
 
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
@@ -773,9 +1212,8 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
       ctx.stroke()
 
       // Clock hands showing real time
-      const realNow = new Date()
-      const realH = realNow.getHours() % 12
-      const realM = realNow.getMinutes()
+      const realH = now.getHours() % 12
+      const realM = now.getMinutes()
       // Hour hand
       const hourAngle = ((realH + realM / 60) / 12) * Math.PI * 2 - Math.PI / 2
       ctx.beginPath()
@@ -809,6 +1247,9 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
         ctx.fillText('the clock tower', cx, topY - 12)
       }
     }
+
+    // --- Dawn portal (to clocktower) ---
+    drawDawnPortal(ctx, w, h, phase, progress)
   }
 
   return {
@@ -834,14 +1275,28 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
       canvas.addEventListener('click', handleClick)
 
       canvas.addEventListener('mousemove', (e) => {
-        if (!deps?.switchTo || !canvas) return
-        const now = new Date()
-        const hour = now.getHours()
-        const viv = getHourVividness(hour)
-        const wasHovered = towerHovered
-        towerHovered = isInsideTower(e.clientX, e.clientY, canvas.width, canvas.height, viv)
-        if (towerHovered !== wasHovered) {
-          canvas.style.cursor = towerHovered ? 'pointer' : 'default'
+        if (!canvas) return
+        const w = canvas.width
+        const h = canvas.height
+
+        // Dawn portal hover
+        const wasDawnHovered = dawnPortalHovered
+        dawnPortalHovered = deps?.switchTo ? isInsideDawnPortal(e.clientX, e.clientY, w, h) : false
+
+        // Tower hover
+        if (deps?.switchTo) {
+          const now = new Date()
+          const curPhase = getTwilightPhase(twilightData, now)
+          const curProgress = getTwilightProgress(twilightData, now)
+          const curPv = getPhaseVisuals(curPhase, curProgress)
+          const viv = twilightData ? curPv.vividnessOverride : getHourVividness(now.getHours())
+          const wasHovered = towerHovered
+          towerHovered = isInsideTower(e.clientX, e.clientY, w, h, viv)
+          if (towerHovered !== wasHovered || dawnPortalHovered !== wasDawnHovered) {
+            canvas.style.cursor = (towerHovered || dawnPortalHovered) ? 'pointer' : 'default'
+          }
+        } else if (dawnPortalHovered !== wasDawnHovered) {
+          canvas.style.cursor = dawnPortalHovered ? 'pointer' : 'default'
         }
       })
 
@@ -860,6 +1315,8 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
 
     async activate() {
       active = true
+      // Fetch twilight data (non-blocking)
+      fetchTwilight()
       await initAudio()
       scheduleBark()
       render()

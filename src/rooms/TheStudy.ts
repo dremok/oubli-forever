@@ -17,15 +17,23 @@
  * - Auto-save to localStorage
  * - Export as text file
  * - The ambient drone continues but softened
+ * - Stoic philosophical inscriptions from the Stoic Quotes API
+ * - Study-themed navigation portals (bookshelves, drawers, windows)
  *
  * Inspired by: iA Writer, Hemingway's standing desk,
- * Japanese tea ceremony (minimal, intentional, present)
+ * Japanese tea ceremony (minimal, intentional, present),
+ * Marcus Aurelius' Meditations, Seneca's Letters
  */
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 
 const STORAGE_KEY = 'oubli-study'
+const QUOTE_API = 'https://stoic-quotes.com/api/quote'
+const QUOTE_INTERVAL_MS = 90_000
+const QUOTE_VISIBLE_MS = 20_000
+const QUOTE_FADE_MS = 2000
+
 const PROMPTS_BASE = [
   'Write about a place you can no longer visit...',
   'Describe the last dream you remember...',
@@ -44,10 +52,62 @@ const PROMPTS_BASE = [
   'Describe a moment that changed everything...',
 ]
 
+// Fallback quotes for when the API is unreachable
+const FALLBACK_QUOTES: Array<{ text: string; author: string }> = [
+  { text: 'We suffer more often in imagination than in reality.', author: 'Seneca' },
+  { text: 'The happiness of your life depends upon the quality of your thoughts.', author: 'Marcus Aurelius' },
+  { text: 'Man is not worried by real problems so much as by his imagined anxieties about real problems.', author: 'Epictetus' },
+  { text: 'It is not that we have a short time to live, but that we waste a great deal of it.', author: 'Seneca' },
+  { text: 'You have power over your mind — not outside events. Realize this, and you will find strength.', author: 'Marcus Aurelius' },
+  { text: 'No man is free who is not master of himself.', author: 'Epictetus' },
+  { text: 'Begin at once to live, and count each separate day as a separate life.', author: 'Seneca' },
+  { text: 'The soul becomes dyed with the colour of its thoughts.', author: 'Marcus Aurelius' },
+  { text: 'First say to yourself what you would be; and then do what you have to do.', author: 'Epictetus' },
+  { text: 'Loss is nothing else but change, and change is nature\'s delight.', author: 'Marcus Aurelius' },
+]
+
+interface StoicQuote {
+  text: string
+  author: string
+}
+
 interface StudyDeps {
   getMemories: () => StoredMemory[]
   onNewText?: (text: string) => void
   switchTo?: (name: string) => void
+}
+
+// Session-level quote cache to avoid repeats
+const seenQuoteTexts = new Set<string>()
+
+async function fetchStoicQuote(): Promise<StoicQuote> {
+  try {
+    const resp = await fetch(QUOTE_API)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json() as { text: string; author: string }
+    if (!data.text || !data.author) throw new Error('Invalid response shape')
+    return { text: data.text, author: data.author }
+  } catch {
+    // Fallback: pick a random fallback quote not yet seen
+    const unseen = FALLBACK_QUOTES.filter(q => !seenQuoteTexts.has(q.text))
+    const pool = unseen.length > 0 ? unseen : FALLBACK_QUOTES
+    return pool[Math.floor(Math.random() * pool.length)]
+  }
+}
+
+async function fetchUniqueQuote(): Promise<StoicQuote> {
+  // Try up to 3 times to get a quote we haven't shown yet
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const quote = await fetchStoicQuote()
+    if (!seenQuoteTexts.has(quote.text)) {
+      seenQuoteTexts.add(quote.text)
+      return quote
+    }
+  }
+  // If all attempts returned duplicates, just use the last one
+  const quote = await fetchStoicQuote()
+  seenQuoteTexts.add(quote.text)
+  return quote
 }
 
 export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | StudyDeps, onNewText?: (text: string) => void): Room {
@@ -62,6 +122,10 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
   let promptEl: HTMLElement | null = null
   let countEl: HTMLElement | null = null
   let saveInterval: number | null = null
+  let quoteInterval: number | null = null
+  let quoteTimeout: number | null = null
+  let quoteEl: HTMLElement | null = null
+  let quoteAuthorEl: HTMLElement | null = null
   let active = false
   let lastWordCount = 0
 
@@ -114,7 +178,7 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
     const text = textarea.value
     const words = text.trim() ? text.trim().split(/\s+/).length : 0
     const chars = text.length
-    countEl.textContent = `${words} words · ${chars} characters`
+    countEl.textContent = `${words} words \u00b7 ${chars} characters`
   }
 
   function newPrompt() {
@@ -141,6 +205,139 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
     a.download = `oubli-study-${new Date().toISOString().split('T')[0]}.txt`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  /** Show a stoic quote inscription with fade-in, hold, fade-out */
+  async function showQuoteInscription() {
+    if (!quoteEl || !quoteAuthorEl || !active) return
+
+    const quote = await fetchUniqueQuote()
+    if (!active) return // room may have been deactivated during fetch
+
+    // Set text
+    quoteEl.textContent = `\u201c${quote.text}\u201d`
+    quoteAuthorEl.textContent = `\u2014 ${quote.author}`
+
+    // Fade in
+    quoteEl.style.transition = `opacity ${QUOTE_FADE_MS}ms ease-in`
+    quoteAuthorEl.style.transition = `opacity ${QUOTE_FADE_MS}ms ease-in ${QUOTE_FADE_MS * 0.3}ms`
+    quoteEl.style.opacity = '1'
+    quoteAuthorEl.style.opacity = '1'
+
+    // Hold, then fade out
+    quoteTimeout = window.setTimeout(() => {
+      if (!quoteEl || !quoteAuthorEl) return
+      quoteEl.style.transition = `opacity ${QUOTE_FADE_MS}ms ease-out`
+      quoteAuthorEl.style.transition = `opacity ${QUOTE_FADE_MS}ms ease-out`
+      quoteEl.style.opacity = '0'
+      quoteAuthorEl.style.opacity = '0'
+    }, QUOTE_VISIBLE_MS)
+  }
+
+  function startQuoteCycle() {
+    // Show first quote after a short delay so the room settles
+    quoteTimeout = window.setTimeout(() => {
+      showQuoteInscription()
+    }, 2000)
+
+    // Then periodically
+    quoteInterval = window.setInterval(() => {
+      showQuoteInscription()
+    }, QUOTE_INTERVAL_MS)
+  }
+
+  function stopQuoteCycle() {
+    if (quoteInterval) { clearInterval(quoteInterval); quoteInterval = null }
+    if (quoteTimeout) { clearTimeout(quoteTimeout); quoteTimeout = null }
+  }
+
+  /** Build a study-themed navigation portal */
+  function createPortal(config: {
+    label: string
+    roomName: string
+    icon: string
+    description: string
+    position: string
+    baseColor: string
+    hoverColor: string
+    glowColor: string
+    borderStyle: string
+  }): HTMLElement {
+    const portal = document.createElement('div')
+    portal.style.cssText = `
+      ${config.position}
+      pointer-events: auto; cursor: pointer;
+      padding: 12px 16px;
+      border: ${config.borderStyle};
+      border-radius: 3px;
+      background: rgba(2, 1, 8, 0.4);
+      transition: all 0.6s ease;
+      text-align: center;
+      min-width: 80px;
+    `
+
+    const iconSpan = document.createElement('div')
+    iconSpan.style.cssText = `
+      font-size: 18px;
+      margin-bottom: 6px;
+      opacity: 0.4;
+      transition: opacity 0.6s ease;
+    `
+    iconSpan.textContent = config.icon
+
+    const labelSpan = document.createElement('div')
+    labelSpan.style.cssText = `
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 300; font-size: 10px;
+      letter-spacing: 2px; text-transform: lowercase;
+      font-style: italic;
+      color: ${config.baseColor};
+      transition: color 0.5s ease;
+    `
+    labelSpan.textContent = config.label
+
+    const descSpan = document.createElement('div')
+    descSpan.style.cssText = `
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 300; font-size: 8px;
+      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.06);
+      margin-top: 4px;
+      transition: color 0.5s ease;
+    `
+    descSpan.textContent = config.description
+
+    portal.appendChild(iconSpan)
+    portal.appendChild(labelSpan)
+    portal.appendChild(descSpan)
+
+    portal.addEventListener('mouseenter', () => {
+      portal.style.background = 'rgba(2, 1, 8, 0.7)'
+      portal.style.boxShadow = `0 0 20px ${config.glowColor}, inset 0 0 15px ${config.glowColor}`
+      labelSpan.style.color = config.hoverColor
+      descSpan.style.color = 'rgba(255, 255, 255, 0.2)'
+      iconSpan.style.opacity = '0.8'
+    })
+
+    portal.addEventListener('mouseleave', () => {
+      portal.style.background = 'rgba(2, 1, 8, 0.4)'
+      portal.style.boxShadow = 'none'
+      labelSpan.style.color = config.baseColor
+      descSpan.style.color = 'rgba(255, 255, 255, 0.06)'
+      iconSpan.style.opacity = '0.4'
+    })
+
+    portal.addEventListener('click', (e) => {
+      e.stopPropagation()
+      // Brief flash effect before navigating
+      portal.style.boxShadow = `0 0 40px ${config.hoverColor}`
+      portal.style.background = 'rgba(2, 1, 8, 0.9)'
+      setTimeout(() => {
+        deps.switchTo!(config.roomName)
+      }, 200)
+    })
+
+    return portal
   }
 
   return {
@@ -249,7 +446,45 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
 
       overlay.appendChild(bottom)
 
-      // In-room navigation: contextual objects at corners
+      // --- Stoic Quote Inscription ---
+      // Positioned below the bottom bar, like words carved into the desk surface
+      const inscriptionContainer = document.createElement('div')
+      inscriptionContainer.style.cssText = `
+        position: relative;
+        width: 560px; max-width: 90vw;
+        margin-top: 28px;
+        text-align: center;
+        min-height: 60px;
+      `
+
+      quoteEl = document.createElement('div')
+      quoteEl.style.cssText = `
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300; font-size: 14px;
+        font-style: italic;
+        color: rgba(180, 160, 120, 0.35);
+        letter-spacing: 1.5px;
+        line-height: 1.6;
+        opacity: 0;
+        text-shadow: 0 0 8px rgba(180, 160, 120, 0.08);
+      `
+
+      quoteAuthorEl = document.createElement('div')
+      quoteAuthorEl.style.cssText = `
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300; font-size: 10px;
+        font-style: italic;
+        color: rgba(180, 160, 120, 0.2);
+        letter-spacing: 2px;
+        margin-top: 8px;
+        opacity: 0;
+      `
+
+      inscriptionContainer.appendChild(quoteEl)
+      inscriptionContainer.appendChild(quoteAuthorEl)
+      overlay.appendChild(inscriptionContainer)
+
+      // --- In-room Navigation Portals ---
       if (deps.switchTo) {
         const navContainer = document.createElement('div')
         navContainer.style.cssText = `
@@ -257,117 +492,61 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
           pointer-events: none; z-index: 2;
         `
 
-        // Bookshelf → Library (top-left corner)
-        const bookshelf = document.createElement('div')
-        bookshelf.style.cssText = `
-          position: absolute; top: 30px; left: 24px;
-          pointer-events: auto; cursor: pointer;
-          font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 10px;
-          letter-spacing: 2px; text-transform: lowercase;
-          color: rgba(180, 160, 120, 0.08);
-          transition: color 0.5s ease, text-shadow 0.5s ease;
-          text-shadow: none;
-          padding: 8px;
-        `
-        bookshelf.innerHTML = '<span style="font-size:16px; display:block; margin-bottom:2px;">&#128214;</span><span style="font-style:italic;">the library</span>'
-        bookshelf.addEventListener('mouseenter', () => {
-          bookshelf.style.color = 'rgba(180, 160, 120, 0.5)'
-          bookshelf.style.textShadow = '0 0 15px rgba(180, 160, 120, 0.2)'
+        // Bookshelf sliding open -> Library (top-left)
+        const libraryPortal = createPortal({
+          label: 'the library',
+          roomName: 'library',
+          icon: '\u{1F4DA}',
+          description: 'a bookshelf slides open',
+          position: 'position: absolute; top: 24px; left: 20px;',
+          baseColor: 'rgba(180, 160, 120, 0.12)',
+          hoverColor: 'rgba(180, 160, 120, 0.6)',
+          glowColor: 'rgba(180, 160, 120, 0.1)',
+          borderStyle: '1px solid rgba(180, 160, 120, 0.06)',
         })
-        bookshelf.addEventListener('mouseleave', () => {
-          bookshelf.style.color = 'rgba(180, 160, 120, 0.08)'
-          bookshelf.style.textShadow = 'none'
-        })
-        bookshelf.addEventListener('click', (e) => {
-          e.stopPropagation()
-          deps.switchTo!('library')
-        })
-        navContainer.appendChild(bookshelf)
+        navContainer.appendChild(libraryPortal)
 
-        // Tangled thread → Loom (top-right corner)
-        const thread = document.createElement('div')
-        thread.style.cssText = `
-          position: absolute; top: 30px; right: 24px;
-          pointer-events: auto; cursor: pointer;
-          font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 10px;
-          letter-spacing: 2px; text-transform: lowercase;
-          color: rgba(200, 160, 80, 0.08);
-          transition: color 0.5s ease, text-shadow 0.5s ease;
-          text-shadow: none;
-          padding: 8px;
-        `
-        thread.innerHTML = '<span style="font-size:14px; display:block; margin-bottom:2px;">&#10547;</span><span style="font-style:italic;">the loom</span>'
-        thread.addEventListener('mouseenter', () => {
-          thread.style.color = 'rgba(200, 160, 80, 0.5)'
-          thread.style.textShadow = '0 0 15px rgba(200, 160, 80, 0.2)'
+        // Spool of thread on desk -> Loom (top-right)
+        const loomPortal = createPortal({
+          label: 'the loom',
+          roomName: 'loom',
+          icon: '\u{1F9F5}',
+          description: 'a thread unravels',
+          position: 'position: absolute; top: 24px; right: 20px;',
+          baseColor: 'rgba(200, 160, 80, 0.12)',
+          hoverColor: 'rgba(200, 160, 80, 0.6)',
+          glowColor: 'rgba(200, 160, 80, 0.1)',
+          borderStyle: '1px solid rgba(200, 160, 80, 0.06)',
         })
-        thread.addEventListener('mouseleave', () => {
-          thread.style.color = 'rgba(200, 160, 80, 0.08)'
-          thread.style.textShadow = 'none'
-        })
-        thread.addEventListener('click', (e) => {
-          e.stopPropagation()
-          deps.switchTo!('loom')
-        })
-        navContainer.appendChild(thread)
+        navContainer.appendChild(loomPortal)
 
-        // Encoded scribble → Cipher (bottom-left)
-        const cipher = document.createElement('div')
-        cipher.style.cssText = `
-          position: absolute; bottom: 60px; left: 24px;
-          pointer-events: auto; cursor: pointer;
-          font-family: monospace;
-          font-size: 9px;
-          letter-spacing: 1px;
-          color: rgba(150, 200, 150, 0.06);
-          transition: color 0.5s ease, text-shadow 0.5s ease;
-          text-shadow: none;
-          padding: 8px;
-        `
-        cipher.innerHTML = '<span style="display:block; margin-bottom:2px; font-family: monospace;">ROT13</span><span style="font-family: Cormorant Garamond, serif; font-style:italic; letter-spacing:2px;">the cipher</span>'
-        cipher.addEventListener('mouseenter', () => {
-          cipher.style.color = 'rgba(150, 200, 150, 0.5)'
-          cipher.style.textShadow = '0 0 15px rgba(150, 200, 150, 0.2)'
+        // Locked desk drawer -> Cipher (bottom-left)
+        const cipherPortal = createPortal({
+          label: 'the cipher',
+          roomName: 'cipher',
+          icon: '\u{1F512}',
+          description: 'a drawer with a strange lock',
+          position: 'position: absolute; bottom: 50px; left: 20px;',
+          baseColor: 'rgba(150, 200, 150, 0.12)',
+          hoverColor: 'rgba(150, 200, 150, 0.6)',
+          glowColor: 'rgba(150, 200, 150, 0.1)',
+          borderStyle: '1px solid rgba(150, 200, 150, 0.06)',
         })
-        cipher.addEventListener('mouseleave', () => {
-          cipher.style.color = 'rgba(150, 200, 150, 0.06)'
-          cipher.style.textShadow = 'none'
-        })
-        cipher.addEventListener('click', (e) => {
-          e.stopPropagation()
-          deps.switchTo!('cipher')
-        })
-        navContainer.appendChild(cipher)
+        navContainer.appendChild(cipherPortal)
 
-        // Window to void → back to void (bottom-right)
-        const window_ = document.createElement('div')
-        window_.style.cssText = `
-          position: absolute; bottom: 60px; right: 24px;
-          pointer-events: auto; cursor: pointer;
-          font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 10px;
-          letter-spacing: 2px; text-transform: lowercase;
-          color: rgba(255, 20, 147, 0.06);
-          transition: color 0.5s ease, text-shadow 0.5s ease;
-          text-shadow: none;
-          padding: 8px;
-        `
-        window_.innerHTML = '<span style="font-size:14px; display:block; margin-bottom:2px;">&#9670;</span><span style="font-style:italic;">the void</span>'
-        window_.addEventListener('mouseenter', () => {
-          window_.style.color = 'rgba(255, 20, 147, 0.5)'
-          window_.style.textShadow = '0 0 15px rgba(255, 20, 147, 0.2)'
+        // Window to the void -> Void (bottom-right)
+        const voidPortal = createPortal({
+          label: 'the void',
+          roomName: 'void',
+          icon: '\u25C6',
+          description: 'a window into darkness',
+          position: 'position: absolute; bottom: 50px; right: 20px;',
+          baseColor: 'rgba(255, 20, 147, 0.12)',
+          hoverColor: 'rgba(255, 20, 147, 0.6)',
+          glowColor: 'rgba(255, 20, 147, 0.1)',
+          borderStyle: '1px solid rgba(255, 20, 147, 0.06)',
         })
-        window_.addEventListener('mouseleave', () => {
-          window_.style.color = 'rgba(255, 20, 147, 0.06)'
-          window_.style.textShadow = 'none'
-        })
-        window_.addEventListener('click', (e) => {
-          e.stopPropagation()
-          deps.switchTo!('void')
-        })
-        navContainer.appendChild(window_)
+        navContainer.appendChild(voidPortal)
 
         overlay.appendChild(navContainer)
       }
@@ -388,17 +567,21 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       }, 5000)
       // Focus textarea after transition
       setTimeout(() => textarea?.focus(), 1600)
+      // Start stoic quote cycle
+      startQuoteCycle()
     },
 
     deactivate() {
       active = false
       if (saveInterval) clearInterval(saveInterval)
       if (textarea) saveText(textarea.value)
+      stopQuoteCycle()
     },
 
     destroy() {
       if (saveInterval) clearInterval(saveInterval)
       if (textarea) saveText(textarea.value)
+      stopQuoteCycle()
       overlay?.remove()
     },
   }

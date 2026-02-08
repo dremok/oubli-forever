@@ -11,6 +11,7 @@
  * - A bookshelf growing from the wall → the library
  *
  * Walls whisper fragments of your memories as you pass.
+ * Wikipedia fragments appear as "forgotten knowledge" scratched into stone.
  * The exit at the far end leads to a random hidden room.
  *
  * Inspired by: Borges' "Garden of Forking Paths", grey matter
@@ -24,6 +25,16 @@ interface LabyrinthDeps {
   onExit?: () => void
   switchTo?: (name: string) => void
   getMemories?: () => { currentText: string; degradation: number }[]
+}
+
+// Wikipedia "forgotten knowledge" fragment
+interface WikiFragment {
+  title: string
+  extract: string
+  appearedAt: number    // time when this fragment appeared
+  revealProgress: number // 0..1 how much of the extract is revealed
+  alpha: number          // current fade alpha
+  fading: boolean        // is it fading out?
 }
 
 // Seeded pseudo-random number generator (mulberry32)
@@ -63,6 +74,23 @@ const CIPHER_STONE = 3   // → cipher room
 const MAP_TABLE = 4       // → cartographer room
 const BOOKSHELF = 5       // → library room
 const INSCRIPTION = 6     // wall with text (not a passage, just decoration)
+const PORTAL = 7          // dark doorway portal to connected rooms
+
+// Portal definition
+interface LabyrinthPortal {
+  x: number
+  y: number
+  targetRoom: string
+  label: string
+  color: [number, number, number]
+}
+
+// Strip HTML tags from Wikipedia extracts
+function stripHtml(html: string): string {
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  return tmp.textContent || tmp.innerText || ''
+}
 
 export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let overlay: HTMLElement | null = null
@@ -91,6 +119,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let mapPos = { x: 0, y: 0 }
   let bookPos = { x: 0, y: 0 }
 
+  // Portal positions (in-maze doorways to connected rooms)
+  let portals: LabyrinthPortal[] = []
+
   // Wall inscriptions: map cell key "x,y" → text
   const wallTexts = new Map<string, string>()
 
@@ -110,6 +141,172 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   // Input
   const keys = new Set<string>()
+
+  // --- Wikipedia "Forgotten Knowledge" system ---
+  const wikiCache = new Set<string>()        // titles already seen this session
+  let currentFragment: WikiFragment | null = null
+  let lastFetchTime = 0
+  let fetchIntervalSec = 35                   // first fetch after 35s, then randomized 30-60s
+  let wikiFetchInProgress = false
+
+  async function fetchWikiFragment(): Promise<void> {
+    if (wikiFetchInProgress) return
+    wikiFetchInProgress = true
+    try {
+      const url = 'https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&prop=extracts&exchars=300&exintro=1&format=json&origin=*'
+      const resp = await fetch(url)
+      if (!resp.ok) return
+      const data = await resp.json()
+      const pages = data?.query?.pages
+      if (!pages) return
+
+      const pageIds = Object.keys(pages)
+      for (const pid of pageIds) {
+        const page = pages[pid]
+        const title: string = page.title || ''
+        const rawExtract: string = page.extract || ''
+        const extract = stripHtml(rawExtract).trim()
+
+        // Skip if already seen, too short, or empty
+        if (!title || !extract || extract.length < 20) continue
+        if (wikiCache.has(title)) continue
+
+        wikiCache.add(title)
+        currentFragment = {
+          title,
+          extract: extract.substring(0, 250), // cap length for readability
+          appearedAt: time,
+          revealProgress: 0,
+          alpha: 0,
+          fading: false,
+        }
+        // Randomize next interval between 30-60 seconds
+        fetchIntervalSec = 30 + Math.random() * 30
+        lastFetchTime = time
+        return
+      }
+    } catch {
+      // Graceful fallback — just skip this cycle
+    } finally {
+      wikiFetchInProgress = false
+    }
+  }
+
+  function updateWikiFragment(): void {
+    // Trigger fetch if enough time has passed and no current fragment
+    if (!currentFragment && time - lastFetchTime > fetchIntervalSec) {
+      fetchWikiFragment()
+    }
+
+    if (!currentFragment) return
+
+    const age = time - currentFragment.appearedAt
+
+    // Fade in over 2 seconds
+    if (age < 2) {
+      currentFragment.alpha = Math.min(1, age / 2)
+    }
+
+    // Gradually reveal extract text over 6 seconds (after 1s delay)
+    if (age > 1 && age < 7) {
+      currentFragment.revealProgress = Math.min(1, (age - 1) / 6)
+    } else if (age >= 7) {
+      currentFragment.revealProgress = 1
+    }
+
+    // Start fading after 15 seconds, fade over 3 seconds
+    if (age > 15) {
+      currentFragment.fading = true
+      currentFragment.alpha = Math.max(0, 1 - (age - 15) / 3)
+    }
+
+    // Remove after fully faded (18 seconds total)
+    if (age > 18) {
+      currentFragment = null
+    }
+  }
+
+  function renderWikiFragment(w: number, h: number): void {
+    if (!currentFragment || !ctx) return
+
+    const frag = currentFragment
+    const baseAlpha = frag.alpha * 0.7 // keep it subtle, like old stone
+
+    // Position: upper-left area, like scratches on nearby wall
+    const boxX = 24
+    const boxY = 50
+    const maxWidth = Math.min(320, w * 0.4)
+
+    // Title — appears immediately, styled like carved stone lettering
+    ctx.save()
+    ctx.font = 'small-caps 13px "Cormorant Garamond", serif'
+    ctx.fillStyle = `rgba(160, 145, 120, ${baseAlpha * 0.9})`
+    ctx.textAlign = 'left'
+
+    // Add slight jitter to simulate uneven carving
+    const jitterX = Math.sin(time * 0.7 + 3.1) * 0.5
+    const jitterY = Math.cos(time * 0.5 + 1.7) * 0.3
+
+    ctx.fillText(frag.title.toUpperCase(), boxX + jitterX, boxY + jitterY)
+
+    // Thin line under title, like a chisel mark
+    const titleWidth = ctx.measureText(frag.title.toUpperCase()).width
+    ctx.strokeStyle = `rgba(140, 125, 100, ${baseAlpha * 0.4})`
+    ctx.lineWidth = 0.5
+    ctx.beginPath()
+    ctx.moveTo(boxX, boxY + 5)
+    ctx.lineTo(boxX + Math.min(titleWidth, maxWidth) * frag.revealProgress, boxY + 5)
+    ctx.stroke()
+
+    // Extract text — revealed character by character
+    if (frag.revealProgress > 0) {
+      const charsToShow = Math.floor(frag.extract.length * frag.revealProgress)
+      const visibleText = frag.extract.substring(0, charsToShow)
+
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(130, 120, 105, ${baseAlpha * 0.7})`
+
+      // Word-wrap the text manually
+      const words = visibleText.split(' ')
+      let line = ''
+      let lineY = boxY + 22
+
+      for (const word of words) {
+        const testLine = line ? line + ' ' + word : word
+        const metrics = ctx.measureText(testLine)
+        if (metrics.width > maxWidth && line) {
+          // Each line gets slight position variation — uneven stone surface
+          const lineJitter = Math.sin(lineY * 0.3 + time * 0.2) * 0.4
+          ctx.fillText(line, boxX + lineJitter, lineY)
+          line = word
+          lineY += 15
+          if (lineY > boxY + 100) break // max ~6 lines
+        } else {
+          line = testLine
+        }
+      }
+      if (line && lineY <= boxY + 100) {
+        const lineJitter = Math.sin(lineY * 0.3 + time * 0.2) * 0.4
+        ctx.fillText(line, boxX + lineJitter, lineY)
+      }
+
+      // Subtle "scratched into stone" texture overlay — small random dots
+      if (baseAlpha > 0.3) {
+        const dotCount = Math.floor(charsToShow * 0.15)
+        for (let i = 0; i < dotCount; i++) {
+          const dx = boxX + ((i * 37 + 13) % Math.floor(maxWidth))
+          const dy = boxY + 10 + ((i * 23 + 7) % 90)
+          const dotAlpha = baseAlpha * 0.15 * (0.3 + Math.sin(i * 1.7) * 0.3)
+          ctx.fillStyle = `rgba(100, 90, 75, ${dotAlpha})`
+          ctx.fillRect(dx, dy, 1, 1)
+        }
+      }
+    }
+
+    ctx.restore()
+  }
+
+  // --- End Wikipedia system ---
 
   function getSeed(): number {
     const key = 'oubli-labyrinth-seed'
@@ -223,6 +420,43 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       bookPos = placeAdjacentWall(cellIdx >= 0 ? cellIdx : 2, BOOKSHELF)
     }
 
+    // --- Place portal doorways for connected rooms ---
+    // Use the 4th quadrant and remaining open cells for portals
+    const q4 = openCells.filter(([x, y]) => x >= w/2 && y >= h/2 && !(x === exitX && y === exitY))
+    const portalDefs: { targetRoom: string; label: string; color: [number, number, number] }[] = [
+      { targetRoom: 'cipher', label: 'the cipher', color: [40, 160, 90] },
+      { targetRoom: 'cartographer', label: 'the cartographer', color: [170, 140, 60] },
+      { targetRoom: 'library', label: 'the library', color: [140, 50, 90] },
+    ]
+    portals = []
+    // Spread portals across the maze — use different cell pools
+    const portalPools = [q4, q2, q3]
+    for (let pi = 0; pi < portalDefs.length; pi++) {
+      const pool = portalPools[pi % portalPools.length]
+      // Find an open cell not already used by an artifact
+      for (const [cx, cy] of pool) {
+        const isArtifact =
+          (cx === cipherPos.x && cy === cipherPos.y) ||
+          (cx === mapPos.x && cy === mapPos.y) ||
+          (cx === bookPos.x && cy === bookPos.y)
+        const isUsed = portals.some(p => p.x === cx && p.y === cy)
+        if (!isArtifact && !isUsed && grid[cy][cx] === 0) {
+          // Find an adjacent wall to turn into a portal
+          const neighbors: [number, number][] = [[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]]
+          let placed = false
+          for (const [nx, ny] of neighbors) {
+            if (nx > 0 && nx < w-1 && ny > 0 && ny < h-1 && grid[ny][nx] === WALL) {
+              grid[ny][nx] = PORTAL
+              portals.push({ x: nx, y: ny, ...portalDefs[pi] })
+              placed = true
+              break
+            }
+          }
+          if (placed) break
+        }
+      }
+    }
+
     // Scatter inscriptions on ~15% of wall cells
     wallTexts.clear()
     const memTexts = deps.getMemories?.().map(m => m.currentText).filter(t => t.length > 3) ?? []
@@ -303,7 +537,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     footstepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
   }
 
-  function castRay(ox: number, oy: number, angle: number): { dist: number; side: number; cell: number } {
+  function castRay(ox: number, oy: number, angle: number): { dist: number; side: number; cell: number; hitX?: number; hitY?: number } {
     const dx = Math.cos(angle)
     const dy = Math.sin(angle)
 
@@ -325,7 +559,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         const prevX = Math.floor(ox + dx * (t - step))
         const prevY = Math.floor(oy + dy * (t - step))
         const side = (prevX !== mx) ? 0 : 1
-        return { dist: t, side, cell }
+        return { dist: t, side, cell, hitX: mx, hitY: my }
       }
 
       t += step
@@ -336,6 +570,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function isWalkable(cell: number): boolean {
     return cell === 0 || cell === EXIT
+  }
+
+  // Find which portal (if any) is at a given cell
+  function getPortalAt(cx: number, cy: number): LabyrinthPortal | undefined {
+    return portals.find(p => p.x === cx && p.y === cy)
   }
 
   function update() {
@@ -376,7 +615,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     if (moving) playFootstep()
 
-    // Check proximity to special objects
+    // Check proximity to special objects and portals
     nearbyObject = null
     const checkDist = 1.8
 
@@ -387,6 +626,20 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (dCipher < checkDist) nearbyObject = 'cipher'
     else if (dMap < checkDist) nearbyObject = 'cartographer'
     else if (dBook < checkDist) nearbyObject = 'library'
+
+    // Check portals
+    if (!nearbyObject) {
+      for (const portal of portals) {
+        const dp = Math.hypot(px - (portal.x + 0.5), py - (portal.y + 0.5))
+        if (dp < checkDist) {
+          nearbyObject = `portal:${portal.targetRoom}`
+          break
+        }
+      }
+    }
+
+    // Update Wikipedia fragment
+    updateWikiFragment()
 
     // Check if at exit
     if (Math.floor(px) === exitX && Math.floor(py) === exitY) {
@@ -402,7 +655,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
   }
 
-  function getCellColor(cell: number, brightness: number, sideDim: number): [number, number, number] {
+  function getCellColor(cell: number, brightness: number, sideDim: number, hitX?: number, hitY?: number): [number, number, number] {
     switch (cell) {
       case EXIT:
         return [255 * brightness, 215 * brightness, 0]
@@ -434,6 +687,20 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           38 * brightness * sideDim,
           65 * brightness * sideDim,
         ]
+      case PORTAL: {
+        // Dark opening — much darker than walls, with subtle colored edge glow
+        const portal = hitX !== undefined && hitY !== undefined ? getPortalAt(hitX, hitY) : undefined
+        if (portal) {
+          const pulse = 0.3 + Math.sin(time * 1.2 + portal.x * 0.7) * 0.15
+          return [
+            portal.color[0] * brightness * sideDim * pulse * 0.3,
+            portal.color[1] * brightness * sideDim * pulse * 0.3,
+            portal.color[2] * brightness * sideDim * pulse * 0.3,
+          ]
+        }
+        // Fallback: very dark void
+        return [3 * brightness, 2 * brightness, 5 * brightness]
+      }
       default:
         // Normal wall
         return [
@@ -442,6 +709,28 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           60 * brightness * sideDim,
         ]
     }
+  }
+
+  function renderPortalDoorway(screenX: number, wallTop: number, wallHeight: number, stripW: number, portal: LabyrinthPortal, brightness: number): void {
+    if (!ctx) return
+
+    // Draw a dark archway shape within the wall strip
+    const archW = stripW + 1
+    const archH = wallHeight * 0.85
+    const archTop = wallTop + wallHeight * 0.1
+    const pulse = 0.4 + Math.sin(time * 1.5 + portal.x * 0.7) * 0.2
+
+    // Deep black interior — the passage beyond
+    ctx.fillStyle = `rgba(1, 0, 2, ${0.9 * brightness})`
+    ctx.fillRect(screenX, archTop, archW, archH)
+
+    // Colored edge glow on the archway — very subtle
+    const glowAlpha = brightness * pulse * 0.15
+    ctx.fillStyle = `rgba(${portal.color[0]}, ${portal.color[1]}, ${portal.color[2]}, ${glowAlpha})`
+    // Top edge
+    ctx.fillRect(screenX, archTop, archW, 2)
+    // Bottom edge
+    ctx.fillRect(screenX, archTop + archH - 2, archW, 2)
   }
 
   function render() {
@@ -480,6 +769,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Collect nearby inscription texts to show
     const visibleInscriptions: { text: string; screenX: number; dist: number; brightness: number }[] = []
+    // Collect portal strips to render doorway overlay
+    const portalStrips: { screenX: number; wallTop: number; wallHeight: number; stripW: number; portal: LabyrinthPortal; brightness: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
       const rayAngle = pa - fov / 2 + (i / numRays) * fov
@@ -491,10 +782,25 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const brightness = Math.max(0, 1 - correctedDist / 10)
       const sideDim = hit.side ? 0.7 : 1.0
 
-      const [r, g, b] = getCellColor(hit.cell, brightness, sideDim)
+      const [r, g, b] = getCellColor(hit.cell, brightness, sideDim, hit.hitX, hit.hitY)
 
       ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
+
+      // Check for portal hit — render doorway overlay
+      if (hit.cell === PORTAL && hit.hitX !== undefined && hit.hitY !== undefined) {
+        const portal = getPortalAt(hit.hitX, hit.hitY)
+        if (portal) {
+          portalStrips.push({
+            screenX: i * stripW,
+            wallTop,
+            wallHeight,
+            stripW,
+            portal,
+            brightness,
+          })
+        }
+      }
 
       // Check for inscription text on this ray
       if (hit.cell === INSCRIPTION && correctedDist < 4) {
@@ -511,6 +817,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           })
         }
       }
+    }
+
+    // Render portal doorway overlays
+    for (const ps of portalStrips) {
+      renderPortalDoorway(ps.screenX, ps.wallTop, ps.wallHeight, ps.stripW, ps.portal, ps.brightness)
     }
 
     // Render wall inscriptions (deduplicate by text)
@@ -551,6 +862,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.lineTo(w / 2, h / 2 + 6)
     ctx.stroke()
 
+    // --- Render Wikipedia "forgotten knowledge" fragment ---
+    renderWikiFragment(w, h)
+
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(140, 120, 160, ${0.06 + Math.sin(time * 0.3) * 0.02})`
@@ -567,26 +881,36 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillText(`${found}/${totalArtifacts} found`, w - 16, 20)
     }
 
-    // Interaction prompt when near a special object
+    // Interaction prompt when near a special object or portal
     if (nearbyObject) {
       interactAlpha = Math.min(1, interactAlpha + 0.03)
       const alpha = interactAlpha * (0.4 + Math.sin(time * 2) * 0.15)
 
       let prompt = ''
       let color = ''
-      switch (nearbyObject) {
-        case 'cipher':
-          prompt = 'press E — encoded inscriptions shimmer on the stone'
-          color = `rgba(80, 200, 120, ${alpha})`
-          break
-        case 'cartographer':
-          prompt = 'press E — a half-drawn map on the table'
-          color = `rgba(200, 170, 80, ${alpha})`
-          break
-        case 'library':
-          prompt = 'press E — books grow from the wall like roots'
-          color = `rgba(180, 80, 120, ${alpha})`
-          break
+
+      if (nearbyObject.startsWith('portal:')) {
+        const targetRoom = nearbyObject.substring(7)
+        const portal = portals.find(p => p.targetRoom === targetRoom)
+        if (portal) {
+          prompt = `press E — a dark passage leads to ${portal.label}`
+          color = `rgba(${portal.color[0]}, ${portal.color[1]}, ${portal.color[2]}, ${alpha})`
+        }
+      } else {
+        switch (nearbyObject) {
+          case 'cipher':
+            prompt = 'press E — encoded inscriptions shimmer on the stone'
+            color = `rgba(80, 200, 120, ${alpha})`
+            break
+          case 'cartographer':
+            prompt = 'press E — a half-drawn map on the table'
+            color = `rgba(200, 170, 80, ${alpha})`
+            break
+          case 'library':
+            prompt = 'press E — books grow from the wall like roots'
+            color = `rgba(180, 80, 120, ${alpha})`
+            break
+        }
       }
 
       ctx.font = '12px "Cormorant Garamond", serif'
@@ -617,12 +941,17 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       e.preventDefault()
     }
 
-    // Interact with nearby objects
+    // Interact with nearby objects or portals
     if (key === 'e' && nearbyObject && deps.switchTo) {
-      discovered.add(nearbyObject)
-      // Persist discoveries
-      localStorage.setItem('oubli-labyrinth-discovered', JSON.stringify([...discovered]))
-      deps.switchTo(nearbyObject)
+      if (nearbyObject.startsWith('portal:')) {
+        const targetRoom = nearbyObject.substring(7)
+        deps.switchTo(targetRoom)
+      } else {
+        discovered.add(nearbyObject)
+        // Persist discoveries
+        localStorage.setItem('oubli-labyrinth-discovered', JSON.stringify([...discovered]))
+        deps.switchTo(nearbyObject)
+      }
     }
   }
 
@@ -671,6 +1000,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       pa = 0
       keys.clear()
 
+      // Reset Wikipedia state for fresh session feel (cache persists to avoid repeats)
+      currentFragment = null
+      lastFetchTime = time
+      fetchIntervalSec = 8 + Math.random() * 10 // first fragment appears quickly (8-18s)
+
       // Restore discoveries
       try {
         const saved = localStorage.getItem('oubli-labyrinth-discovered')
@@ -685,6 +1019,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       active = false
       cancelAnimationFrame(frameId)
       keys.clear()
+      currentFragment = null
 
       // Fade out audio
       if (ambienceGain && audioCtx) {

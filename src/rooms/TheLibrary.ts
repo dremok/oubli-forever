@@ -13,6 +13,12 @@
  * The page contains mostly random characters, but fragments of
  * your actual memory text are embedded at deterministic positions.
  *
+ * Real poetry from PoetryDB drifts through the library — lines
+ * from Emily Dickinson, William Blake, Percy Bysshe Shelley, and
+ * Walt Whitman appear and dissolve among the infinite shelves,
+ * as if the library occasionally produces something beautiful
+ * amid the noise.
+ *
  * Scroll through pages. Click the location code to jump to a
  * random location. Your memories are scattered across infinity.
  *
@@ -38,6 +44,27 @@ interface Memory {
 interface LibraryDeps {
   getMemories: () => Memory[]
   switchTo?: (name: string) => void
+}
+
+// --- PoetryDB types ---
+interface Poem {
+  title: string
+  author: string
+  lines: string[]
+  linecount: string
+}
+
+interface FloatingLine {
+  text: string
+  x: number
+  y: number
+  alpha: number
+  fadeIn: boolean
+  age: number
+  maxAge: number
+  speed: number
+  isTitle: boolean
+  isAuthor: boolean
 }
 
 // Simple seedable PRNG
@@ -71,6 +98,56 @@ interface LibraryLocation {
   page: number  // 1-410
 }
 
+// Fallback poems in case the API is unreachable
+const FALLBACK_POEMS: Poem[] = [
+  {
+    title: 'I felt a Funeral, in my Brain',
+    author: 'Emily Dickinson',
+    lines: [
+      'I felt a Funeral, in my Brain,',
+      'And Mourners to and fro',
+      'Kept treading - treading - till it seemed',
+      'That Sense was breaking through -',
+      '',
+      'And when they all were seated,',
+      'A Service, like a Drum -',
+      'Kept beating - beating - till I thought',
+      'My mind was going numb -',
+    ],
+    linecount: '9',
+  },
+  {
+    title: 'Auguries of Innocence',
+    author: 'William Blake',
+    lines: [
+      'To see a World in a Grain of Sand',
+      'And a Heaven in a Wild Flower',
+      'Hold Infinity in the palm of your hand',
+      'And Eternity in an hour',
+    ],
+    linecount: '4',
+  },
+  {
+    title: 'O Me! O Life!',
+    author: 'Walt Whitman',
+    lines: [
+      'O me! O life! of the questions of these recurring,',
+      'Of the endless trains of the faithless,',
+      'of cities fill\'d with the foolish,',
+      'What good amid these, O me, O life?',
+      '',
+      'Answer.',
+      'That you are here — that life exists and identity,',
+      'That the powerful play goes on,',
+      'and you may contribute a verse.',
+    ],
+    linecount: '9',
+  },
+]
+
+// Poets whose work suits the library's atmosphere
+const POET_QUERY_AUTHORS = 'Emily%20Dickinson;William%20Blake;Percy%20Bysshe%20Shelley;Walt%20Whitman'
+
 export function createLibraryRoom(deps: LibraryDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -85,15 +162,205 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
   let scrollY = 0
   let pagesViewed = 0
   let hoveredShelf = -1
+  let hoveredPortal = -1
 
-  const shelfLinks = [
-    { label: 'study', hint: 'return to the study', room: 'study' },
-    { label: 'archive', hint: 'the archive stacks', room: 'archive' },
-    { label: 'cipher', hint: 'encoded volumes', room: 'cipher' },
-    { label: 'oracle', hint: 'prophetic texts', room: 'oracle' },
-    { label: 'projection', hint: 'illuminated pages', room: 'projection' },
-    { label: 'date paintings', hint: 'numbered days', room: 'datepaintings' },
+  // --- Poetry state ---
+  let cachedPoems: Poem[] = []
+  let currentPoem: Poem | null = null
+  let floatingLines: FloatingLine[] = []
+  let lastPoemFetchTime = 0
+  let poemFetchInFlight = false
+  const POEM_REFRESH_INTERVAL = 150 // seconds (~2.5 minutes)
+  const MAX_FLOATING_LINES = 6
+
+  // --- Portal books (enhanced navigation) ---
+  const portalBooks = [
+    { label: 'The Study',       hint: 'return to familiar shelves',    room: 'study',        color: [180, 160, 120] as [number, number, number] },
+    { label: 'The Archive',     hint: 'deeper into the stacks',       room: 'archive',      color: [160, 140, 100] as [number, number, number] },
+    { label: 'The Cipher',      hint: 'encoded volumes',              room: 'cipher',       color: [140, 160, 130] as [number, number, number] },
+    { label: 'The Oracle',      hint: 'prophetic texts',              room: 'oracle',       color: [170, 140, 160] as [number, number, number] },
+    { label: 'The Projection',  hint: 'illuminated pages',            room: 'projection',   color: [150, 150, 170] as [number, number, number] },
+    { label: 'Date Paintings',  hint: 'numbered days',                room: 'datepaintings', color: [170, 150, 130] as [number, number, number] },
   ]
+
+  // --- Poetry fetching ---
+  async function fetchPoem(): Promise<Poem | null> {
+    if (poemFetchInFlight) return null
+    poemFetchInFlight = true
+    try {
+      // Alternate between random poem and curated poets
+      const useRandom = Math.random() > 0.4
+      const url = useRandom
+        ? 'https://poetrydb.org/random/1'
+        : `https://poetrydb.org/author/${POET_QUERY_AUTHORS}/title,author,lines`
+
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`PoetryDB ${response.status}`)
+
+      const data: Poem[] = await response.json()
+      if (!data || data.length === 0) throw new Error('No poems returned')
+
+      if (useRandom) {
+        return data[0]
+      } else {
+        // Pick a random poem from the curated list
+        cachedPoems = data
+        return data[Math.floor(Math.random() * data.length)]
+      }
+    } catch {
+      // Fallback to built-in poems
+      return FALLBACK_POEMS[Math.floor(Math.random() * FALLBACK_POEMS.length)]
+    } finally {
+      poemFetchInFlight = false
+    }
+  }
+
+  function loadNewPoem() {
+    fetchPoem().then(poem => {
+      if (!poem || !active) return
+      currentPoem = poem
+      spawnPoemLines(poem)
+      lastPoemFetchTime = time
+    })
+  }
+
+  function spawnPoemLines(poem: Poem) {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+
+    // Filter empty lines and pick a subset
+    const nonEmpty = poem.lines.filter(l => l.trim().length > 0)
+    const linesToShow = nonEmpty.slice(0, Math.min(nonEmpty.length, MAX_FLOATING_LINES))
+
+    // Spawn title first
+    floatingLines.push({
+      text: poem.title,
+      x: w * (0.1 + Math.random() * 0.15),
+      y: h * 0.12 + Math.random() * 40,
+      alpha: 0,
+      fadeIn: true,
+      age: 0,
+      maxAge: 18 + Math.random() * 8,
+      speed: 0.15 + Math.random() * 0.1,
+      isTitle: true,
+      isAuthor: false,
+    })
+
+    // Spawn author
+    floatingLines.push({
+      text: `\u2014 ${poem.author}`,
+      x: w * (0.1 + Math.random() * 0.15),
+      y: h * 0.12 + 22 + Math.random() * 20,
+      alpha: 0,
+      fadeIn: true,
+      age: 0,
+      maxAge: 16 + Math.random() * 6,
+      speed: 0.12 + Math.random() * 0.08,
+      isTitle: false,
+      isAuthor: true,
+    })
+
+    // Spawn poem lines at staggered positions
+    for (let i = 0; i < linesToShow.length; i++) {
+      const line = linesToShow[i]
+      // Position lines in the margins around the central page
+      // Some on the left, some on the right, some above/below
+      const side = Math.random()
+      let x: number, y: number
+
+      if (side < 0.35) {
+        // Left margin
+        x = 10 + Math.random() * (w * 0.18)
+        y = h * 0.25 + (i / linesToShow.length) * h * 0.5 + Math.random() * 30
+      } else if (side < 0.7) {
+        // Right margin
+        x = w * 0.72 + Math.random() * (w * 0.2)
+        y = h * 0.25 + (i / linesToShow.length) * h * 0.5 + Math.random() * 30
+      } else if (side < 0.85) {
+        // Above page
+        x = w * 0.2 + Math.random() * w * 0.6
+        y = 50 + Math.random() * 30
+      } else {
+        // Below page
+        x = w * 0.2 + Math.random() * w * 0.6
+        y = h * 0.88 + Math.random() * (h * 0.08)
+      }
+
+      floatingLines.push({
+        text: line,
+        x,
+        y,
+        alpha: 0,
+        fadeIn: true,
+        age: -i * 1.5, // stagger appearance
+        maxAge: 12 + Math.random() * 10,
+        speed: 0.08 + Math.random() * 0.15,
+        isTitle: false,
+        isAuthor: false,
+      })
+    }
+  }
+
+  function updateFloatingLines(dt: number) {
+    for (let i = floatingLines.length - 1; i >= 0; i--) {
+      const fl = floatingLines[i]
+      fl.age += dt
+
+      if (fl.age < 0) continue // staggered, not yet visible
+
+      // Drift upward slowly
+      fl.y -= fl.speed * dt * 4
+
+      // Fade in/out lifecycle
+      const lifeFrac = fl.age / fl.maxAge
+      if (lifeFrac < 0.15) {
+        // Fade in
+        fl.alpha = (lifeFrac / 0.15) * 0.28
+      } else if (lifeFrac > 0.75) {
+        // Fade out
+        fl.alpha = ((1 - lifeFrac) / 0.25) * 0.28
+      } else {
+        fl.alpha = 0.28
+      }
+
+      // Title and author are slightly brighter
+      if (fl.isTitle) fl.alpha *= 1.4
+      if (fl.isAuthor) fl.alpha *= 1.2
+
+      // Remove dead lines
+      if (fl.age > fl.maxAge) {
+        floatingLines.splice(i, 1)
+      }
+    }
+  }
+
+  function renderFloatingLines(c: CanvasRenderingContext2D) {
+    for (const fl of floatingLines) {
+      if (fl.age < 0 || fl.alpha <= 0) continue
+
+      const breathe = Math.sin(time * 0.8 + fl.x * 0.01) * 0.03
+
+      if (fl.isTitle) {
+        c.font = '11px "Cormorant Garamond", serif'
+        c.fillStyle = `rgba(220, 200, 160, ${Math.max(0, fl.alpha + breathe)})`
+      } else if (fl.isAuthor) {
+        c.font = '9px "Cormorant Garamond", serif'
+        c.fillStyle = `rgba(180, 160, 130, ${Math.max(0, fl.alpha * 0.8 + breathe)})`
+      } else {
+        c.font = '10px "Cormorant Garamond", serif'
+        c.fillStyle = `rgba(200, 185, 150, ${Math.max(0, fl.alpha + breathe)})`
+      }
+
+      c.textAlign = 'left'
+
+      // Truncate long lines to prevent overflow
+      let text = fl.text
+      if (text.length > 55) text = text.slice(0, 52) + '...'
+
+      c.fillText(text, fl.x, fl.y)
+    }
+  }
 
   function generatePage(loc: LibraryLocation): { lines: string[]; fragments: typeof memoryFragmentPositions } {
     const memories = deps.getMemories()
@@ -140,6 +407,19 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
         lines[fragLine] = line.slice(0, col) + fragment + line.slice(col + fragment.length)
 
         fragments.push({ line: fragLine, col, length: fragment.length })
+      }
+    }
+
+    // Occasionally embed a poem line into the Babel page (like finding sense in noise)
+    if (currentPoem && rng() > 0.6) {
+      const nonEmpty = currentPoem.lines.filter(l => l.trim().length > 0)
+      if (nonEmpty.length > 0) {
+        const poemLine = nonEmpty[Math.floor(rng() * nonEmpty.length)].toLowerCase()
+        const embedLine = Math.floor(rng() * LINES_PER_PAGE)
+        const trimmed = poemLine.slice(0, Math.min(poemLine.length, CHARS_PER_LINE))
+        const col = Math.floor(rng() * Math.max(1, CHARS_PER_LINE - trimmed.length))
+        const original = lines[embedLine]
+        lines[embedLine] = original.slice(0, col) + trimmed + original.slice(col + trimmed.length)
       }
     }
 
@@ -233,10 +513,82 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     }
   }
 
+  // --- Portal book rendering ---
+  function getPortalBookBounds(w: number, h: number, index: number) {
+    // Books arranged as a vertical bookshelf along the right edge
+    const bookW = 56
+    const bookH = 24
+    const shelfX = w - bookW - 12
+    const startY = 70
+    const spacing = bookH + 8
+    return {
+      x: shelfX,
+      y: startY + index * spacing,
+      w: bookW,
+      h: bookH,
+    }
+  }
+
+  function renderPortalBooks(c: CanvasRenderingContext2D, w: number, h: number) {
+    if (!deps.switchTo) return
+
+    // Shelf label
+    c.font = '7px monospace'
+    c.fillStyle = 'rgba(140, 120, 90, 0.08)'
+    c.textAlign = 'center'
+    const firstBounds = getPortalBookBounds(w, h, 0)
+    c.fillText('passages', firstBounds.x + firstBounds.w / 2, firstBounds.y - 8)
+
+    for (let i = 0; i < portalBooks.length; i++) {
+      const b = getPortalBookBounds(w, h, i)
+      const portal = portalBooks[i]
+      const hovered = hoveredPortal === i
+      const [cr, cg, cb] = portal.color
+      const pulse = Math.sin(time * 1.2 + i * 0.7) * 0.02
+
+      // Book spine background
+      const baseAlpha = hovered ? 0.35 : 0.1
+      c.fillStyle = `rgba(${cr}, ${cg}, ${cb}, ${baseAlpha + pulse})`
+      c.fillRect(b.x, b.y, b.w, b.h)
+
+      // Spine edge (left side, like book binding)
+      c.fillStyle = `rgba(${cr - 30}, ${cg - 30}, ${cb - 30}, ${baseAlpha * 1.5})`
+      c.fillRect(b.x, b.y, 3, b.h)
+
+      // Border
+      c.strokeStyle = `rgba(${cr}, ${cg}, ${cb}, ${(hovered ? 0.4 : 0.08) + pulse})`
+      c.lineWidth = 0.5
+      c.strokeRect(b.x, b.y, b.w, b.h)
+
+      // Spine text (title)
+      c.font = hovered ? '8px "Cormorant Garamond", serif' : '7px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(255, 240, 200, ${hovered ? 0.55 : 0.15})`
+      c.textAlign = 'center'
+      c.fillText(portal.label, b.x + b.w / 2, b.y + b.h / 2 + 3)
+
+      // Hint on hover
+      if (hovered) {
+        c.font = '7px "Cormorant Garamond", serif'
+        c.fillStyle = 'rgba(200, 180, 140, 0.3)'
+        c.textAlign = 'right'
+        c.fillText(portal.hint, b.x - 6, b.y + b.h / 2 + 3)
+      }
+    }
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
-    time += 0.016
+    const dt = 0.016
+    time += dt
+
+    // Check if it's time to fetch a new poem
+    if (time - lastPoemFetchTime > POEM_REFRESH_INTERVAL && !poemFetchInFlight) {
+      loadNewPoem()
+    }
+
+    // Update floating poem lines
+    updateFloatingLines(dt)
 
     const c = ctx
     const w = canvas.width
@@ -245,6 +597,9 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     // Library darkness — warm lamplight
     c.fillStyle = 'rgba(10, 8, 5, 1)'
     c.fillRect(0, 0, w, h)
+
+    // --- Floating poem lines (behind the page) ---
+    renderFloatingLines(c)
 
     // Page area
     const pageW = Math.min(w * 0.6, 500)
@@ -306,7 +661,7 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     // Navigation hints
     c.font = '9px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 120, 90, ${0.06 + Math.sin(time * 1) * 0.02})`
-    c.fillText('← prev page · next page → · r for random', w / 2, pageY + pageH + 35)
+    c.fillText('\u2190 prev page \u00b7 next page \u2192 \u00b7 r for random', w / 2, pageY + pageH + 35)
 
     // Memory locations sidebar
     const memories = deps.getMemories()
@@ -323,32 +678,20 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
         c.fillStyle = 'rgba(255, 215, 0, 0.06)'
         c.fillText(`${short}`, 12, 78 + i * 14)
         c.fillStyle = 'rgba(140, 120, 90, 0.04)'
-        c.fillText(`→ hex:${(mHash % 999999).toString().padStart(6, '0')}`, 12, 90 + i * 14)
+        c.fillText(`\u2192 hex:${(mHash % 999999).toString().padStart(6, '0')}`, 12, 90 + i * 14)
       }
     }
 
-    // Shelf portals (right edge — book spines)
-    if (deps.switchTo) {
-      const shelfX = w - 50
-      const shelfStartY = 80
-      const shelfSpacing = 28
-      c.textAlign = 'right'
-      for (let i = 0; i < shelfLinks.length; i++) {
-        const sy = shelfStartY + i * shelfSpacing
-        const hovered = hoveredShelf === i
-        const alpha = hovered ? 0.3 : 0.07
-        // Book spine
-        c.fillStyle = `rgba(140, 120, 90, ${alpha})`
-        c.fillRect(shelfX, sy, 40, 20)
-        c.strokeStyle = `rgba(140, 120, 90, ${alpha * 0.5})`
-        c.lineWidth = 0.5
-        c.strokeRect(shelfX, sy, 40, 20)
-        // Spine text
-        c.font = '7px monospace'
-        c.fillStyle = `rgba(255, 215, 0, ${hovered ? 0.4 : 0.1})`
-        c.textAlign = 'center'
-        c.fillText(shelfLinks[i].label, shelfX + 20, sy + 13)
-      }
+    // --- Portal books (right edge) ---
+    renderPortalBooks(c, w, h)
+
+    // --- Current poem info (bottom-left, subtle) ---
+    if (currentPoem) {
+      c.font = '8px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
+      c.textAlign = 'left'
+      const poemInfo = `a volume found open: "${currentPoem.title}" \u2014 ${currentPoem.author}`
+      c.fillText(poemInfo.length > 70 ? poemInfo.slice(0, 67) + '...' : poemInfo, 12, h - 34)
     }
 
     // Title
@@ -360,7 +703,7 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     // Attribution
     c.font = '8px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 120, 90, ${0.03 + Math.sin(time * 0.2) * 0.01})`
-    c.fillText('after Borges — "The Library of Babel" (1941)', w / 2, 40)
+    c.fillText('after Borges \u2014 "The Library of Babel" (1941)', w / 2, 40)
 
     // Stats
     c.font = '9px monospace'
@@ -399,17 +742,15 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click to navigate to memory's location or shelf portal
+      // Click to navigate to memory's location or portal books
       canvas.addEventListener('click', (e) => {
-        // Check shelf portals
+        // Check portal books
         if (deps.switchTo && canvas) {
-          const shelfX = canvas.width - 50
-          const shelfStartY = 80
-          for (let i = 0; i < shelfLinks.length; i++) {
-            const sy = shelfStartY + i * 28
-            if (e.clientX >= shelfX && e.clientX <= shelfX + 40 &&
-                e.clientY >= sy && e.clientY <= sy + 20) {
-              deps.switchTo(shelfLinks[i].room)
+          for (let i = 0; i < portalBooks.length; i++) {
+            const b = getPortalBookBounds(canvas.width, canvas.height, i)
+            if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
+                e.clientY >= b.y && e.clientY <= b.y + b.h) {
+              deps.switchTo(portalBooks[i].room)
               return
             }
           }
@@ -425,17 +766,16 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
         }
       })
 
-      // Hover detection for shelf portals
+      // Hover detection for portal books
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
+        hoveredPortal = -1
         hoveredShelf = -1
-        const shelfX = canvas.width - 50
-        const shelfStartY = 80
-        for (let i = 0; i < shelfLinks.length; i++) {
-          const sy = shelfStartY + i * 28
-          if (e.clientX >= shelfX && e.clientX <= shelfX + 40 &&
-              e.clientY >= sy && e.clientY <= sy + 20) {
-            hoveredShelf = i
+        for (let i = 0; i < portalBooks.length; i++) {
+          const b = getPortalBookBounds(canvas.width, canvas.height, i)
+          if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
+              e.clientY >= b.y && e.clientY <= b.y + b.h) {
+            hoveredPortal = i
             break
           }
         }
@@ -458,6 +798,10 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     activate() {
       active = true
       pagesViewed = 0
+      time = 0
+      lastPoemFetchTime = 0
+      floatingLines = []
+
       // Start at a location derived from the first memory, or random
       const memories = deps.getMemories()
       if (memories.length > 0) {
@@ -471,6 +815,11 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
           page: Math.floor(Math.random() * 410) + 1,
         })
       }
+
+      // Fetch initial poem
+      loadNewPoem()
+
+      window.addEventListener('keydown', handleKeyDown)
       render()
     },
 

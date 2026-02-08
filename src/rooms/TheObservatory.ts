@@ -35,6 +35,36 @@ interface ObservatoryDeps {
   switchTo?: (name: string) => void
 }
 
+// --- APOD cache (module-level, survives room re-creation) ---
+interface APODData {
+  title: string
+  explanation: string
+  url: string
+  hdurl?: string
+  date: string
+  media_type: string
+}
+
+let apodCache: { data: APODData; fetchedAt: number } | null = null
+const APOD_CACHE_MS = 60 * 60 * 1000 // 1 hour
+
+async function fetchAPOD(): Promise<APODData | null> {
+  // Return cached data if fresh
+  if (apodCache && Date.now() - apodCache.fetchedAt < APOD_CACHE_MS) {
+    return apodCache.data
+  }
+  try {
+    const res = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY')
+    if (!res.ok) return null
+    const data = await res.json() as APODData
+    if (data.media_type !== 'image') return null // only images
+    apodCache = { data, fetchedAt: Date.now() }
+    return data
+  } catch {
+    return null
+  }
+}
+
 export function createObservatoryRoom(deps: ObservatoryDeps): Room {
   let overlay: HTMLElement | null = null
   let controls: OrbitControls | null = null
@@ -42,6 +72,11 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
   let focusedId: string | null = null
   let controlsRAF = 0
   let compassCanvases: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; draw: (t: number) => void; wrapper: HTMLElement }[] = []
+
+  // APOD elements
+  let apodContainer: HTMLElement | null = null
+  let apodTextEl: HTMLElement | null = null
+  let apodFadeTimer: ReturnType<typeof setTimeout> | null = null
 
   const raycaster = new THREE.Raycaster()
   const mouse = new THREE.Vector2()
@@ -519,6 +554,130 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       const camera = deps.getCamera()
       const canvas = deps.getCanvas()
 
+      // --- APOD: fetch and display today's astronomy picture ---
+      fetchAPOD().then(apod => {
+        if (!apod || !overlay) return
+
+        // Container: fixed behind everything, telescope vignette
+        apodContainer = document.createElement('div')
+        apodContainer.style.cssText = `
+          position: fixed;
+          inset: 0;
+          z-index: -1;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 4s ease;
+        `
+
+        // The image itself
+        const img = document.createElement('img')
+        img.crossOrigin = 'anonymous'
+        img.src = apod.hdurl || apod.url
+        img.alt = ''
+        img.style.cssText = `
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          opacity: 0.12;
+          filter: blur(2px) saturate(0.6);
+        `
+        apodContainer.appendChild(img)
+
+        // Telescope vignette overlay — dark edges, clear center
+        const vignette = document.createElement('div')
+        vignette.style.cssText = `
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(
+            ellipse 50% 50% at center,
+            transparent 0%,
+            rgba(2, 1, 8, 0.3) 40%,
+            rgba(2, 1, 8, 0.7) 65%,
+            rgba(2, 1, 8, 0.95) 85%,
+            rgb(2, 1, 8) 100%
+          );
+          pointer-events: none;
+        `
+        apodContainer.appendChild(vignette)
+
+        document.body.appendChild(apodContainer)
+
+        // Fade in after image loads (or immediately if cached)
+        const reveal = () => {
+          if (apodContainer) apodContainer.style.opacity = '1'
+        }
+        if (img.complete) reveal()
+        else img.addEventListener('load', reveal)
+
+        // Text overlay: title + explanation fragment
+        apodTextEl = document.createElement('div')
+        apodTextEl.style.cssText = `
+          position: fixed;
+          bottom: 48px;
+          left: 50%;
+          transform: translateX(-50%);
+          max-width: 520px;
+          text-align: center;
+          pointer-events: none;
+          z-index: 5;
+          opacity: 0;
+          transition: opacity 6s ease;
+        `
+
+        // Extract a short fragment from explanation (first ~120 chars, end at sentence/word boundary)
+        let fragment = apod.explanation
+        if (fragment.length > 120) {
+          const cut = fragment.lastIndexOf(' ', 120)
+          fragment = fragment.substring(0, cut > 60 ? cut : 120) + '...'
+        }
+
+        apodTextEl.innerHTML = `
+          <div style="
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300;
+            font-size: 14px;
+            letter-spacing: 3px;
+            color: rgba(200, 210, 255, 0.35);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+          ">${apod.title}</div>
+          <div style="
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300;
+            font-size: 12px;
+            line-height: 1.8;
+            color: rgba(200, 210, 255, 0.2);
+            letter-spacing: 1px;
+          ">${fragment}</div>
+          <div style="
+            font-family: 'Cormorant Garamond', serif;
+            font-weight: 300;
+            font-size: 10px;
+            color: rgba(200, 210, 255, 0.1);
+            margin-top: 6px;
+            letter-spacing: 2px;
+          ">NASA APOD \u00b7 ${apod.date}</div>
+        `
+        document.body.appendChild(apodTextEl)
+
+        // Fade text in after a short delay
+        setTimeout(() => {
+          if (apodTextEl) apodTextEl.style.opacity = '1'
+        }, 2000)
+
+        // Slowly dissolve the text away after 20 seconds
+        apodFadeTimer = setTimeout(() => {
+          if (apodTextEl) {
+            apodTextEl.style.transition = 'opacity 10s ease'
+            apodTextEl.style.opacity = '0'
+          }
+        }, 20000)
+      }).catch(() => {
+        // Graceful fallback — room works without APOD
+      })
+
       // Take over camera
       deps.pauseCamera()
 
@@ -618,6 +777,11 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
         escHandler = null
       }
 
+      // Cleanup APOD elements
+      if (apodFadeTimer) { clearTimeout(apodFadeTimer); apodFadeTimer = null }
+      if (apodContainer) { apodContainer.remove(); apodContainer = null }
+      if (apodTextEl) { apodTextEl.remove(); apodTextEl = null }
+
       hideFocusPanel()
       canvas.style.cursor = ''
     },
@@ -629,6 +793,9 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       }
       cancelAnimationFrame(controlsRAF)
       compassCanvases = []
+      if (apodFadeTimer) { clearTimeout(apodFadeTimer); apodFadeTimer = null }
+      apodContainer?.remove()
+      apodTextEl?.remove()
       focusPanel?.remove()
       overlay?.remove()
     },

@@ -8,7 +8,11 @@
  * expanding rings colored by depth (shallow=red, mid=orange, deep=violet).
  * A seismograph trace draws across the bottom — the earth's own handwriting.
  *
- * Data refreshes every 5 minutes from USGS GeoJSON feed.
+ * Data refreshes every 5 minutes from USGS FDSNWS query API (with fallback
+ * to the summary feed). Place names fade in and drift near their epicenters.
+ * Magnitude drives visual intensity — larger quakes produce bigger ripples,
+ * stronger glows, and screen-shake effects.
+ *
  * Completely independent of the memory system.
  *
  * Inspired by: seismology, Richter scale, plate tectonics,
@@ -36,7 +40,25 @@ interface Quake {
   pulsePhase: number
 }
 
-const FEED_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'
+/** A place-name label that fades in, lingers, then fades out near its quake */
+interface FadingLabel {
+  text: string
+  x: number
+  y: number
+  mag: number
+  depth: number
+  alpha: number       // current opacity (0..1)
+  phase: 'in' | 'hold' | 'out'
+  phaseTimer: number  // seconds remaining in current phase
+  driftY: number      // slow upward drift offset
+}
+
+// Primary: USGS FDSNWS query API (20 most recent quakes, no key needed, CORS-friendly)
+const FDSNWS_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&limit=20&orderby=time'
+// Fallback: summary feed (all quakes in last 24h)
+const FALLBACK_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'
+
+const CACHE_DURATION_MS = 5 * 60 * 1000 // 5 minutes
 
 export function createSeismographRoom(deps?: SeismographDeps): Room {
   let overlay: HTMLElement | null = null
@@ -55,6 +77,9 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
   let hoveredStation = -1
   let mouseX = 0
   let mouseY = 0
+  let fadingLabels: FadingLabel[] = []
+  let screenShake = 0  // decaying screen-shake intensity from large quakes
+  let isFetching = false
 
   // Earthquake epicenter navigation stations — placed at real-world coordinates
   const stations = [
@@ -89,42 +114,100 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     return Math.max(2, Math.pow(2, mag) * 0.5)
   }
 
+  /** Parse a USGS GeoJSON response into Quake objects */
+  function parseGeoJSON(data: any, w: number, h: number): Quake[] {
+    if (!data || !Array.isArray(data.features)) return []
+    return data.features.slice(0, 200).map((f: any) => {
+      const [lon, lat, depth] = f.geometry.coordinates
+      const [x, y] = latLonToScreen(lat, lon, w, h)
+      return {
+        lat, lon,
+        mag: f.properties.mag || 0,
+        depth: depth || 0,
+        place: f.properties.place || 'unknown',
+        time: f.properties.time || Date.now(),
+        x, y,
+        ringRadius: 0,
+        ringAlpha: 1,
+        pulsePhase: Math.random() * Math.PI * 2,
+      }
+    })
+  }
+
+  /** Build fading labels from the quake list (significant quakes only) */
+  function buildFadingLabels(quakeList: Quake[]) {
+    // Pick quakes with magnitude >= 2.5 for labels, limit to 8 to avoid clutter
+    const significant = quakeList
+      .filter(q => q.mag >= 2.5 && q.place !== 'unknown')
+      .slice(0, 8)
+
+    fadingLabels = significant.map(q => ({
+      text: `M${q.mag.toFixed(1)} ${q.place}`,
+      x: q.x,
+      y: q.y,
+      mag: q.mag,
+      depth: q.depth,
+      alpha: 0,
+      phase: 'in' as const,
+      // Stagger entry: higher magnitude quakes appear sooner
+      phaseTimer: 1.5 + (8 - q.mag) * 0.3,
+      driftY: 0,
+    }))
+
+    // Trigger screen-shake proportional to the largest quake magnitude
+    const maxMag = quakeList.reduce((m, q) => Math.max(m, q.mag), 0)
+    if (maxMag >= 4) {
+      screenShake = Math.min((maxMag - 3) * 2, 12)
+    }
+  }
+
   async function fetchQuakes() {
+    // Skip if already fetching or data is still fresh
+    if (isFetching) return
+    if (lastFetch > 0 && Date.now() - lastFetch < CACHE_DURATION_MS) return
+
+    isFetching = true
+    const hadData = quakes.length > 0
+    if (!hadData) loading = true
+    fetchError = false
+
+    if (!canvas) { isFetching = false; return }
+    const w = canvas.width
+    const h = canvas.height
+
+    // Try primary FDSNWS endpoint first
+    let parsed: Quake[] = []
     try {
-      loading = true
-      fetchError = false
-      const resp = await fetch(FEED_URL)
-      if (!resp.ok) throw new Error('fetch failed')
+      const resp = await fetch(FDSNWS_URL)
+      if (!resp.ok) throw new Error(`FDSNWS status ${resp.status}`)
       const data = await resp.json()
+      parsed = parseGeoJSON(data, w, h)
+    } catch {
+      // Primary failed — try fallback summary feed
+      try {
+        const resp2 = await fetch(FALLBACK_URL)
+        if (!resp2.ok) throw new Error(`Fallback status ${resp2.status}`)
+        const data2 = await resp2.json()
+        parsed = parseGeoJSON(data2, w, h)
+      } catch {
+        // Both failed
+        fetchError = true
+        loading = false
+        isFetching = false
+        return
+      }
+    }
 
-      if (!canvas) return
-      const w = canvas.width
-      const h = canvas.height
-
-      quakes = data.features.slice(0, 200).map((f: any) => {
-        const [lon, lat, depth] = f.geometry.coordinates
-        const [x, y] = latLonToScreen(lat, lon, w, h)
-        return {
-          lat, lon,
-          mag: f.properties.mag || 0,
-          depth: depth || 0,
-          place: f.properties.place || 'unknown',
-          time: f.properties.time || Date.now(),
-          x, y,
-          ringRadius: 0,
-          ringAlpha: 1,
-          pulsePhase: Math.random() * Math.PI * 2,
-        }
-      })
-
+    if (parsed.length > 0) {
+      quakes = parsed
+      buildFadingLabels(parsed)
       // Build trace from magnitudes (simulate seismograph needle)
       traceData = quakes.slice(0, 100).map(q => q.mag).reverse()
       lastFetch = Date.now()
-      loading = false
-    } catch {
-      fetchError = true
-      loading = false
     }
+
+    loading = false
+    isFetching = false
   }
 
   // Simplified world map — coastline dots
@@ -253,6 +336,59 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     ctx.fillText('seismograph trace — last 24h magnitudes', traceX + 6, traceY + 12)
   }
 
+  /** Animate and draw fading place-name labels near their epicenters */
+  function drawFadingLabels(c: CanvasRenderingContext2D, _w: number, _h: number) {
+    const dt = 0.016 // approx frame time
+
+    for (let i = fadingLabels.length - 1; i >= 0; i--) {
+      const lbl = fadingLabels[i]
+
+      // Update phase timer and alpha
+      lbl.phaseTimer -= dt
+      if (lbl.phase === 'in') {
+        lbl.alpha = Math.min(1, lbl.alpha + dt * 0.8)
+        if (lbl.phaseTimer <= 0) {
+          lbl.phase = 'hold'
+          lbl.phaseTimer = 3 + lbl.mag * 0.5 // hold longer for bigger quakes
+        }
+      } else if (lbl.phase === 'hold') {
+        lbl.alpha = 1
+        if (lbl.phaseTimer <= 0) {
+          lbl.phase = 'out'
+          lbl.phaseTimer = 2
+        }
+      } else if (lbl.phase === 'out') {
+        lbl.alpha = Math.max(0, lbl.alpha - dt * 0.5)
+        if (lbl.alpha <= 0) {
+          // Restart cycle with a pause
+          lbl.phase = 'in'
+          lbl.phaseTimer = 4 + Math.random() * 6
+          lbl.alpha = 0
+          lbl.driftY = 0
+          continue
+        }
+      }
+
+      // Slow upward drift
+      lbl.driftY -= dt * 3
+
+      // Compute final alpha scaled by magnitude (bigger = more visible)
+      const magScale = Math.min(1, 0.3 + (lbl.mag / 8) * 0.7)
+      const finalAlpha = lbl.alpha * magScale * 0.6
+
+      if (finalAlpha < 0.01) continue
+
+      // Draw label text
+      const fontSize = Math.max(8, Math.min(13, 8 + lbl.mag * 0.6))
+      c.font = `${fontSize}px "Cormorant Garamond", serif`
+      c.textAlign = 'center'
+      c.fillStyle = depthColor(lbl.depth, finalAlpha)
+
+      const labelY = lbl.y - magToSize(lbl.mag) * 2 - 6 + lbl.driftY
+      c.fillText(lbl.text, lbl.x, labelY)
+    }
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -261,9 +397,23 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     const w = canvas.width
     const h = canvas.height
 
+    // Screen-shake offset (decays over time)
+    let shakeX = 0
+    let shakeY = 0
+    if (screenShake > 0.1) {
+      shakeX = (Math.random() - 0.5) * screenShake
+      shakeY = (Math.random() - 0.5) * screenShake
+      screenShake *= 0.95
+    } else {
+      screenShake = 0
+    }
+
+    ctx.save()
+    ctx.translate(shakeX, shakeY)
+
     // Clear
     ctx.fillStyle = 'rgba(5, 8, 5, 1)'
-    ctx.fillRect(0, 0, w, h)
+    ctx.fillRect(-shakeX, -shakeY, w, h)
 
     // World outline
     drawWorldOutline(ctx, w, h)
@@ -273,38 +423,63 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
       const size = magToSize(q.mag)
       const pulse = Math.sin(time * 1.5 + q.pulsePhase) * 0.3 + 0.7
 
-      // Expanding ring
-      q.ringRadius += 0.02
-      if (q.ringRadius > size * 4) {
+      // Expanding ring — speed and max radius scale with magnitude
+      const ringSpeed = 0.02 + q.mag * 0.005
+      const ringMaxRadius = size * (3 + q.mag * 0.5)
+      q.ringRadius += ringSpeed
+      if (q.ringRadius > ringMaxRadius) {
         q.ringRadius = 0
         q.ringAlpha = 0.5
       }
       if (q.ringRadius > 0) {
         ctx.strokeStyle = depthColor(q.depth, q.ringAlpha * 0.3 * pulse)
-        ctx.lineWidth = 1
+        ctx.lineWidth = q.mag >= 5 ? 2 : 1
         ctx.beginPath()
         ctx.arc(q.x, q.y, q.ringRadius, 0, Math.PI * 2)
         ctx.stroke()
         q.ringAlpha *= 0.995
+
+        // Extra concentric rings for M5+ quakes
+        if (q.mag >= 5) {
+          const ring2 = q.ringRadius * 0.6
+          ctx.strokeStyle = depthColor(q.depth, q.ringAlpha * 0.15 * pulse)
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.arc(q.x, q.y, ring2, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+        // Third ring for M6+
+        if (q.mag >= 6) {
+          const ring3 = q.ringRadius * 0.35
+          ctx.strokeStyle = depthColor(q.depth, q.ringAlpha * 0.1 * pulse)
+          ctx.beginPath()
+          ctx.arc(q.x, q.y, ring3, 0, Math.PI * 2)
+          ctx.stroke()
+        }
       }
 
-      // Core dot
+      // Core dot — size proportional to magnitude
       ctx.fillStyle = depthColor(q.depth, 0.4 + pulse * 0.3)
       ctx.beginPath()
       ctx.arc(q.x, q.y, size * pulse, 0, Math.PI * 2)
       ctx.fill()
 
-      // Glow for larger quakes
-      if (q.mag >= 4) {
-        const glow = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, size * 3)
-        glow.addColorStop(0, depthColor(q.depth, 0.1 * pulse))
+      // Glow for larger quakes — radius scales with magnitude
+      if (q.mag >= 3) {
+        const glowRadius = size * (2 + q.mag * 0.4)
+        const glowIntensity = Math.min(0.2, 0.05 + (q.mag - 3) * 0.03)
+        const glow = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, glowRadius)
+        glow.addColorStop(0, depthColor(q.depth, glowIntensity * pulse))
         glow.addColorStop(1, 'transparent')
         ctx.fillStyle = glow
         ctx.beginPath()
-        ctx.arc(q.x, q.y, size * 3, 0, Math.PI * 2)
+        ctx.arc(q.x, q.y, glowRadius, 0, Math.PI * 2)
         ctx.fill()
       }
     }
+
+    // Draw fading place-name labels
+    drawFadingLabels(ctx, w, h)
 
     // Seismograph trace
     drawSeismographTrace(ctx, w, h)
@@ -330,7 +505,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     ctx.font = '9px monospace'
     ctx.fillStyle = 'rgba(40, 255, 80, 0.12)'
     ctx.textAlign = 'left'
-    ctx.fillText(`${totalQuakes} earthquakes (24h)`, 12, h - 30)
+    ctx.fillText(`${totalQuakes} earthquakes · real-time USGS data`, 12, h - 30)
     ctx.fillText(`max M${maxMag.toFixed(1)}`, 12, h - 18)
 
     ctx.textAlign = 'right'
@@ -478,8 +653,10 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
       ctx.fillText(depths[i].label, legendX, legendY + i * 14 + 3)
     }
 
-    // Refresh data every 5 minutes
-    if (Date.now() - lastFetch > 300000) {
+    ctx.restore()
+
+    // Refresh data every 5 minutes (respects cache)
+    if (Date.now() - lastFetch > CACHE_DURATION_MS) {
       fetchQuakes()
     }
   }
@@ -577,6 +754,17 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
             q.x = x
             q.y = y
           }
+          // Recalculate fading label positions from their associated quakes
+          for (const lbl of fadingLabels) {
+            // Find matching quake by text prefix to update x/y
+            const matchingQuake = quakes.find(q =>
+              lbl.text === `M${q.mag.toFixed(1)} ${q.place}`
+            )
+            if (matchingQuake) {
+              lbl.x = matchingQuake.x
+              lbl.y = matchingQuake.y
+            }
+          }
         }
       }
       window.addEventListener('resize', onResize)
@@ -587,6 +775,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
 
     activate() {
       active = true
+      // fetchQuakes respects the 5-min cache internally, safe to call every activate
       fetchQuakes()
       render()
     },

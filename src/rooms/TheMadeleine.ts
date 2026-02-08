@@ -15,10 +15,14 @@
  * The association algorithm finds connections you didn't
  * know existed in your own words.
  *
+ * Background artworks from the Art Institute of Chicago API
+ * drift in and out like ghosts — paintings about memory, dream,
+ * nostalgia — reinforcing the Proustian atmosphere.
+ *
  * Also inspired by: synesthesia research, the tip-of-the-tongue
  * phenomenon, Pavlovian conditioning, how smells bypass the
  * thalamus and hit the amygdala directly, Walter Benjamin's
- * "excavation" metaphor for memory, Sei Shōnagon's Pillow Book
+ * "excavation" metaphor for memory, Sei Shonagon's Pillow Book
  * (cataloguing sensory impressions), the Japanese concept of
  * "mono no aware" (pathos of things)
  *
@@ -50,6 +54,55 @@ interface Trigger {
   vy: number
   hue: number
   size: number
+}
+
+// --- Art Institute of Chicago API types ---
+interface ArtworkResult {
+  id: number
+  title: string
+  artist_display: string
+  date_display: string
+  image_id: string | null
+  thumbnail: { alt_text: string; width: number; height: number } | null
+}
+
+interface ArtworkSearchResponse {
+  data: ArtworkResult[]
+}
+
+interface ActiveArtwork {
+  img: HTMLImageElement
+  title: string
+  artist: string
+  alpha: number       // 0..1 — current opacity
+  phase: 'in' | 'hold' | 'out'
+  holdTimer: number   // seconds remaining in hold phase
+  loaded: boolean
+}
+
+// Session-level cache keyed by search term
+const artworkCache: Map<string, ArtworkResult[]> = new Map()
+
+const ARTWORK_SEARCH_TERMS = ['memory', 'dream', 'nostalgia', 'childhood', 'lost', 'forgotten']
+
+async function fetchArtworks(query: string): Promise<ArtworkResult[]> {
+  if (artworkCache.has(query)) return artworkCache.get(query)!
+
+  try {
+    const url = `https://api.artic.edu/api/v1/artworks/search?q=${encodeURIComponent(query)}&limit=10&fields=id,title,artist_display,date_display,image_id,thumbnail`
+    const resp = await fetch(url)
+    if (!resp.ok) return []
+    const json: ArtworkSearchResponse = await resp.json()
+    const results = json.data.filter((a: ArtworkResult) => a.image_id)
+    artworkCache.set(query, results)
+    return results
+  } catch {
+    return []
+  }
+}
+
+function artworkImageUrl(imageId: string): string {
+  return `https://www.artic.edu/iiif/2/${imageId}/full/843,/0/default.jpg`
 }
 
 // Sensory triggers — Proustian prompts
@@ -112,6 +165,17 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
   let ripples: { x: number; y: number; radius: number; alpha: number }[] = []
   let spawnTimer = 0
 
+  // --- Artwork state ---
+  let currentArtwork: ActiveArtwork | null = null
+  let nextArtwork: ActiveArtwork | null = null
+  let artworkQueue: ArtworkResult[] = []
+  let artworkSearchIndex = 0
+  let artworkTimer = 0
+  let artworkFetchInProgress = false
+
+  // --- Portal glow animation state ---
+  let portalElements: HTMLElement[] = []
+
   function spawnTrigger() {
     if (!canvas) return
     const w = canvas.width
@@ -139,7 +203,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
         size = 20
         break
       case 'sound':
-        text = ['~', '♪', '···', ')))'][Math.floor(Math.random() * 4)]
+        text = ['~', '\u266A', '\u00B7\u00B7\u00B7', ')))'][Math.floor(Math.random() * 4)]
         hue = 180 + Math.random() * 40 // teal
         size = 12
         break
@@ -245,18 +309,216 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
     }
   }
 
+  // --- Artwork management ---
+
+  async function enqueueArtworks() {
+    if (artworkFetchInProgress) return
+    artworkFetchInProgress = true
+
+    const term = ARTWORK_SEARCH_TERMS[artworkSearchIndex % ARTWORK_SEARCH_TERMS.length]
+    artworkSearchIndex++
+
+    const results = await fetchArtworks(term)
+    if (results.length > 0) {
+      // Shuffle and add to queue, avoiding duplicates
+      const shuffled = [...results].sort(() => Math.random() - 0.5)
+      const existingIds = new Set(artworkQueue.map(a => a.id))
+      for (const r of shuffled) {
+        if (!existingIds.has(r.id)) {
+          artworkQueue.push(r)
+          existingIds.add(r.id)
+        }
+      }
+    }
+
+    artworkFetchInProgress = false
+  }
+
+  function prepareNextArtwork() {
+    if (nextArtwork) return  // already preparing
+    if (artworkQueue.length === 0) {
+      // fetch more
+      enqueueArtworks()
+      return
+    }
+
+    const data = artworkQueue.shift()!
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+
+    const artwork: ActiveArtwork = {
+      img,
+      title: data.title || '',
+      artist: data.artist_display || '',
+      alpha: 0,
+      phase: 'in',
+      holdTimer: 60 + Math.random() * 30, // 60-90 seconds
+      loaded: false,
+    }
+
+    img.onload = () => {
+      artwork.loaded = true
+    }
+    img.onerror = () => {
+      // Skip this artwork, try another
+      nextArtwork = null
+      prepareNextArtwork()
+    }
+    img.src = artworkImageUrl(data.image_id!)
+    nextArtwork = artwork
+  }
+
+  function updateArtworks(dt: number) {
+    // Current artwork fading/holding
+    if (currentArtwork) {
+      switch (currentArtwork.phase) {
+        case 'in':
+          currentArtwork.alpha += dt * 0.08  // ~12s fade in
+          if (currentArtwork.alpha >= 1) {
+            currentArtwork.alpha = 1
+            currentArtwork.phase = 'hold'
+          }
+          break
+        case 'hold':
+          currentArtwork.holdTimer -= dt
+          if (currentArtwork.holdTimer <= 0) {
+            currentArtwork.phase = 'out'
+          }
+          break
+        case 'out':
+          currentArtwork.alpha -= dt * 0.08  // ~12s fade out
+          if (currentArtwork.alpha <= 0) {
+            currentArtwork = null
+          }
+          break
+      }
+    }
+
+    // Promote next artwork when current is gone or about to be
+    if (!currentArtwork && nextArtwork && nextArtwork.loaded) {
+      currentArtwork = nextArtwork
+      nextArtwork = null
+      prepareNextArtwork()
+    }
+
+    // Keep queue populated
+    artworkTimer += dt
+    if (artworkTimer > 5 && artworkQueue.length < 5) {
+      artworkTimer = 0
+      enqueueArtworks()
+    }
+
+    // Always be preparing next
+    if (!nextArtwork && currentArtwork) {
+      prepareNextArtwork()
+    }
+  }
+
+  function drawArtwork(c: CanvasRenderingContext2D, w: number, h: number) {
+    if (!currentArtwork || !currentArtwork.loaded) return
+
+    const art = currentArtwork
+    const img = art.img
+
+    // Compute dimensions: fit image within canvas, centered, slightly scaled down
+    const scale = Math.min(w / img.width, h / img.height) * 0.7
+    const dw = img.width * scale
+    const dh = img.height * scale
+    const dx = (w - dw) / 2
+    const dy = (h - dh) / 2
+
+    // Very low opacity — ghostly background element
+    const maxOpacity = 0.12
+    const opacity = art.alpha * maxOpacity
+
+    c.save()
+    c.globalAlpha = opacity
+    // Desaturate slightly via composite — draw darkened version
+    c.filter = 'saturate(0.4) brightness(0.6)'
+    c.drawImage(img, dx, dy, dw, dh)
+    c.filter = 'none'
+    c.globalAlpha = 1
+    c.restore()
+
+    // Draw dissolving title and artist text
+    if (art.title || art.artist) {
+      const textAlpha = art.alpha * 0.18
+
+      // Title
+      if (art.title) {
+        c.font = '11px "Cormorant Garamond", serif'
+        c.fillStyle = `rgba(200, 180, 140, ${textAlpha})`
+        c.textAlign = 'center'
+
+        // Dissolving effect: scatter characters slightly based on fade phase
+        const scatter = art.phase === 'out' ? (1 - art.alpha) * 8 : 0
+        if (scatter > 0.5) {
+          // Character-by-character with scatter
+          const chars = art.title.split('')
+          let xOff = -c.measureText(art.title).width / 2
+          for (let i = 0; i < chars.length; i++) {
+            const charW = c.measureText(chars[i]).width
+            const sx = (Math.sin(i * 1.7 + time * 2) * scatter)
+            const sy = (Math.cos(i * 2.3 + time * 1.5) * scatter)
+            const charAlpha = textAlpha * Math.max(0, 1 - Math.random() * scatter * 0.15)
+            c.fillStyle = `rgba(200, 180, 140, ${charAlpha})`
+            c.fillText(chars[i], w / 2 + xOff + sx, dy + dh + 24 + sy)
+            xOff += charW
+          }
+        } else {
+          c.fillText(art.title, w / 2, dy + dh + 24)
+        }
+      }
+
+      // Artist
+      if (art.artist) {
+        c.font = '9px "Cormorant Garamond", serif'
+        // Truncate long artist strings
+        let artistText = art.artist
+        if (artistText.length > 60) {
+          artistText = artistText.substring(0, 57) + '...'
+        }
+        const artistAlpha = art.alpha * 0.12
+        c.fillStyle = `rgba(200, 180, 140, ${artistAlpha})`
+        c.textAlign = 'center'
+        c.fillText(artistText, w / 2, dy + dh + 40)
+      }
+    }
+  }
+
+  // --- Portal glow pulse ---
+  function updatePortalGlow() {
+    const pulse = 0.05 + Math.sin(time * 0.8) * 0.03
+    for (const el of portalElements) {
+      const baseColor = el.dataset.portalColor || '200,180,140'
+      const hovered = el.dataset.hovered === 'true'
+      if (!hovered) {
+        el.style.color = `rgba(${baseColor}, ${pulse})`
+        // Subtle inner glow
+        el.style.textShadow = `0 0 ${6 + Math.sin(time * 1.2) * 3}px rgba(${baseColor}, ${pulse * 0.6})`
+      }
+    }
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
     time += 0.016
+    const dt = 0.016
 
     const c = ctx
     const w = canvas.width
     const h = canvas.height
 
+    // Update artwork cycle
+    updateArtworks(dt)
+
     // Warm dark background — tea-stained
     c.fillStyle = 'rgba(12, 9, 6, 1)'
     c.fillRect(0, 0, w, h)
+
+    // Draw ghostly background artwork BEHIND everything
+    drawArtwork(c, w, h)
 
     // Spawn triggers periodically
     spawnTimer += 0.016
@@ -402,13 +664,16 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
     c.font = '8px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
-    c.fillText('after Proust — involuntary memory', w / 2, 40)
+    c.fillText('after Proust \u2014 involuntary memory', w / 2, 40)
 
     // Stats
     c.font = '9px monospace'
     c.fillStyle = 'rgba(200, 180, 140, 0.06)'
     c.textAlign = 'left'
     c.fillText(`${triggers.length} triggers drifting`, 12, h - 18)
+
+    // Update portal glows
+    updatePortalGlow()
   }
 
   return {
@@ -441,40 +706,99 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
 
       overlay.appendChild(canvas)
 
-      // Navigation portals — floating sensory words at edges (Proustian)
+      // Navigation portals — doorways of light and scent (Proustian sensory triggers)
       if (deps.switchTo) {
+        portalElements = []
         const portalData = [
-          { name: 'seance', label: 'a voice in the dark', color: '180, 160, 220', pos: 'top: 60px; left: 16px;' },
-          { name: 'oracle', label: 'the taste of fate', color: '220, 190, 130', pos: 'top: 60px; right: 16px;' },
-          { name: 'projection', label: 'flickering light', color: '200, 180, 140', pos: 'bottom: 50px; left: 16px;' },
-          { name: 'garden', label: 'wet earth and bloom', color: '130, 180, 130', pos: 'bottom: 50px; right: 16px;' },
-          { name: 'rememory', label: 'something half-remembered', color: '180, 160, 180', pos: 'bottom: 50px; left: 50%; transform: translateX(-50%);' },
+          {
+            name: 'seance',
+            label: 'a voice in the dark',
+            color: '180, 160, 220',
+            pos: 'top: 60px; left: 16px;',
+            glyph: '\u2727', // four-pointed star
+          },
+          {
+            name: 'oracle',
+            label: 'the taste of fate',
+            color: '220, 190, 130',
+            pos: 'top: 60px; right: 16px;',
+            glyph: '\u2736', // six-pointed star
+          },
+          {
+            name: 'projection',
+            label: 'flickering light',
+            color: '200, 180, 140',
+            pos: 'bottom: 50px; left: 16px;',
+            glyph: '\u25C7', // diamond
+          },
+          {
+            name: 'garden',
+            label: 'wet earth and bloom',
+            color: '130, 180, 130',
+            pos: 'bottom: 50px; right: 16px;',
+            glyph: '\u2E2C', // squared four-dot punctuation — leaf-like
+          },
+          {
+            name: 'rememory',
+            label: 'something half-remembered',
+            color: '180, 160, 180',
+            pos: 'bottom: 50px; left: 50%; transform: translateX(-50%);',
+            glyph: '\u29BE', // circled white bullet
+          },
         ]
         for (const p of portalData) {
           const el = document.createElement('div')
+          el.dataset.portalColor = p.color
+          el.dataset.hovered = 'false'
           el.style.cssText = `
             position: absolute; ${p.pos}
             pointer-events: auto; cursor: pointer;
             font-family: 'Cormorant Garamond', serif;
             font-style: italic; font-size: 9px;
             color: rgba(${p.color}, 0.05);
-            transition: color 0.6s ease, text-shadow 0.6s ease;
-            padding: 6px 10px; z-index: 10;
+            transition: color 0.6s ease, text-shadow 0.6s ease, background 0.6s ease, border-color 0.6s ease;
+            padding: 8px 14px; z-index: 10;
+            border: 1px solid rgba(${p.color}, 0.03);
+            border-radius: 2px;
+            background: rgba(${p.color}, 0.01);
+            letter-spacing: 0.5px;
+            display: flex; align-items: center; gap: 6px;
           `
-          el.textContent = p.label
+
+          // Glyph element — doorway icon
+          const glyphSpan = document.createElement('span')
+          glyphSpan.style.cssText = `
+            font-style: normal; font-size: 11px;
+            opacity: 0.6;
+          `
+          glyphSpan.textContent = p.glyph
+
+          const labelSpan = document.createElement('span')
+          labelSpan.textContent = p.label
+
+          el.appendChild(glyphSpan)
+          el.appendChild(labelSpan)
+
           el.addEventListener('mouseenter', () => {
-            el.style.color = `rgba(${p.color}, 0.45)`
-            el.style.textShadow = `0 0 14px rgba(${p.color}, 0.18)`
+            el.dataset.hovered = 'true'
+            el.style.color = `rgba(${p.color}, 0.55)`
+            el.style.textShadow = `0 0 18px rgba(${p.color}, 0.25), 0 0 40px rgba(${p.color}, 0.08)`
+            el.style.borderColor = `rgba(${p.color}, 0.15)`
+            el.style.background = `rgba(${p.color}, 0.04)`
           })
           el.addEventListener('mouseleave', () => {
+            el.dataset.hovered = 'false'
             el.style.color = `rgba(${p.color}, 0.05)`
             el.style.textShadow = 'none'
+            el.style.borderColor = `rgba(${p.color}, 0.03)`
+            el.style.background = `rgba(${p.color}, 0.01)`
           })
           el.addEventListener('click', (e) => {
             e.stopPropagation()
             deps.switchTo!(p.name)
           })
           overlay.appendChild(el)
+          portalElements.push(el)
         }
       }
 
@@ -487,6 +811,8 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       surfacedMemory = null
       ripples = []
       spawnTimer = 0
+      artworkTimer = 0
+
       // Seed initial triggers
       for (let i = 0; i < 4; i++) {
         spawnTrigger()
@@ -495,6 +821,14 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
           last.y = Math.random() * (canvas?.height || 600) * 0.7
         }
       }
+
+      // Start artwork pipeline
+      if (!currentArtwork && !nextArtwork) {
+        enqueueArtworks().then(() => {
+          prepareNextArtwork()
+        })
+      }
+
       render()
     },
 
@@ -506,6 +840,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      portalElements = []
       overlay?.remove()
     },
   }

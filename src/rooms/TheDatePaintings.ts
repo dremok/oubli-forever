@@ -71,6 +71,77 @@ const HEADLINE_FRAGMENTS = [
   'Museum Acquires Collection of Undeveloped Photographs',
 ]
 
+// --- Wikimedia "On This Day" API types and cache ---
+
+interface OnThisDayEvent {
+  text: string
+  year: number
+  pages?: { title: string; extract?: string; thumbnail?: { source: string; width: number; height: number } }[]
+}
+
+// Session-level cache: keyed by "MM/DD" so same day never refetches
+const onThisDayCache: Map<string, OnThisDayEvent[]> = new Map()
+// Track loaded thumbnail images
+const thumbnailCache: Map<string, HTMLImageElement> = new Map()
+
+async function fetchOnThisDay(): Promise<OnThisDayEvent[]> {
+  const now = new Date()
+  const month = String(now.getMonth() + 1)
+  const day = String(now.getDate())
+  const cacheKey = `${month}/${day}`
+
+  const cached = onThisDayCache.get(cacheKey)
+  if (cached) return cached
+
+  try {
+    const resp = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${month}/${day}`,
+      { headers: { 'Api-User-Agent': 'Oubli/1.0 (art project)' } },
+    )
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json() as { events?: OnThisDayEvent[] }
+    const events = (data.events || []).sort((a, b) => a.year - b.year)
+    onThisDayCache.set(cacheKey, events)
+    return events
+  } catch {
+    // Graceful fallback — return empty, fake headlines will still show
+    onThisDayCache.set(cacheKey, [])
+    return []
+  }
+}
+
+function loadThumbnail(url: string): HTMLImageElement | null {
+  const existing = thumbnailCache.get(url)
+  if (existing) return existing.complete ? existing : null
+  const img = new Image()
+  img.crossOrigin = 'anonymous'
+  img.src = url
+  thumbnailCache.set(url, img)
+  return null // not loaded yet; will be available next frame
+}
+
+/** Returns an opacity multiplier based on century — older events are more faded */
+function centuryFade(year: number): number {
+  const currentYear = new Date().getFullYear()
+  const age = currentYear - year
+  if (age < 100) return 1.0
+  if (age < 200) return 0.85
+  if (age < 500) return 0.65
+  if (age < 1000) return 0.45
+  return 0.3
+}
+
+/** Returns a tint color for different centuries */
+function centuryTint(year: number): string {
+  const currentYear = new Date().getFullYear()
+  const age = currentYear - year
+  if (age < 50) return 'rgba(200, 210, 230, ALPHA)' // blue-white — recent
+  if (age < 150) return 'rgba(210, 200, 180, ALPHA)' // warm sepia
+  if (age < 300) return 'rgba(180, 170, 150, ALPHA)' // faded parchment
+  if (age < 600) return 'rgba(150, 140, 130, ALPHA)' // stone
+  return 'rgba(120, 115, 110, ALPHA)' // ancient — nearly grey
+}
+
 interface PaintingRecord {
   firstVisit: string // ISO date
   visitDays: string[] // ISO dates of days visited
@@ -157,6 +228,10 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
 
   // Cached painting layout (rebuilt each frame)
   let paintingRects: { x: number; y: number; w: number; h: number; index: number }[] = []
+
+  // On This Day events
+  let onThisDayEvents: OnThisDayEvent[] = []
+  let onThisDayScrollOffset = 0 // scroll within the enlarged event list
 
   // Portal painting state
   interface PortalPainting {
@@ -822,50 +897,177 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
         const daysText = daysSince === 0 ? 'today' : daysSince === 1 ? '1 day ago' : `${daysSince} days ago`
         c.fillText(daysText, currentCx, ey + currentH + 56)
 
-        // Fake newspaper clipping (Kawara included newspaper clippings with his paintings)
-        const headlineIndex = hashDate(entry.isoDate) % HEADLINE_FRAGMENTS.length
-        const headline = HEADLINE_FRAGMENTS[headlineIndex]
+        // --- Newspaper clippings section ---
+        // Kawara included newspaper clippings with his paintings.
+        // We show real "on this day" historical events from Wikimedia API
+        // alongside the fake headline as a fallback/complement.
 
-        // Clipping box
-        const clipW = currentW * 0.7
-        const clipH = 36
+        const clipW = currentW * 0.8
         const clipX = currentCx - clipW / 2
-        const clipY = ey + currentH + 68
+        let clipY = ey + currentH + 68
 
-        c.fillStyle = `rgba(25, 22, 18, ${0.5 * infoAlpha})`
-        c.fillRect(clipX, clipY, clipW, clipH)
-        c.strokeStyle = `rgba(100, 90, 75, ${0.15 * infoAlpha})`
-        c.lineWidth = 0.5
-        c.strokeRect(clipX, clipY, clipW, clipH)
+        // Determine which events to show (match month/day of this painting)
+        const paintingDate = new Date(entry.timestamp)
+        const paintingMonth = paintingDate.getMonth()
+        const paintingDay = paintingDate.getDate()
+        const todayNow = new Date()
+        const isMatchingDay = paintingMonth === todayNow.getMonth() && paintingDay === todayNow.getDate()
+        const eventsToShow = isMatchingDay ? onThisDayEvents : []
 
-        // Headline text
-        c.font = `${Math.floor(currentW * 0.02)}px "Cormorant Garamond", serif`
-        c.fillStyle = `rgba(180, 170, 150, ${0.35 * infoAlpha})`
-        c.textAlign = 'center'
+        if (eventsToShow.length > 0) {
+          // Section header
+          c.font = `${Math.floor(currentW * 0.018)}px monospace`
+          c.fillStyle = `rgba(160, 150, 135, ${0.25 * infoAlpha})`
+          c.textAlign = 'center'
+          c.fillText(`on this day — ${LONG_MONTHS[paintingMonth]} ${paintingDay}`, currentCx, clipY - 4)
+          clipY += 8
 
-        // Word-wrap the headline
-        const words = headline.split(' ')
-        let line1 = ''
-        let line2 = ''
-        const maxLineW = clipW - 20
-        for (const word of words) {
-          const test = line1 + (line1 ? ' ' : '') + word
-          if (c.measureText(test).width < maxLineW && !line2) {
-            line1 = test
-          } else {
-            line2 += (line2 ? ' ' : '') + word
+          // Show up to 6 events, scrollable via onThisDayScrollOffset
+          const maxVisible = 6
+          const eventFontSize = Math.max(8, Math.floor(currentW * 0.017))
+          const eventLineH = eventFontSize + 4
+          const eventBlockH = eventFontSize * 2.8 // space per event card
+          const thumbSize = Math.floor(eventBlockH * 0.75)
+
+          // Clamp scroll offset
+          const scrollableCount = Math.max(0, eventsToShow.length - maxVisible)
+          const startIdx = Math.min(Math.max(0, Math.floor(onThisDayScrollOffset)), scrollableCount)
+
+          // Clip region for events
+          c.save()
+          c.beginPath()
+          c.rect(clipX - 4, clipY - 2, clipW + 8, maxVisible * eventBlockH + 8)
+          c.clip()
+
+          for (let ei = 0; ei < maxVisible && (startIdx + ei) < eventsToShow.length; ei++) {
+            const evt = eventsToShow[startIdx + ei]
+            const evtY = clipY + ei * eventBlockH
+
+            const fade = centuryFade(evt.year)
+            const tintTemplate = centuryTint(evt.year)
+
+            // Event card background — subtle, darker for older events
+            const cardAlpha = 0.35 * infoAlpha * fade
+            c.fillStyle = `rgba(20, 18, 15, ${cardAlpha})`
+            c.fillRect(clipX, evtY, clipW, eventBlockH - 4)
+
+            // Subtle left accent line colored by century
+            const accentAlpha = 0.3 * infoAlpha * fade
+            c.fillStyle = tintTemplate.replace('ALPHA', String(accentAlpha))
+            c.fillRect(clipX, evtY, 2, eventBlockH - 4)
+
+            // Year label — prominent
+            c.font = `bold ${eventFontSize}px monospace`
+            const yearAlpha = 0.6 * infoAlpha * fade
+            c.fillStyle = tintTemplate.replace('ALPHA', String(yearAlpha))
+            c.textAlign = 'left'
+            c.fillText(String(evt.year), clipX + 8, evtY + eventLineH)
+
+            // Event text — truncated to fit, wrapped to 2 lines max
+            const textX = clipX + 8 + c.measureText('0000').width + 8
+            const hasThumb = evt.pages?.[0]?.thumbnail?.source
+            const textMaxW = hasThumb ? clipW - (textX - clipX) - thumbSize - 12 : clipW - (textX - clipX) - 8
+            c.font = `${eventFontSize}px "Cormorant Garamond", serif`
+            const textAlpha = 0.4 * infoAlpha * fade
+            c.fillStyle = tintTemplate.replace('ALPHA', String(textAlpha))
+
+            // Word-wrap to 2 lines
+            const evtWords = evt.text.split(' ')
+            let eLine1 = ''
+            let eLine2 = ''
+            for (const w of evtWords) {
+              const test = eLine1 + (eLine1 ? ' ' : '') + w
+              if (c.measureText(test).width < textMaxW && !eLine2) {
+                eLine1 = test
+              } else if (!eLine2 || c.measureText(eLine2 + ' ' + w).width < textMaxW) {
+                eLine2 += (eLine2 ? ' ' : '') + w
+              } else {
+                eLine2 += '\u2026'
+                break
+              }
+            }
+            c.fillText(eLine1, textX, evtY + eventLineH)
+            if (eLine2) {
+              c.fillText(eLine2, textX, evtY + eventLineH * 2 - 2)
+            }
+
+            // Thumbnail image (if available) — rendered small and faded
+            if (hasThumb) {
+              const thumbUrl = evt.pages![0].thumbnail!.source
+              const img = loadThumbnail(thumbUrl)
+              if (img) {
+                const thumbX = clipX + clipW - thumbSize - 6
+                const thumbY = evtY + 2
+                c.globalAlpha = 0.35 * infoAlpha * fade
+                try {
+                  c.drawImage(img, thumbX, thumbY, thumbSize, thumbSize)
+                } catch { /* cross-origin or decode error */ }
+                c.globalAlpha = 1
+                // Subtle border around thumbnail
+                c.strokeStyle = tintTemplate.replace('ALPHA', String(0.15 * infoAlpha * fade))
+                c.lineWidth = 0.5
+                c.strokeRect(thumbX, thumbY, thumbSize, thumbSize)
+              }
+            }
           }
-        }
 
-        c.fillText(line1, currentCx, clipY + 14)
-        if (line2) {
-          c.fillText(line2, currentCx, clipY + 28)
+          c.restore() // unclip
+
+          // Scroll hint arrows if there are more events
+          if (eventsToShow.length > maxVisible) {
+            c.font = `${eventFontSize}px monospace`
+            c.textAlign = 'center'
+            const hintAlpha = 0.2 * infoAlpha
+            if (startIdx > 0) {
+              c.fillStyle = `rgba(200, 190, 170, ${hintAlpha})`
+              c.fillText('\u25B2', currentCx, clipY - 2)
+            }
+            if (startIdx + maxVisible < eventsToShow.length) {
+              const bottomY = clipY + maxVisible * eventBlockH + 10
+              c.fillStyle = `rgba(200, 190, 170, ${hintAlpha})`
+              c.fillText(`\u25BC  ${eventsToShow.length - startIdx - maxVisible} more`, currentCx, bottomY)
+            }
+          }
+        } else {
+          // Fallback: show fake headline (original Kawara-style newspaper clipping)
+          const headlineIndex = hashDate(entry.isoDate) % HEADLINE_FRAGMENTS.length
+          const headline = HEADLINE_FRAGMENTS[headlineIndex]
+
+          const fakeClipH = 36
+          c.fillStyle = `rgba(25, 22, 18, ${0.5 * infoAlpha})`
+          c.fillRect(clipX, clipY, clipW, fakeClipH)
+          c.strokeStyle = `rgba(100, 90, 75, ${0.15 * infoAlpha})`
+          c.lineWidth = 0.5
+          c.strokeRect(clipX, clipY, clipW, fakeClipH)
+
+          c.font = `${Math.floor(currentW * 0.02)}px "Cormorant Garamond", serif`
+          c.fillStyle = `rgba(180, 170, 150, ${0.35 * infoAlpha})`
+          c.textAlign = 'center'
+
+          const fakeWords = headline.split(' ')
+          let fLine1 = ''
+          let fLine2 = ''
+          const fMaxW = clipW - 20
+          for (const word of fakeWords) {
+            const test = fLine1 + (fLine1 ? ' ' : '') + word
+            if (c.measureText(test).width < fMaxW && !fLine2) {
+              fLine1 = test
+            } else {
+              fLine2 += (fLine2 ? ' ' : '') + word
+            }
+          }
+
+          c.fillText(fLine1, currentCx, clipY + 14)
+          if (fLine2) {
+            c.fillText(fLine2, currentCx, clipY + 28)
+          }
         }
 
         // Source line
         c.font = `${Math.floor(currentW * 0.014)}px monospace`
         c.fillStyle = `rgba(120, 110, 100, ${0.2 * infoAlpha})`
-        c.fillText(`— ${formatLongDate(entry.timestamp)}`, currentCx, clipY + clipH + 12)
+        c.textAlign = 'center'
+        c.fillText(`\u2014 ${formatLongDate(entry.timestamp)}`, currentCx, clipY + (eventsToShow.length > 0 ? Math.min(6, eventsToShow.length) * (Math.max(8, Math.floor(currentW * 0.017)) * 2.8) + 14 : 50))
       }
 
       c.restore()
@@ -1021,7 +1223,15 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
   }
 
   function handleWheel(e: WheelEvent) {
-    if (enlargedIndex >= 0) return // Don't scroll when enlarged
+    if (enlargedIndex >= 0) {
+      // Scroll through on-this-day events when painting is enlarged
+      if (onThisDayEvents.length > 6) {
+        onThisDayScrollOffset += e.deltaY > 0 ? 1 : -1
+        onThisDayScrollOffset = Math.max(0, Math.min(onThisDayScrollOffset, onThisDayEvents.length - 6))
+      }
+      e.preventDefault()
+      return
+    }
     scrollOffset -= e.deltaY * 0.5
     scrollOffset = Math.min(0, scrollOffset)
     e.preventDefault()
@@ -1084,6 +1294,7 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
         enlargedIndex = r.index
         enlargeProgress = 0
         enlargeTarget = 1
+        onThisDayScrollOffset = 0
         setupEnlargedListeners()
         break
       }
@@ -1131,10 +1342,13 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
       enlargedIndex = -1
       enlargeProgress = 0
       enlargeTarget = 0
+      onThisDayScrollOffset = 0
       lastCheckedDate = new Date().toISOString().split('T')[0]
       loadRecord()
       recordVisit()
       initAudio()
+      // Fetch "on this day" events (non-blocking)
+      fetchOnThisDay().then((events) => { onThisDayEvents = events })
       render()
     },
 

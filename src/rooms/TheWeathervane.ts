@@ -4,16 +4,25 @@
  * Fetches real-time weather for your location via Open-Meteo API
  * and renders it as an abstract atmospheric visualization.
  *
- * Temperature → color warmth. Wind → particle movement.
- * Humidity → fog density. Cloud cover → darkness.
- * Rain → falling streaks. Snow → floating dots.
+ * Temperature -> color warmth (cold=blue, warm=amber).
+ * Wind -> particle movement + weathervane orientation.
+ * Weather code -> atmospheric effects (rain, snow, clouds, fog, lightning).
+ * Humidity -> fog density. Cloud cover -> darkness + cloud layers.
  *
  * INTERACTIVE: Move your cursor to create wind gusts that push
  * particles. A spinning weathervane at center responds to real
  * wind direction. Wind audio modulated by actual conditions.
  *
  * Uses Open-Meteo API (free, no key, CORS-friendly).
+ * Geolocation with short timeout, fallback to Berlin.
+ * 10-minute data cache across room switches.
  * Zero memory dependency.
+ *
+ * Navigation portals themed as compass directions and weather phenomena:
+ *   - seismograph (S): tremors beneath the wind
+ *   - radio (E): frequencies carried on the breeze
+ *   - glacarium (N): ice crystals on the northern horizon
+ *   - tidepool (W): rain collects westward
  *
  * Inspired by: weather stations, barometers, Olafur Eliasson's
  * Weather Project, James Turrell's skyspaces
@@ -41,14 +50,35 @@ interface Particle {
   vy: number
   size: number
   alpha: number
-  type: 'air' | 'rain' | 'snow'
+  type: 'air' | 'rain' | 'snow' | 'cloud' | 'lightning'
+  life?: number
+  maxLife?: number
 }
 
 interface WeathervaneDeps {
   switchTo?: (name: string) => void
 }
 
+interface PortalDef {
+  name: string
+  label: string
+  compassDir: string
+  icon: string
+  x: number
+  y: number
+  r: number
+  hovered: boolean
+  angle: number
+  windOffset: number
+}
+
 const API_BASE = 'https://api.open-meteo.com/v1/forecast'
+const CACHE_DURATION = 600_000 // 10 minutes
+const GEO_TIMEOUT = 3000 // short geolocation timeout
+
+// Module-level cache so data persists across room switches
+let cachedWeather: WeatherData | null = null
+let cacheTimestamp = 0
 
 export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
   let overlay: HTMLElement | null = null
@@ -62,7 +92,6 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
   let particles: Particle[] = []
   let loading = true
   let error = false
-  let lastFetch = 0
 
   // Mouse
   let mouseX = 0
@@ -75,35 +104,71 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
   // Weathervane animation
   let vaneAngle = 0
   let vaneTargetAngle = 0
+  let vaneOscillation = 0
 
   // Audio
   let audioCtx: AudioContext | null = null
   let windGain: GainNode | null = null
   let windFilter: BiquadFilterNode | null = null
 
+  // Lightning flash
+  let lightningAlpha = 0
+  let lightningTimer = 0
+
   // Navigation portals
-  const portals: { name: string; label: string; x: number; y: number; r: number; hovered: boolean }[] = []
+  const portals: PortalDef[] = []
 
   function buildPortals() {
     if (!canvas) return
     const w = canvas.width
     const h = canvas.height
+    const cx = w / 2
+    const cy = h / 2
+    const orbitalRadius = Math.min(w, h) * 0.38
+
     portals.length = 0
-    portals.push(
-      { name: 'seismograph', label: 'tremors beneath', x: w * 0.08, y: h * 0.85, r: 20, hovered: false },
-      { name: 'radio', label: 'a frequency drifts by', x: w * 0.92, y: h * 0.15, r: 15, hovered: false },
-      { name: 'glacarium', label: 'ice on the horizon', x: w * 0.92, y: h * 0.85, r: 18, hovered: false },
-      { name: 'tidepool', label: 'water collects below', x: w * 0.08, y: h * 0.15, r: 16, hovered: false },
-    )
+
+    // Portals placed at compass directions around the weathervane
+    // N = glacarium (ice on the northern horizon)
+    // E = radio (frequencies drift eastward)
+    // S = seismograph (tremors beneath, southward)
+    // W = tidepool (rain collects to the west)
+    const defs: Array<{ name: string; label: string; compassDir: string; icon: string; angleDeg: number }> = [
+      { name: 'glacarium', label: 'ice on the horizon', compassDir: 'N', icon: '***', angleDeg: 270 },
+      { name: 'radio', label: 'a frequency drifts by', compassDir: 'E', icon: '~))', angleDeg: 0 },
+      { name: 'seismograph', label: 'tremors beneath', compassDir: 'S', icon: '/\\/\\', angleDeg: 90 },
+      { name: 'tidepool', label: 'water collects below', compassDir: 'W', icon: '~~~', angleDeg: 180 },
+    ]
+
+    for (const d of defs) {
+      const rad = (d.angleDeg * Math.PI) / 180
+      portals.push({
+        name: d.name,
+        label: d.label,
+        compassDir: d.compassDir,
+        icon: d.icon,
+        x: cx + Math.cos(rad) * orbitalRadius,
+        y: cy + Math.sin(rad) * orbitalRadius,
+        r: 22,
+        hovered: false,
+        angle: rad,
+        windOffset: Math.random() * Math.PI * 2,
+      })
+    }
   }
 
   function tempToColor(temp: number): { r: number; g: number; b: number } {
-    if (temp < -10) return { r: 40, g: 60, b: 200 }
-    if (temp < 0) return { r: 40, g: 120, b: 200 }
-    if (temp < 10) return { r: 40, g: 180, b: 160 }
-    if (temp < 20) return { r: 100, g: 200, b: 80 }
-    if (temp < 30) return { r: 220, g: 180, b: 40 }
-    return { r: 220, g: 60, b: 40 }
+    // Cold -> blue/teal, warm -> amber/red
+    if (temp < -10) return { r: 30, g: 50, b: 210 }
+    if (temp < 0) return { r: 40, g: 110, b: 210 }
+    if (temp < 5) return { r: 50, g: 150, b: 190 }
+    if (temp < 10) return { r: 60, g: 180, b: 150 }
+    if (temp < 15) return { r: 90, g: 200, b: 100 }
+    if (temp < 20) return { r: 160, g: 200, b: 60 }
+    if (temp < 25) return { r: 210, g: 180, b: 40 }
+    if (temp < 30) return { r: 220, g: 140, b: 30 }
+    if (temp < 35) return { r: 230, g: 80, b: 30 }
+    return { r: 230, g: 50, b: 30 }
   }
 
   function weatherCodeToText(code: number): string {
@@ -112,7 +177,9 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
       1: 'mainly clear', 2: 'partly cloudy', 3: 'overcast',
       45: 'fog', 48: 'depositing rime fog',
       51: 'light drizzle', 53: 'moderate drizzle', 55: 'dense drizzle',
+      56: 'light freezing drizzle', 57: 'dense freezing drizzle',
       61: 'slight rain', 63: 'moderate rain', 65: 'heavy rain',
+      66: 'light freezing rain', 67: 'heavy freezing rain',
       71: 'slight snow', 73: 'moderate snow', 75: 'heavy snow',
       77: 'snow grains',
       80: 'slight showers', 81: 'moderate showers', 82: 'violent showers',
@@ -123,34 +190,67 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     return codes[code] || 'unknown'
   }
 
+  function weatherCodeCategory(code: number): 'clear' | 'cloudy' | 'fog' | 'drizzle' | 'rain' | 'snow' | 'storm' {
+    if (code === 0 || code === 1) return 'clear'
+    if (code <= 3) return 'cloudy'
+    if (code <= 48) return 'fog'
+    if (code <= 57) return 'drizzle'
+    if (code <= 67) return 'rain'
+    if (code <= 86) return 'snow'
+    return 'storm'
+  }
+
   function directionName(deg: number): string {
     const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
     return dirs[Math.round(deg / 45) % 8]
   }
 
   async function fetchWeather() {
+    // Check module-level cache first
+    if (cachedWeather && (Date.now() - cacheTimestamp) < CACHE_DURATION) {
+      weather = cachedWeather
+      vaneTargetAngle = (weather.windDirection * Math.PI) / 180
+      initParticles()
+      updateAudio()
+      loading = false
+      return
+    }
+
     loading = true
     error = false
 
-    let lat = 48.8566
-    let lon = 2.3522
-    let locationName = 'paris'
+    // Default: Berlin
+    let lat = 52.52
+    let lon = 13.41
+    let locationName = 'berlin'
 
-    try {
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-      })
-      lat = pos.coords.latitude
-      lon = pos.coords.longitude
-      locationName = `${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E`
-    } catch {
-      // Use default
+    // Try geolocation with a short timeout
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            timeout: GEO_TIMEOUT,
+            maximumAge: CACHE_DURATION,
+            enableHighAccuracy: false,
+          })
+        })
+        lat = pos.coords.latitude
+        lon = pos.coords.longitude
+        // Format as human-readable coordinates
+        const latDir = lat >= 0 ? 'N' : 'S'
+        const lonDir = lon >= 0 ? 'E' : 'W'
+        locationName = `${Math.abs(lat).toFixed(2)}\u00b0${latDir}, ${Math.abs(lon).toFixed(2)}\u00b0${lonDir}`
+      } catch {
+        // Geolocation unavailable or denied — use Berlin default
+      }
     }
 
     try {
-      const url = `${API_BASE}?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,cloud_cover,rain,snowfall,weather_code,is_day`
+      const url = `${API_BASE}?latitude=${lat}&longitude=${lon}` +
+        `&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,cloud_cover,rain,snowfall,is_day` +
+        `&timezone=auto`
       const resp = await fetch(url)
-      if (!resp.ok) throw new Error('fetch failed')
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const data = await resp.json()
       const c = data.current
 
@@ -167,14 +267,23 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
         location: locationName,
       }
 
+      // Update module-level cache
+      cachedWeather = weather
+      cacheTimestamp = Date.now()
+
       vaneTargetAngle = (weather.windDirection * Math.PI) / 180
       initParticles()
       updateAudio()
       loading = false
-      lastFetch = Date.now()
     } catch {
       error = true
       loading = false
+      // If we had stale cache data, use it as fallback
+      if (cachedWeather) {
+        weather = cachedWeather
+        vaneTargetAngle = (weather.windDirection * Math.PI) / 180
+        initParticles()
+      }
     }
   }
 
@@ -183,12 +292,12 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     try {
       audioCtx = new AudioContext()
 
-      // Wind noise
+      // Wind noise via looped noise buffer
       const bufferSize = audioCtx.sampleRate * 2
       const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
-      const data = noiseBuffer.getChannelData(0)
+      const buf = noiseBuffer.getChannelData(0)
       for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * 0.4
+        buf[i] = (Math.random() * 2 - 1) * 0.4
       }
       const noise = audioCtx.createBufferSource()
       noise.buffer = noiseBuffer
@@ -215,10 +324,8 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
 
   function updateAudio() {
     if (!windGain || !audioCtx || !weather || !windFilter) return
-    // Modulate wind volume by speed (0-50 km/h → 0.01-0.06)
     const vol = 0.01 + Math.min(weather.windSpeed / 50, 1) * 0.05
     windGain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 1)
-    // Modulate filter frequency by temperature
     const freq = 150 + Math.max(0, weather.temperature) * 10
     windFilter.frequency.linearRampToValueAtTime(freq, audioCtx.currentTime + 1)
   }
@@ -229,35 +336,41 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     const h = canvas.height
     particles = []
 
-    const airCount = 100 + Math.floor(weather.windSpeed * 3)
+    // Air particles — more with higher wind speed
+    const airCount = 80 + Math.floor(weather.windSpeed * 3)
     for (let i = 0; i < airCount; i++) {
       particles.push({
         x: Math.random() * w,
         y: Math.random() * h,
         vx: 0, vy: 0,
         size: 1 + Math.random() * 2,
-        alpha: 0.05 + Math.random() * 0.1,
+        alpha: 0.04 + Math.random() * 0.08,
         type: 'air',
       })
     }
 
-    if (weather.rain > 0) {
-      const rainCount = Math.floor(weather.rain * 50)
-      for (let i = 0; i < Math.min(rainCount, 300); i++) {
+    // Rain particles based on rain amount
+    const category = weatherCodeCategory(weather.weatherCode)
+    if (weather.rain > 0 || category === 'rain' || category === 'drizzle') {
+      const rainAmount = Math.max(weather.rain, category === 'drizzle' ? 0.5 : 1)
+      const rainCount = Math.floor(rainAmount * 60)
+      for (let i = 0; i < Math.min(rainCount, 400); i++) {
         particles.push({
           x: Math.random() * w,
           y: Math.random() * h,
           vx: 0, vy: 0,
-          size: 1,
-          alpha: 0.3 + Math.random() * 0.3,
+          size: category === 'drizzle' ? 0.5 : 1,
+          alpha: 0.2 + Math.random() * 0.3,
           type: 'rain',
         })
       }
     }
 
-    if (weather.snowfall > 0) {
-      const snowCount = Math.floor(weather.snowfall * 100)
-      for (let i = 0; i < Math.min(snowCount, 200); i++) {
+    // Snow particles
+    if (weather.snowfall > 0 || category === 'snow') {
+      const snowAmount = Math.max(weather.snowfall, 0.5)
+      const snowCount = Math.floor(snowAmount * 100)
+      for (let i = 0; i < Math.min(snowCount, 250); i++) {
         particles.push({
           x: Math.random() * w,
           y: Math.random() * h,
@@ -265,6 +378,21 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
           size: 2 + Math.random() * 3,
           alpha: 0.3 + Math.random() * 0.4,
           type: 'snow',
+        })
+      }
+    }
+
+    // Cloud puffs when overcast or cloudy
+    if (weather.cloudCover > 30) {
+      const cloudCount = Math.floor((weather.cloudCover / 100) * 25)
+      for (let i = 0; i < cloudCount; i++) {
+        particles.push({
+          x: Math.random() * w,
+          y: Math.random() * h * 0.5, // upper half
+          vx: 0, vy: 0,
+          size: 30 + Math.random() * 60,
+          alpha: 0.02 + (weather.cloudCover / 100) * 0.04,
+          type: 'cloud',
         })
       }
     }
@@ -280,9 +408,9 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     mouseVX = (mouseX - prevMouseX) * 0.3
     mouseVY = (mouseY - prevMouseY) * 0.3
 
-    // Portal hover
+    // Portal hover detection
     for (const p of portals) {
-      p.hovered = Math.hypot(mouseX - p.x, mouseY - p.y) < p.r + 10
+      p.hovered = Math.hypot(mouseX - p.x, mouseY - p.y) < p.r + 12
     }
 
     if (canvas) {
@@ -300,85 +428,223 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
   }
 
   function drawWeathervane(c: CanvasRenderingContext2D, cx: number, cy: number) {
-    // Smoothly rotate toward target angle
+    // Smoothly rotate toward target wind direction
     let diff = vaneTargetAngle - vaneAngle
     while (diff > Math.PI) diff -= Math.PI * 2
     while (diff < -Math.PI) diff += Math.PI * 2
     vaneAngle += diff * 0.02
 
-    // Add cursor wind influence
+    // Wind-speed-dependent oscillation (gusty in high wind)
+    const gustiness = weather ? Math.min(weather.windSpeed / 30, 1) : 0
+    vaneOscillation += 0.03 + gustiness * 0.05
+    const wobble = Math.sin(vaneOscillation) * gustiness * 0.08
+    const renderAngle = vaneAngle + wobble
+
+    // Cursor wind influence
     const cursorInfluence = Math.atan2(mouseVY, mouseVX)
     const cursorStrength = Math.min(Math.hypot(mouseVX, mouseVY) * 0.01, 0.1)
-    vaneAngle += Math.sin(cursorInfluence - vaneAngle) * cursorStrength
+    const finalAngle = renderAngle + Math.sin(cursorInfluence - renderAngle) * cursorStrength
 
     const color = weather ? tempToColor(weather.temperature) : { r: 140, g: 160, b: 200 }
-    const alpha = 0.12
+    const alpha = 0.14
 
     c.save()
     c.translate(cx, cy)
 
-    // Outer circle
-    c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.5})`
+    // Outer ring with tick marks
+    c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.4})`
     c.lineWidth = 1
     c.beginPath()
-    c.arc(0, 0, 60, 0, Math.PI * 2)
+    c.arc(0, 0, 65, 0, Math.PI * 2)
     c.stroke()
 
-    // Cardinal points
-    c.font = '9px monospace'
+    // Inner ring
+    c.beginPath()
+    c.arc(0, 0, 55, 0, Math.PI * 2)
+    c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.2})`
+    c.stroke()
+
+    // Tick marks around circle
+    for (let i = 0; i < 32; i++) {
+      const a = (i / 32) * Math.PI * 2
+      const isCardinal = i % 8 === 0
+      const isMajor = i % 4 === 0
+      const innerR = isCardinal ? 55 : isMajor ? 58 : 61
+      const outerR = 65
+      c.beginPath()
+      c.moveTo(Math.cos(a) * innerR, Math.sin(a) * innerR)
+      c.lineTo(Math.cos(a) * outerR, Math.sin(a) * outerR)
+      c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${isCardinal ? alpha * 0.6 : alpha * 0.3})`
+      c.lineWidth = isCardinal ? 1.5 : 0.5
+      c.stroke()
+    }
+
+    // Cardinal labels
+    c.font = '10px monospace'
     c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.8})`
     c.textAlign = 'center'
     c.textBaseline = 'middle'
-    c.fillText('N', 0, -72)
-    c.fillText('S', 0, 72)
-    c.fillText('E', 72, 0)
-    c.fillText('W', -72, 0)
+    c.fillText('N', 0, -78)
+    c.fillText('S', 0, 78)
+    c.fillText('E', 78, 0)
+    c.fillText('W', -78, 0)
 
     // Vane arrow
     c.save()
-    c.rotate(vaneAngle)
+    c.rotate(finalAngle)
 
     // Arrow body
     c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`
     c.lineWidth = 2
     c.beginPath()
-    c.moveTo(0, 40)
-    c.lineTo(0, -40)
+    c.moveTo(0, 42)
+    c.lineTo(0, -42)
     c.stroke()
 
-    // Arrow head
+    // Arrow head (points into wind direction)
     c.beginPath()
-    c.moveTo(0, -45)
-    c.lineTo(-6, -35)
-    c.lineTo(6, -35)
+    c.moveTo(0, -48)
+    c.lineTo(-7, -36)
+    c.lineTo(7, -36)
     c.closePath()
     c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`
     c.fill()
 
-    // Arrow tail (wider)
+    // Arrow tail (wider, opposite direction)
     c.beginPath()
-    c.moveTo(-8, 35)
-    c.lineTo(8, 35)
-    c.lineTo(0, 45)
+    c.moveTo(-9, 36)
+    c.lineTo(9, 36)
+    c.lineTo(0, 48)
     c.closePath()
-    c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.6})`
+    c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.5})`
     c.fill()
 
     c.restore()
 
     // Center dot
-    c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`
+    c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.8})`
     c.beginPath()
     c.arc(0, 0, 3, 0, Math.PI * 2)
     c.fill()
 
+    // Wind speed arc indicator (shows speed as arc length)
+    if (weather) {
+      const speedFrac = Math.min(weather.windSpeed / 60, 1)
+      const arcLen = speedFrac * Math.PI * 1.5
+      c.beginPath()
+      c.arc(0, 0, 70, -Math.PI / 2, -Math.PI / 2 + arcLen)
+      c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.5})`
+      c.lineWidth = 2
+      c.stroke()
+    }
+
     c.restore()
+  }
+
+  function drawPortal(c: CanvasRenderingContext2D, p: PortalDef, color: { r: number; g: number; b: number }) {
+    const pulse = Math.sin(time * 1.5 + p.windOffset) * 0.3 + 0.7
+    const windPush = weather ? Math.sin(time * 0.8 + p.windOffset) * (weather.windSpeed / 80) * 5 : 0
+    const drawX = p.x + windPush * Math.cos(p.angle + Math.PI / 2)
+    const drawY = p.y + windPush * Math.sin(p.angle + Math.PI / 2)
+    const r = p.r * (p.hovered ? 1.3 : 1)
+    const alpha = p.hovered ? 0.4 : 0.08 * pulse
+
+    c.save()
+    c.translate(drawX, drawY)
+
+    // Outer glow when hovered
+    if (p.hovered) {
+      const grad = c.createRadialGradient(0, 0, r * 0.3, 0, 0, r * 2)
+      grad.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0.1)`)
+      grad.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`)
+      c.fillStyle = grad
+      c.beginPath()
+      c.arc(0, 0, r * 2, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // Portal circle
+    c.beginPath()
+    c.arc(0, 0, r, 0, Math.PI * 2)
+    c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.25})`
+    c.fill()
+    c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`
+    c.lineWidth = 1
+    c.stroke()
+
+    // Compass direction letter inside portal
+    c.font = 'bold 11px monospace'
+    c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${p.hovered ? 0.6 : alpha * 1.2})`
+    c.textAlign = 'center'
+    c.textBaseline = 'middle'
+    c.fillText(p.compassDir, 0, 0)
+
+    // Weather-themed icon below compass letter
+    c.font = '7px monospace'
+    c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${p.hovered ? 0.4 : alpha * 0.7})`
+    c.fillText(p.icon, 0, 10)
+
+    // Label on hover
+    if (p.hovered) {
+      c.font = '11px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`
+      c.textAlign = 'center'
+      c.fillText(p.label, 0, r + 18)
+
+      // Room name in smaller text
+      c.font = '8px monospace'
+      c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.35)`
+      c.fillText(`\u2192 the ${p.name}`, 0, r + 30)
+    }
+
+    c.restore()
+  }
+
+  function drawCloudLayer(c: CanvasRenderingContext2D, w: number, _h: number) {
+    if (!weather || weather.cloudCover < 20) return
+
+    const coverFrac = weather.cloudCover / 100
+    const layerAlpha = coverFrac * 0.06
+    const color = weather.isDay
+      ? { r: 120, g: 130, b: 150 }
+      : { r: 40, g: 45, b: 60 }
+
+    // Draw drifting cloud bands across top portion
+    for (let i = 0; i < 3; i++) {
+      const y = 30 + i * 40 + Math.sin(time * 0.15 + i * 2) * 20
+      const xOff = (time * (8 + i * 3) + i * w * 0.3) % (w + 200) - 100
+      const bw = 200 + i * 80
+
+      const grad = c.createRadialGradient(xOff, y, 0, xOff, y, bw)
+      grad.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, ${layerAlpha})`)
+      grad.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`)
+      c.fillStyle = grad
+      c.fillRect(0, 0, w, _h * 0.4)
+    }
+  }
+
+  function updateLightning(dt: number) {
+    if (!weather) return
+    const category = weatherCodeCategory(weather.weatherCode)
+    if (category !== 'storm') {
+      lightningAlpha = 0
+      return
+    }
+
+    lightningTimer -= dt
+    if (lightningTimer <= 0) {
+      // Random lightning flash
+      lightningAlpha = 0.15 + Math.random() * 0.15
+      lightningTimer = 3 + Math.random() * 8 // 3-11 seconds between flashes
+    }
+    lightningAlpha *= 0.9 // quick decay
   }
 
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
-    time += 0.016
+    const dt = 0.016
+    time += dt
 
     const w = canvas.width
     const h = canvas.height
@@ -388,25 +654,48 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     mouseVX *= 0.95
     mouseVY *= 0.95
 
-    // Background
+    // Update lightning
+    updateLightning(dt)
+
+    // Background — temperature-tinted
     if (weather) {
       const color = tempToColor(weather.temperature)
-      const r = Math.floor(color.r * 0.03 + (weather.isDay ? 5 : 2))
-      const g = Math.floor(color.g * 0.03 + (weather.isDay ? 5 : 2))
-      const b = Math.floor(color.b * 0.03 + (weather.isDay ? 8 : 5))
+      const dayMul = weather.isDay ? 1 : 0.4
+      const r = Math.floor(color.r * 0.03 * dayMul + (weather.isDay ? 5 : 2))
+      const g = Math.floor(color.g * 0.03 * dayMul + (weather.isDay ? 5 : 2))
+      const b = Math.floor(color.b * 0.03 * dayMul + (weather.isDay ? 8 : 5))
       c.fillStyle = `rgb(${r}, ${g}, ${b})`
     } else {
-      c.fillStyle = 'rgba(5, 5, 10, 1)'
+      c.fillStyle = 'rgb(5, 5, 10)'
     }
     c.fillRect(0, 0, w, h)
 
     if (weather) {
-      // Fog overlay
-      if (weather.humidity > 70) {
-        const fogAlpha = (weather.humidity - 70) / 30 * 0.15
-        c.fillStyle = `rgba(80, 80, 90, ${fogAlpha})`
+      // Lightning flash overlay
+      if (lightningAlpha > 0.01) {
+        c.fillStyle = `rgba(200, 210, 255, ${lightningAlpha})`
         c.fillRect(0, 0, w, h)
       }
+
+      // Fog overlay
+      if (weather.humidity > 70 || weatherCodeCategory(weather.weatherCode) === 'fog') {
+        const fogBase = weatherCodeCategory(weather.weatherCode) === 'fog' ? 0.12 : 0
+        const humidFog = Math.max(0, (weather.humidity - 70) / 30) * 0.1
+        const fogAlpha = fogBase + humidFog
+        // Animated fog layers
+        for (let layer = 0; layer < 2; layer++) {
+          const yOff = Math.sin(time * 0.1 + layer * 3) * 30
+          const grad = c.createLinearGradient(0, h * 0.3 + yOff, 0, h)
+          grad.addColorStop(0, `rgba(80, 85, 95, 0)`)
+          grad.addColorStop(0.5, `rgba(80, 85, 95, ${fogAlpha * 0.5})`)
+          grad.addColorStop(1, `rgba(80, 85, 95, ${fogAlpha})`)
+          c.fillStyle = grad
+          c.fillRect(0, 0, w, h)
+        }
+      }
+
+      // Cloud layer
+      drawCloudLayer(c, w, h)
 
       const windRad = (weather.windDirection * Math.PI) / 180
       const windForce = weather.windSpeed / 50
@@ -415,7 +704,9 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
       const gustRadius = 150
 
       // Update and draw particles
-      for (const p of particles) {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i]
+
         // Cursor wind influence
         const dx = p.x - mouseX
         const dy = p.y - mouseY
@@ -426,33 +717,56 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
           p.vy += mouseVY * force
         }
 
+        // Lightning particles: limited lifespan
+        if (p.type === 'lightning') {
+          p.life = (p.life || 0) + dt
+          if (p.life > (p.maxLife || 0.5)) {
+            particles.splice(i, 1)
+            continue
+          }
+          p.alpha = (1 - p.life / (p.maxLife || 0.5)) * 0.6
+          p.vy += 1
+          p.vx *= 0.98
+        }
+
         switch (p.type) {
           case 'air':
-            p.vx += Math.sin(windRad) * windForce * 0.1
-            p.vy += Math.cos(windRad) * windForce * 0.05
+            p.vx += Math.sin(windRad) * windForce * 0.12
+            p.vy += Math.cos(windRad) * windForce * 0.06
             p.vx += (Math.random() - 0.5) * 0.1
             p.vy += (Math.random() - 0.5) * 0.1
             p.vx *= 0.98
             p.vy *= 0.98
             break
           case 'rain':
-            p.vx = Math.sin(windRad) * windForce * 2 + mouseVX * 0.1
-            p.vy = 4 + weather.rain * 2
+            p.vx = Math.sin(windRad) * windForce * 2 + mouseVX * 0.08
+            p.vy = 3.5 + weather.rain * 2 + windForce * 0.5
             break
           case 'snow':
-            p.vx = Math.sin(windRad) * windForce + Math.sin(time * 2 + p.x * 0.01) * 0.5
-            p.vy = 0.5 + weather.snowfall * 0.3
+            p.vx = Math.sin(windRad) * windForce * 0.8 + Math.sin(time * 1.5 + p.x * 0.01) * 0.4
+            p.vy = 0.4 + weather.snowfall * 0.3
+            break
+          case 'cloud':
+            p.vx = Math.sin(windRad) * windForce * 0.3 + 0.1
+            p.vy = Math.sin(time * 0.2 + p.x * 0.005) * 0.05
+            break
+          case 'lightning':
+            // already handled above
             break
         }
 
         p.x += p.vx
         p.y += p.vy
 
-        if (p.x < 0) p.x += w
-        if (p.x > w) p.x -= w
-        if (p.y > h) p.y = -5
-        if (p.y < -10) p.y = h
+        // Wrap around
+        if (p.type !== 'lightning') {
+          if (p.x < -p.size) p.x += w + p.size * 2
+          if (p.x > w + p.size) p.x -= w + p.size * 2
+          if (p.y > h + p.size) p.y = -p.size
+          if (p.y < -p.size * 2) p.y = h
+        }
 
+        // Draw
         const color = tempToColor(weather.temperature)
         switch (p.type) {
           case 'air':
@@ -463,14 +777,31 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
             break
           case 'rain':
             c.strokeStyle = `rgba(140, 160, 220, ${p.alpha})`
-            c.lineWidth = 1
+            c.lineWidth = p.size
             c.beginPath()
             c.moveTo(p.x, p.y)
             c.lineTo(p.x + p.vx * 2, p.y + p.vy * 2)
             c.stroke()
             break
           case 'snow':
-            c.fillStyle = `rgba(220, 220, 240, ${p.alpha})`
+            c.fillStyle = `rgba(220, 225, 240, ${p.alpha})`
+            c.beginPath()
+            c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+            c.fill()
+            break
+          case 'cloud': {
+            const grad = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size)
+            const cCol = weather.isDay ? '140,145,160' : '50,55,65'
+            grad.addColorStop(0, `rgba(${cCol}, ${p.alpha})`)
+            grad.addColorStop(1, `rgba(${cCol}, 0)`)
+            c.fillStyle = grad
+            c.beginPath()
+            c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+            c.fill()
+            break
+          }
+          case 'lightning':
+            c.fillStyle = `rgba(200, 210, 255, ${p.alpha})`
             c.beginPath()
             c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
             c.fill()
@@ -478,73 +809,83 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
         }
       }
 
+      // Spawn lightning sparks during flash
+      if (lightningAlpha > 0.05 && particles.length < 800) {
+        const boltX = w * 0.2 + Math.random() * w * 0.6
+        for (let s = 0; s < 5; s++) {
+          particles.push({
+            x: boltX + (Math.random() - 0.5) * 30,
+            y: Math.random() * h * 0.4,
+            vx: (Math.random() - 0.5) * 3,
+            vy: 2 + Math.random() * 4,
+            size: 1 + Math.random() * 2,
+            alpha: 0.6,
+            type: 'lightning',
+            life: 0,
+            maxLife: 0.3 + Math.random() * 0.4,
+          })
+        }
+      }
+
       // Draw weathervane in center
       drawWeathervane(c, w / 2, h / 2)
 
-      // Temperature display
+      // Temperature display — large ghostly number
       const color = tempToColor(weather.temperature)
       c.font = '80px monospace'
       c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.06)`
       c.textAlign = 'center'
-      c.fillText(`${weather.temperature.toFixed(1)}°`, w / 2, h * 0.3)
+      c.textBaseline = 'middle'
+      c.fillText(`${weather.temperature.toFixed(1)}\u00b0`, w / 2, h * 0.25)
 
       // Weather description
       c.font = '16px "Cormorant Garamond", serif'
-      c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.12)`
-      c.fillText(weatherCodeToText(weather.weatherCode), w / 2, h * 0.72)
+      c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.13)`
+      c.textAlign = 'center'
+      c.textBaseline = 'alphabetic'
+      c.fillText(weatherCodeToText(weather.weatherCode), w / 2, h * 0.73)
 
-      // Details
+      // Data readout — bottom left
       c.font = '10px monospace'
-      c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.08)`
+      c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.09)`
       c.textAlign = 'left'
-      c.fillText(`wind: ${weather.windSpeed.toFixed(0)} km/h ${directionName(weather.windDirection)}`, 20, h - 55)
-      c.fillText(`humidity: ${weather.humidity}%`, 20, h - 42)
-      c.fillText(`cloud cover: ${weather.cloudCover}%`, 20, h - 29)
+      c.textBaseline = 'alphabetic'
+      c.fillText(`wind ${weather.windSpeed.toFixed(0)} km/h ${directionName(weather.windDirection)}`, 20, h - 58)
+      c.fillText(`humidity ${weather.humidity}%`, 20, h - 44)
+      c.fillText(`cloud cover ${weather.cloudCover}%`, 20, h - 30)
 
-      if (weather.rain > 0) c.fillText(`rain: ${weather.rain} mm`, 20, h - 16)
-      if (weather.snowfall > 0) c.fillText(`snow: ${weather.snowfall} cm`, 20, h - 16)
+      if (weather.rain > 0) c.fillText(`rain ${weather.rain} mm`, 20, h - 16)
+      else if (weather.snowfall > 0) c.fillText(`snow ${weather.snowfall} cm`, 20, h - 16)
 
+      // Location and meta — bottom right
       c.textAlign = 'right'
-      c.fillText(weather.location, w - 20, h - 42)
-      c.fillText(weather.isDay ? 'day' : 'night', w - 20, h - 29)
+      c.fillText(weather.location, w - 20, h - 44)
+      c.fillText(weather.isDay ? 'day' : 'night', w - 20, h - 30)
 
-      const mins = Math.floor((Date.now() - lastFetch) / 60000)
-      c.fillText(`updated ${mins}m ago`, w - 20, h - 16)
+      const elapsed = Date.now() - cacheTimestamp
+      const mins = Math.floor(elapsed / 60000)
+      c.fillText(mins < 1 ? 'just updated' : `updated ${mins}m ago`, w - 20, h - 16)
     }
 
     // Navigation portals
+    const portalColor = weather ? tempToColor(weather.temperature) : { r: 140, g: 160, b: 200 }
     for (const p of portals) {
-      const pulse = Math.sin(time * 1.5 + p.x * 0.01) * 0.3 + 0.5
-      const alpha = p.hovered ? 0.35 : 0.06 * pulse
-      const color = weather ? tempToColor(weather.temperature) : { r: 140, g: 160, b: 200 }
-
-      c.beginPath()
-      c.arc(p.x, p.y, p.r * (p.hovered ? 1.2 : 1), 0, Math.PI * 2)
-      c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.3})`
-      c.fill()
-      c.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`
-      c.lineWidth = 1
-      c.stroke()
-
-      if (p.hovered) {
-        c.font = '9px "Cormorant Garamond", serif'
-        c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.5)`
-        c.textAlign = 'center'
-        c.fillText(p.label, p.x, p.y + p.r + 14)
-      }
+      drawPortal(c, p, portalColor)
     }
 
-    // Loading/error
+    // Loading / error states
     if (loading) {
       c.font = '14px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(120, 140, 180, 0.15)'
       c.textAlign = 'center'
+      c.textBaseline = 'middle'
       c.fillText('sensing the weather...', w / 2, h / 2)
     }
     if (error && !weather) {
       c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 100, 80, 0.15)'
       c.textAlign = 'center'
+      c.textBaseline = 'middle'
       c.fillText('the sky is unreachable.', w / 2, h / 2)
     }
 
@@ -552,6 +893,7 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     c.font = '10px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 160, 200, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
+    c.textBaseline = 'alphabetic'
     c.fillText('the weathervane', w / 2, 25)
 
     // Hint
@@ -560,8 +902,8 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     c.textAlign = 'center'
     c.fillText('move to stir the wind', w / 2, 40)
 
-    // Refresh every 10 minutes
-    if (Date.now() - lastFetch > 600000 && !loading) {
+    // Auto-refresh when cache expires
+    if ((Date.now() - cacheTimestamp) > CACHE_DURATION && !loading) {
       fetchWeather()
     }
   }
