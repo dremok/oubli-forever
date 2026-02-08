@@ -79,6 +79,7 @@ import { VoidWhisper } from './voice/VoidWhisper'
 import { AmbientTextures } from './sound/AmbientTextures'
 import { TimeCapsule } from './memory/TimeCapsule'
 import { HouseWeather } from './atmosphere/HouseWeather'
+import { RoomAmbience } from './sound/RoomAmbience'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -536,6 +537,9 @@ heatmap.setRoomCheck(getRoomName)
 voice.setRoomCheck(getRoomName)
 resonance.setRoomCheck(getRoomName)
 
+// Room Ambience — each room has its own atmosphere
+const roomAmbience = new RoomAmbience()
+
 // House Weather — ambient cross-room influence
 const houseWeather = new HouseWeather()
 houseWeather.setDegradationSource(() => {
@@ -547,6 +551,7 @@ houseWeather.setDegradationSource(() => {
 // Room change: toggle void-only text overlays
 roomManager.onRoomChange((room) => {
   houseWeather.setRoom(room)
+  roomAmbience.setRoom(room)
   const inVoid = room === 'void'
   // Whispers pause/resume
   if (inVoid) whispers.resume(); else whispers.pause()
