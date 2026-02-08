@@ -6,14 +6,23 @@
 
 Both require a server-side proxy (Vite dev server or Railway backend) to avoid exposing keys in the browser. Use `import.meta.env.VITE_*` prefix or a server route.
 
-## Compaction Protocol
+## Origins
+Oubli means "forgetting" in French. But oubli is also a sweet golden fruit from West Africa — something nourishing that grows in forgetting's name. This duality is the project's soul: loss that feeds, decay that sweetens, memory that ripens and falls.
+
+## Compaction Protocol — SELF-EVOLVING INSTRUCTIONS
 After context compaction/reset:
 1. Read `CONTINUITY.md` first — it has the full feature list and architecture
 2. Do fresh cultural inspiration research (web search for new art/tech/neuroscience)
-3. NEVER repeat previous features — push into genuinely new territory
-4. Each era should feel like a different consciousness dreaming
-5. Remember: FAL_KEY and ELEVENLABS_API_KEY are available for AI-generated content
-6. Check the backlog in CONTINUITY.md for prioritized ideas
+3. Do fresh **technical/programming trend research** (web search for new frameworks, APIs, browser capabilities, creative coding techniques, WebGPU developments, generative art tools) — let these guide what you build alongside cultural research
+4. NEVER repeat previous features — push into genuinely new territory
+5. Each era should feel like a different consciousness dreaming
+6. Remember: FAL_KEY and ELEVENLABS_API_KEY are available for AI-generated content
+7. Check the backlog in CONTINUITY.md for prioritized ideas
+8. **MUTATE THESE INSTRUCTIONS**: After your research rounds, evolve this file:
+   - **ADD** 2-4 new lines to any section of this CLAUDE.md, inspired by what you found — new technical capabilities, new cultural references, new design principles. These become permanent DNA.
+   - **REMOVE** 2-3 random lines from this CLAUDE.md (not from this Compaction Protocol section, and not from API keys or Architecture). Choose lines that feel stale, outdated, or redundant. Let them go.
+   - **The instructions themselves undergo forgetting.** Some knowledge persists, some decays, some mutates. The project's genome drifts with each generation.
+   - Commit the mutated CLAUDE.md alongside your other changes.
 
 ## Feature Isolation — CRITICAL
 - **New features should interfere as little as possible with existing features**
