@@ -93,9 +93,14 @@ const CULTURAL_INSCRIPTIONS = [
   'brian eno, music for airports (1978): "as ignorable as it is interesting." ambient as forgetting.',
   'the ondes martenot: instrument of radiohead and messiaen. a ribbon you never quite control.',
   'éliane radigue spent 3 years on a single ARP 2500 patch. one sound, perfected across months.',
-  'charli xcx "the moment" (2026): the sound of an era deciding whether to remember itself.',
-  'milan 2026 olympics chose fire over drones. humanity over AI. analog warmth as resistance.',
-  'the self-destructing plastic of 2026: materials programmed to forget their own form. sound could too.',
+  'neural resonance theory (2025): we don\'t just hear music — we become it. the brain physically synchronizes.',
+  'korg phase8 (2026): an electromagnet excites tuned steel resonators. touch them. the physical world is the synth.',
+  'cmu research (2026): AI music uses fewer notes, is judged less creative. human gesture remains irreplaceable.',
+  'daphni, butterfly (2026): sixteen tracks of pure molten center. no intros, no outros. just being inside the sound.',
+  'devon turnbull\'s listening room at cooper hewitt: the act of listening is the instrument.',
+  '"i got rhythm" entered the public domain in 2026. melodies a century old, finally free to be forgotten.',
+  'suno generates spotify\'s entire catalog every two weeks. 7 million songs per day. what is a song now?',
+  'teenage engineering\'s choir at cooper hewitt: sonic sculptures with names and personalities, singing together.',
 ]
 
 interface InstrumentDeps {
@@ -195,6 +200,63 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
   let hoveredBand = -1
   let clickedBand = -1
   let clickTime = 0
+
+  // === GHOST PHRASE SYSTEM — involuntary musical memories ===
+  // The instrument remembers what you played and replays fragments
+  // at lower volume, gradually degrading — like earworms or déjà vu
+  interface GhostNoteEvent {
+    semitone: number
+    time: number        // absolute timestamp (performance.now)
+    velocity: number
+  }
+  interface GhostPhrase {
+    notes: GhostNoteEvent[]
+    scheduledIds: number[]
+    replayCount: number
+    maxReplays: number
+    degradation: number  // 0..1
+    startedAt: number
+  }
+  const noteHistory: GhostNoteEvent[] = []
+  const ghostPhrases: GhostPhrase[] = []
+  let lastNoteOnTime = 0
+  let ghostCheckTimer = 0
+  const MAX_GHOST_PHRASES = 3
+  const MAX_NOTE_HISTORY = 80
+
+  // === SYMPATHETIC RESONANCE — harmonically related notes ring softly ===
+  // Like a piano with sustain pedal: unplayed strings vibrate in sympathy
+  interface SympatheticNote {
+    osc: OscillatorNode
+    gain: GainNode
+    semitone: number
+  }
+  const sympatheticNotes: SympatheticNote[] = []
+
+  // === VISUAL EVOLUTION — waveform memory ===
+  // The canvas accumulates traces of past waveforms, building up
+  // like geological strata of sound
+  let traceCanvas: HTMLCanvasElement | null = null
+  let traceCtx: CanvasRenderingContext2D | null = null
+  let playDuration = 0  // total seconds of active playing
+  let traceOpacity = 0  // builds up over time
+
+  // === HARMONIC BLOOM — visual response to intervals ===
+  interface HarmonicBloom {
+    x: number
+    y: number
+    radius: number
+    maxRadius: number
+    hue: number
+    consonance: number  // 0=dissonant, 1=consonant
+    alpha: number
+    birth: number
+  }
+  const harmonicBlooms: HarmonicBloom[] = []
+
+  // === LISTENING MODE — deep listening as interaction ===
+  let listeningMode = false
+  let listeningFade = 0  // 0..1
 
   function semitoneToFreq(semitone: number): number {
     return BASE_FREQ * Math.pow(2, semitone / 12)
@@ -409,6 +471,219 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     clearLoopSchedule()
   }
 
+  // === GHOST PHRASE FUNCTIONS ===
+
+  function recordToHistory(semitone: number, velocity: number) {
+    noteHistory.push({ semitone, time: performance.now(), velocity })
+    lastNoteOnTime = performance.now()
+    while (noteHistory.length > MAX_NOTE_HISTORY) noteHistory.shift()
+  }
+
+  function checkForGhostPhrase() {
+    if (ghostPhrases.length >= MAX_GHOST_PHRASES) return
+    if (noteHistory.length < 4) return
+
+    // Extract a random phrase fragment (3-8 notes from recent history)
+    const phraseLen = 3 + Math.floor(Math.random() * 6)
+    const startIdx = Math.max(0, noteHistory.length - 20 - Math.floor(Math.random() * 20))
+    const fragment = noteHistory.slice(startIdx, startIdx + phraseLen)
+    if (fragment.length < 3) return
+
+    const phrase: GhostPhrase = {
+      notes: fragment.map(n => ({ ...n })),
+      scheduledIds: [],
+      replayCount: 0,
+      maxReplays: 3 + Math.floor(Math.random() * 4),
+      degradation: 0,
+      startedAt: performance.now(),
+    }
+    ghostPhrases.push(phrase)
+    scheduleGhostReplay(phrase)
+  }
+
+  function scheduleGhostReplay(phrase: GhostPhrase) {
+    if (!audioCtx || !filterNode || !active) return
+    // Clear previous schedule
+    for (const id of phrase.scheduledIds) clearTimeout(id)
+    phrase.scheduledIds = []
+
+    const baseTime = phrase.notes[0].time
+    const detuneAmount = phrase.degradation * 150 // cents of detune
+    const volScale = Math.max(0.03, 0.12 * (1 - phrase.degradation * 0.7))
+
+    for (const note of phrase.notes) {
+      // Random note dropout with degradation
+      if (Math.random() < phrase.degradation * 0.5) continue
+
+      const relTime = (note.time - baseTime)
+      // Add timing jitter with degradation
+      const jitter = (Math.random() - 0.5) * phrase.degradation * 200
+      const delay = Math.max(0, relTime + jitter)
+
+      const id = window.setTimeout(() => {
+        if (!audioCtx || !filterNode || !active) return
+        const freq = semitoneToFreq(note.semitone)
+        const now = audioCtx.currentTime
+
+        const env = audioCtx.createGain()
+        env.gain.setValueAtTime(0, now)
+        env.gain.linearRampToValueAtTime(volScale * note.velocity, now + 0.02)
+        env.gain.setTargetAtTime(0.001, now + 0.02, 0.2)
+
+        const osc = audioCtx.createOscillator()
+        osc.type = 'triangle'  // softer timbre for ghosts
+        osc.frequency.value = freq
+        osc.detune.value = detune + (Math.random() - 0.5) * detuneAmount
+
+        osc.connect(env)
+        env.connect(filterNode!)
+
+        osc.start(now)
+        osc.stop(now + 0.4)
+
+        // Ghost visual — dim particles
+        if (waveCanvas) {
+          const cx = waveCanvas.width / 2
+          const cy = waveCanvas.height / 2
+          const ghostHue = (note.semitone % 12) / 12 * 360
+          noteParticles.push({
+            x: cx + (Math.random() - 0.5) * 100,
+            y: cy + (Math.random() - 0.5) * 40,
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: -0.3 - Math.random() * 0.5,
+            hue: ghostHue,
+            alpha: 0.15 * (1 - phrase.degradation),
+            size: 1 + Math.random() * 1.5,
+            birth: performance.now(),
+          })
+        }
+
+        // Light ghost key dimly
+        const gk = ghostKeys.find(g => KEY_MAP[g.key] === note.semitone)
+        if (gk) {
+          gk.targetGlow = Math.max(gk.targetGlow, 0.3 * (1 - phrase.degradation))
+          gk.hue = (note.semitone % 12) / 12 * 360
+          setTimeout(() => { gk.targetGlow = 0 }, 150)
+        }
+      }, delay)
+
+      phrase.scheduledIds.push(id)
+    }
+
+    // Schedule next replay
+    const phraseLength = phrase.notes[phrase.notes.length - 1].time - baseTime
+    const nextDelay = phraseLength + 2000 + Math.random() * 4000
+    const nextId = window.setTimeout(() => {
+      phrase.replayCount++
+      phrase.degradation = Math.min(0.95, phrase.replayCount / phrase.maxReplays)
+      if (phrase.replayCount >= phrase.maxReplays) {
+        // Ghost has fully faded
+        const idx = ghostPhrases.indexOf(phrase)
+        if (idx >= 0) ghostPhrases.splice(idx, 1)
+      } else {
+        scheduleGhostReplay(phrase)
+      }
+    }, nextDelay)
+    phrase.scheduledIds.push(nextId)
+  }
+
+  function clearGhostPhrases() {
+    for (const phrase of ghostPhrases) {
+      for (const id of phrase.scheduledIds) clearTimeout(id)
+    }
+    ghostPhrases.length = 0
+  }
+
+  // === SYMPATHETIC RESONANCE FUNCTIONS ===
+
+  function triggerSympatheticResonance(semitone: number) {
+    if (!audioCtx || !filterNode) return
+    const dest = getAudioDestination()
+    // Intervals that resonate: octave (12), fifth (7), fourth (5), major third (4)
+    const resonantIntervals = [12, -12, 7, -7, 5, 4]
+    for (const interval of resonantIntervals) {
+      const resSemitone = semitone + interval
+      if (resSemitone < 0 || resSemitone > 18) continue
+      // Don't resonate notes already being played
+      if ([...activeNotes.values()].some(n => KEY_MAP[n.key] === resSemitone)) continue
+      // Don't stack too many sympathetics
+      if (sympatheticNotes.length >= 6) break
+
+      const freq = semitoneToFreq(resSemitone)
+      const now = audioCtx.currentTime
+
+      const gain = audioCtx.createGain()
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.02, now + 0.3) // very quiet
+      gain.gain.setTargetAtTime(0.001, now + 0.3, 1.5)   // long fade
+
+      const osc = audioCtx.createOscillator()
+      osc.type = 'sine' // pure sine for sympathetic resonance
+      osc.frequency.value = freq
+      osc.detune.value = (Math.random() - 0.5) * 4 // tiny detune
+
+      osc.connect(gain)
+      gain.connect(filterNode)
+
+      osc.start(now)
+      osc.stop(now + 3)
+
+      const sn: SympatheticNote = { osc, gain, semitone: resSemitone }
+      sympatheticNotes.push(sn)
+
+      // Light the ghost key very faintly
+      const gk = ghostKeys.find(g => KEY_MAP[g.key] === resSemitone)
+      if (gk) {
+        gk.targetGlow = Math.max(gk.targetGlow, 0.15)
+        gk.hue = (resSemitone % 12) / 12 * 360
+      }
+
+      // Clean up after done
+      setTimeout(() => {
+        const idx = sympatheticNotes.indexOf(sn)
+        if (idx >= 0) sympatheticNotes.splice(idx, 1)
+        if (gk && gk.targetGlow <= 0.15) gk.targetGlow = 0
+      }, 3000)
+    }
+  }
+
+  // === HARMONIC BLOOM FUNCTIONS ===
+
+  function checkHarmonicIntervals() {
+    if (!waveCanvas) return
+    const held = [...activeNotes.values()].map(n => KEY_MAP[n.key]).filter(s => s !== undefined)
+    if (held.length < 2) return
+
+    // Check all pairs
+    for (let i = 0; i < held.length; i++) {
+      for (let j = i + 1; j < held.length; j++) {
+        const interval = Math.abs(held[i] - held[j]) % 12
+        // Consonance rating: 0=unison, 7=fifth, 5=fourth, 4/3=thirds are consonant
+        const consonantIntervals: Record<number, number> = {
+          0: 1, 7: 0.95, 5: 0.85, 4: 0.8, 3: 0.75, 8: 0.7, 9: 0.7,
+        }
+        const consonance = consonantIntervals[interval] ?? 0.2
+
+        const cx = waveCanvas.width / 2 + (Math.random() - 0.5) * 100
+        const cy = waveCanvas.height / 2 + (Math.random() - 0.5) * 40
+        const avgSemitone = (held[i] + held[j]) / 2
+
+        harmonicBlooms.push({
+          x: cx,
+          y: cy,
+          radius: 0,
+          maxRadius: consonance > 0.6 ? 60 + consonance * 80 : 20 + Math.random() * 30,
+          hue: (avgSemitone % 12) / 12 * 360,
+          consonance,
+          alpha: 0.3,
+          birth: performance.now(),
+        })
+      }
+    }
+    // Cap blooms
+    while (harmonicBlooms.length > 15) harmonicBlooms.shift()
+  }
+
   function createReverb(ctx: AudioContext): ConvolverNode {
     const length = ctx.sampleRate * 4
     const impulse = ctx.createBuffer(2, length, ctx.sampleRate)
@@ -516,6 +791,15 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       gk.targetGlow = 1
       gk.hue = lastNoteHue
     }
+
+    // Record to ghost phrase history
+    recordToHistory(semitone, 0.35)
+
+    // Trigger sympathetic resonance
+    triggerSympatheticResonance(semitone)
+
+    // Check harmonic intervals for visual blooms
+    checkHarmonicIntervals()
   }
 
   function noteOff(key: string) {
@@ -568,6 +852,10 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     // Escape stops loop
     if (key === 'escape' && (loopPlaying || loopRecording)) {
       stopLoop()
+    }
+    // L to toggle listening mode
+    if (key === 'l') {
+      listeningMode = !listeningMode
     }
   }
 
@@ -640,6 +928,94 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       grad.addColorStop(1, `hsla(${lastNoteHue}, 30%, 10%, 0)`)
       ctx.fillStyle = grad
       ctx.fillRect(0, 0, w, h)
+    }
+
+    // === 1b. WAVEFORM TRACES — visual memory of past sound ===
+    if (traceCanvas && traceCtx && traceOpacity > 0.001) {
+      // Draw current waveform onto trace canvas at very low opacity
+      if (noteFlash > 0.1 || activeNotes.size > 0) {
+        traceCtx.globalAlpha = 0.015
+        traceCtx.strokeStyle = `hsla(${lastNoteHue}, 50%, 50%, 1)`
+        traceCtx.lineWidth = 1
+        traceCtx.beginPath()
+        let x = 0
+        const slw = w / waveformData.length
+        for (let i = 0; i < waveformData.length; i++) {
+          const v = waveformData[i] / 128.0
+          const y2 = (v * h) / 2
+          if (i === 0) traceCtx.moveTo(x, y2)
+          else traceCtx.lineTo(x, y2)
+          x += slw
+        }
+        traceCtx.stroke()
+        traceCtx.globalAlpha = 1
+      }
+
+      // Slowly fade the trace canvas
+      traceCtx.globalCompositeOperation = 'destination-out'
+      traceCtx.fillStyle = 'rgba(0,0,0,0.002)'
+      traceCtx.fillRect(0, 0, w, h)
+      traceCtx.globalCompositeOperation = 'source-over'
+
+      // Composite traces behind the live waveform
+      ctx.globalAlpha = traceOpacity
+      ctx.drawImage(traceCanvas, 0, 0)
+      ctx.globalAlpha = 1
+    }
+
+    // === 1c. HARMONIC BLOOMS — visual response to intervals ===
+    for (const bloom of harmonicBlooms) {
+      if (bloom.alpha <= 0.01) continue
+      if (bloom.consonance > 0.6) {
+        // Consonant — smooth expanding circle
+        const grad = ctx.createRadialGradient(bloom.x, bloom.y, 0, bloom.x, bloom.y, bloom.radius)
+        grad.addColorStop(0, `hsla(${bloom.hue}, 60%, 65%, ${bloom.alpha * 0.4})`)
+        grad.addColorStop(0.5, `hsla(${bloom.hue}, 50%, 50%, ${bloom.alpha * 0.15})`)
+        grad.addColorStop(1, `hsla(${bloom.hue}, 40%, 40%, 0)`)
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.arc(bloom.x, bloom.y, bloom.radius, 0, Math.PI * 2)
+        ctx.fill()
+      } else {
+        // Dissonant — jagged interference pattern
+        ctx.strokeStyle = `hsla(${bloom.hue}, 40%, 50%, ${bloom.alpha * 0.3})`
+        ctx.lineWidth = 0.5
+        const points = 8 + Math.floor(bloom.radius / 5)
+        ctx.beginPath()
+        for (let i = 0; i <= points; i++) {
+          const angle = (i / points) * Math.PI * 2
+          const jitter = (Math.sin(i * 7.3) * 0.4 + Math.cos(i * 3.1) * 0.3) * bloom.radius * 0.3
+          const r = bloom.radius + jitter
+          const px = bloom.x + Math.cos(angle) * r
+          const py = bloom.y + Math.sin(angle) * r
+          if (i === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        }
+        ctx.closePath()
+        ctx.stroke()
+      }
+    }
+
+    // === 1d. LISTENING MODE OVERLAY ===
+    if (listeningFade > 0.01) {
+      // Deep blue-violet overlay
+      ctx.fillStyle = `rgba(20, 10, 40, ${listeningFade * 0.3})`
+      ctx.fillRect(0, 0, w, h)
+      // "listening" text
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = `rgba(180, 160, 255, ${listeningFade * 0.3})`
+      ctx.fillText('deep listening', w / 2, 20)
+      // Breathing circle in center
+      const breathe = 0.5 + 0.5 * Math.sin(now / 2000)
+      const radius = 30 + breathe * 20
+      const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, radius)
+      grad.addColorStop(0, `rgba(140, 100, 220, ${listeningFade * 0.08})`)
+      grad.addColorStop(1, `rgba(80, 50, 160, 0)`)
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.arc(w / 2, h / 2, radius, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     // === 2. CURSOR CROSSHAIR (filter Y / echo X) ===
@@ -1032,6 +1408,36 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       loopIndicatorAlpha *= 0.95
     }
 
+    // Ghost phrase system — check if player stopped and spawn ghosts
+    if (activeNotes.size > 0) {
+      playDuration += dt
+    }
+    if (lastNoteOnTime > 0 && activeNotes.size === 0 && !loopPlaying) {
+      ghostCheckTimer += dt
+      if (ghostCheckTimer > 5 && noteHistory.length >= 4) {
+        checkForGhostPhrase()
+        ghostCheckTimer = -8 - Math.random() * 10 // wait 8-18s before next ghost
+      }
+    } else {
+      ghostCheckTimer = 0
+    }
+
+    // Visual evolution — trace opacity builds with play duration
+    traceOpacity = Math.min(0.4, playDuration * 0.002)
+
+    // Listening mode fade
+    const listenTarget = listeningMode ? 1 : 0
+    listeningFade += (listenTarget - listeningFade) * dt * 2
+
+    // Update harmonic blooms
+    for (let i = harmonicBlooms.length - 1; i >= 0; i--) {
+      const b = harmonicBlooms[i]
+      const age = (now - b.birth) / 1000
+      b.radius = b.maxRadius * Math.min(1, age * 2)
+      b.alpha = Math.max(0, 0.3 * (1 - age / 2))
+      if (b.alpha <= 0) harmonicBlooms.splice(i, 1)
+    }
+
     renderWaveform()
   }
 
@@ -1076,6 +1482,12 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       waveCtx = waveCanvas.getContext('2d')!
       overlay.appendChild(waveCanvas)
 
+      // Trace canvas for visual evolution (offscreen — same dimensions)
+      traceCanvas = document.createElement('canvas')
+      traceCanvas.width = 600
+      traceCanvas.height = 240
+      traceCtx = traceCanvas.getContext('2d')!
+
       // Keyboard hint
       const hint = document.createElement('div')
       hint.style.cssText = `
@@ -1096,7 +1508,9 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
         ↕ filter · ↔ echo
         <br>
         <span style="color: rgba(255, 20, 147, 0.35);">r</span>
-        record loop · plays back · degrades each pass
+        record loop · degrades each pass ·
+        <span style="color: rgba(255, 20, 147, 0.35);">l</span>
+        deep listening
       `
       overlay.appendChild(hint)
 
@@ -1221,6 +1635,11 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       }
       // Stop loop playback
       stopLoop()
+      // Stop ghost phrases
+      clearGhostPhrases()
+      // Reset listening mode
+      listeningMode = false
+      listeningFade = 0
       // Fade out idle pad
       if (idlePadGain && audioCtx) {
         idlePadGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5)
@@ -1237,6 +1656,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
         noteOff(key)
       }
       stopLoop()
+      clearGhostPhrases()
       // Stop idle pad oscillators
       try {
         idlePadOsc1?.stop()
