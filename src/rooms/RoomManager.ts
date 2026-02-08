@@ -67,10 +67,10 @@ export class RoomManager {
     this.passageBar = document.createElement('div')
     this.passageBar.setAttribute('data-no-resonance', 'true')
     this.passageBar.style.cssText = `
-      position: fixed; bottom: 0; left: 0; width: 100%;
+      position: fixed; top: 0; left: 0; width: 100%;
       z-index: 700; pointer-events: auto;
       display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
-      gap: 2px 0; padding: 10px 20px 14px 20px;
+      gap: 2px 0; padding: 14px 20px 10px 20px;
       opacity: 0.18;
       transition: opacity 0.8s ease;
       font-family: 'Cormorant Garamond', serif;
