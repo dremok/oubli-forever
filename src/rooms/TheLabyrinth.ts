@@ -1404,6 +1404,399 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
   }
 
+  // ===== PROCEDURAL OBJECT RENDERING =====
+
+  /** Draw a wall object using Canvas2D procedural graphics instead of icons */
+  function drawRenderedObject(c: CanvasRenderingContext2D, name: string, size: number, t: number, wx: number, wy: number) {
+    const s = size // shorthand
+    const hash = cellHash2(wx + 5, wy + 11) // deterministic variation per object
+
+    switch (name) {
+      case 'candle': {
+        // A dripping candle with flickering flame
+        const flicker = Math.sin(t * 8 + hash * 20) * 0.3 + Math.sin(t * 13) * 0.15
+        // Flame glow
+        const glowGrad = c.createRadialGradient(0, -s * 0.4, 0, 0, -s * 0.4, s * 0.8)
+        glowGrad.addColorStop(0, `rgba(255, 180, 50, ${0.3 + flicker * 0.1})`)
+        glowGrad.addColorStop(1, 'rgba(255, 100, 20, 0)')
+        c.fillStyle = glowGrad
+        c.fillRect(-s, -s * 1.2, s * 2, s * 1.6)
+        // Candle body
+        c.fillStyle = `rgba(220, 200, 170, 0.8)`
+        c.fillRect(-s * 0.12, -s * 0.15, s * 0.24, s * 0.55)
+        // Wax drips
+        c.fillStyle = 'rgba(210, 190, 160, 0.6)'
+        c.beginPath()
+        c.ellipse(-s * 0.08, s * 0.08, s * 0.04, s * 0.12, 0, 0, Math.PI * 2)
+        c.fill()
+        // Wick
+        c.strokeStyle = 'rgba(80, 60, 40, 0.7)'
+        c.lineWidth = 1
+        c.beginPath()
+        c.moveTo(0, -s * 0.15)
+        c.lineTo(0, -s * 0.25)
+        c.stroke()
+        // Flame
+        c.fillStyle = `rgba(255, ${200 + flicker * 40}, ${80 + flicker * 60}, 0.9)`
+        c.beginPath()
+        c.moveTo(-s * 0.06, -s * 0.25)
+        c.quadraticCurveTo(-s * 0.08, -s * (0.5 + flicker * 0.1), 0, -s * (0.65 + flicker * 0.08))
+        c.quadraticCurveTo(s * 0.08, -s * (0.5 + flicker * 0.1), s * 0.06, -s * 0.25)
+        c.fill()
+        break
+      }
+
+      case 'eye_hole': {
+        // A realistic eye peering through the wall
+        const pupilDrift = Math.sin(t * 0.7 + hash * 10) * s * 0.04
+        // Dark socket
+        const socketGrad = c.createRadialGradient(0, 0, s * 0.05, 0, 0, s * 0.3)
+        socketGrad.addColorStop(0, 'rgba(20, 10, 30, 0.9)')
+        socketGrad.addColorStop(1, 'rgba(40, 25, 50, 0.3)')
+        c.fillStyle = socketGrad
+        c.beginPath()
+        c.ellipse(0, 0, s * 0.3, s * 0.2, 0, 0, Math.PI * 2)
+        c.fill()
+        // Eye white
+        c.fillStyle = 'rgba(200, 195, 180, 0.7)'
+        c.beginPath()
+        c.ellipse(0, 0, s * 0.18, s * 0.11, 0, 0, Math.PI * 2)
+        c.fill()
+        // Iris
+        const irisHue = hash > 0.5 ? 'rgba(60, 120, 80, 0.9)' : 'rgba(100, 80, 50, 0.9)'
+        c.fillStyle = irisHue
+        c.beginPath()
+        c.arc(pupilDrift, 0, s * 0.07, 0, Math.PI * 2)
+        c.fill()
+        // Pupil
+        c.fillStyle = 'rgba(5, 0, 10, 0.95)'
+        c.beginPath()
+        c.arc(pupilDrift, 0, s * 0.035, 0, Math.PI * 2)
+        c.fill()
+        // Highlight
+        c.fillStyle = 'rgba(255, 255, 255, 0.4)'
+        c.beginPath()
+        c.arc(pupilDrift - s * 0.02, -s * 0.02, s * 0.015, 0, Math.PI * 2)
+        c.fill()
+        break
+      }
+
+      case 'crack': {
+        // A crack in the wall with light bleeding through
+        c.strokeStyle = `rgba(200, 180, 255, ${0.5 + Math.sin(t * 2) * 0.2})`
+        c.lineWidth = 2
+        c.shadowColor = 'rgba(200, 180, 255, 0.5)'
+        c.shadowBlur = 8
+        c.beginPath()
+        c.moveTo(0, -s * 0.5)
+        c.lineTo(-s * 0.08, -s * 0.2)
+        c.lineTo(s * 0.05, -s * 0.05)
+        c.lineTo(-s * 0.03, s * 0.15)
+        c.lineTo(s * 0.07, s * 0.35)
+        c.lineTo(0, s * 0.5)
+        c.stroke()
+        // Light bleeding from crack
+        c.shadowBlur = 0
+        const lightGrad = c.createLinearGradient(-s * 0.3, 0, s * 0.3, 0)
+        lightGrad.addColorStop(0, 'rgba(200, 180, 255, 0)')
+        lightGrad.addColorStop(0.45, `rgba(220, 200, 255, ${0.1 + Math.sin(t * 3) * 0.05})`)
+        lightGrad.addColorStop(0.55, `rgba(220, 200, 255, ${0.1 + Math.sin(t * 3) * 0.05})`)
+        lightGrad.addColorStop(1, 'rgba(200, 180, 255, 0)')
+        c.fillStyle = lightGrad
+        c.fillRect(-s * 0.3, -s * 0.5, s * 0.6, s)
+        break
+      }
+
+      case 'small_mirror': {
+        // A tarnished mirror with warped reflection
+        // Frame
+        c.strokeStyle = 'rgba(140, 120, 80, 0.7)'
+        c.lineWidth = 2
+        c.strokeRect(-s * 0.2, -s * 0.3, s * 0.4, s * 0.6)
+        // Mirror surface
+        const mirGrad = c.createLinearGradient(-s * 0.2, -s * 0.3, s * 0.2, s * 0.3)
+        mirGrad.addColorStop(0, 'rgba(80, 90, 100, 0.6)')
+        mirGrad.addColorStop(0.5, 'rgba(120, 130, 150, 0.5)')
+        mirGrad.addColorStop(1, 'rgba(60, 70, 80, 0.6)')
+        c.fillStyle = mirGrad
+        c.fillRect(-s * 0.18, -s * 0.28, s * 0.36, s * 0.56)
+        // Distorted face shape (your reflection)
+        const faceAlpha = 0.15 + Math.sin(t * 1.5) * 0.08
+        c.fillStyle = `rgba(180, 160, 140, ${faceAlpha})`
+        c.beginPath()
+        c.ellipse(Math.sin(t * 0.8) * s * 0.03, 0, s * 0.08, s * 0.12, 0, 0, Math.PI * 2)
+        c.fill()
+        break
+      }
+
+      case 'bloodstain': {
+        // Organic dark splatter on the floor/wall
+        const splats = 3 + Math.floor(hash * 4)
+        for (let i = 0; i < splats; i++) {
+          const sx = (cellHash2(wx + i * 7, wy + i * 3) - 0.5) * s * 0.5
+          const sy = (cellHash2(wx + i * 3, wy + i * 7) - 0.5) * s * 0.4
+          const sr = s * (0.06 + cellHash2(wx + i * 11, wy + i * 13) * 0.12)
+          c.fillStyle = `rgba(${80 + Math.floor(hash * 40)}, 15, 20, ${0.5 + hash * 0.3})`
+          c.beginPath()
+          c.ellipse(sx, sy, sr, sr * (0.6 + cellHash2(wx + i, wy) * 0.8), hash * Math.PI, 0, Math.PI * 2)
+          c.fill()
+        }
+        break
+      }
+
+      case 'keyhole': {
+        // A proper keyhole shape with darkness behind
+        // Outer plate
+        c.fillStyle = 'rgba(100, 90, 70, 0.7)'
+        c.beginPath()
+        c.ellipse(0, -s * 0.05, s * 0.15, s * 0.2, 0, 0, Math.PI * 2)
+        c.fill()
+        // Keyhole
+        c.fillStyle = 'rgba(5, 0, 10, 0.95)'
+        c.beginPath()
+        c.arc(0, -s * 0.08, s * 0.05, 0, Math.PI * 2)
+        c.fill()
+        c.beginPath()
+        c.moveTo(-s * 0.03, -s * 0.04)
+        c.lineTo(s * 0.03, -s * 0.04)
+        c.lineTo(s * 0.02, s * 0.1)
+        c.lineTo(-s * 0.02, s * 0.1)
+        c.closePath()
+        c.fill()
+        // Light from inside
+        const keyGlow = c.createRadialGradient(0, 0, 0, 0, 0, s * 0.12)
+        keyGlow.addColorStop(0, `rgba(160, 140, 200, ${0.15 + Math.sin(t * 2) * 0.08})`)
+        keyGlow.addColorStop(1, 'rgba(160, 140, 200, 0)')
+        c.fillStyle = keyGlow
+        c.fillRect(-s * 0.12, -s * 0.15, s * 0.24, s * 0.3)
+        break
+      }
+
+      case 'handprint': {
+        // A ghostly handprint pressed into the wall
+        c.fillStyle = `rgba(${hash > 0.5 ? '120, 40, 50' : '60, 80, 100'}, ${0.4 + Math.sin(t * 1.2) * 0.1})`
+        // Palm
+        c.beginPath()
+        c.ellipse(0, s * 0.05, s * 0.14, s * 0.18, 0, 0, Math.PI * 2)
+        c.fill()
+        // Fingers
+        const fingers = [[-0.1, -0.2, 0.03, 0.12], [-0.04, -0.25, 0.025, 0.13], [0.03, -0.23, 0.025, 0.12], [0.09, -0.18, 0.025, 0.1], [0.15, 0.0, 0.025, 0.08]]
+        for (const [fx, fy, fw, fh] of fingers) {
+          c.beginPath()
+          c.ellipse(fx * s, fy * s, fw * s, fh * s, (fx - 0.02) * 0.5, 0, Math.PI * 2)
+          c.fill()
+        }
+        break
+      }
+
+      case 'fungus': {
+        // Bio-luminescent fungal growth
+        const clusters = 4 + Math.floor(hash * 5)
+        for (let i = 0; i < clusters; i++) {
+          const fx = (cellHash2(wx + i * 5, wy + i * 9) - 0.5) * s * 0.5
+          const fy = (cellHash2(wx + i * 9, wy + i * 5) - 0.3) * s * 0.4
+          const fr = s * (0.04 + cellHash2(wx + i * 3, wy + i * 7) * 0.08)
+          // Bioluminescent glow
+          const glowGrad = c.createRadialGradient(fx, fy, 0, fx, fy, fr * 3)
+          glowGrad.addColorStop(0, `rgba(80, 200, 120, ${0.2 + Math.sin(t * 1.5 + i) * 0.1})`)
+          glowGrad.addColorStop(1, 'rgba(40, 160, 80, 0)')
+          c.fillStyle = glowGrad
+          c.fillRect(fx - fr * 3, fy - fr * 3, fr * 6, fr * 6)
+          // Cap
+          c.fillStyle = `rgba(100, 180, 130, ${0.6 + Math.sin(t * 2 + i * 2) * 0.15})`
+          c.beginPath()
+          c.ellipse(fx, fy, fr, fr * 0.6, 0, Math.PI, 0)
+          c.fill()
+          // Stem
+          c.fillStyle = 'rgba(80, 140, 100, 0.5)'
+          c.fillRect(fx - fr * 0.15, fy, fr * 0.3, fr * 0.8)
+        }
+        break
+      }
+
+      case 'scratches': {
+        // Deep parallel scratch marks gouged into stone
+        const numScratches = 3 + Math.floor(hash * 3)
+        c.strokeStyle = `rgba(60, 50, 70, 0.8)`
+        c.lineWidth = 1.5
+        for (let i = 0; i < numScratches; i++) {
+          const sx = (-0.3 + i * 0.15) * s
+          const angle = -0.2 + hash * 0.4
+          c.beginPath()
+          c.moveTo(sx + Math.cos(angle) * s * 0.2, -s * 0.2)
+          c.lineTo(sx - Math.cos(angle) * s * 0.2, s * 0.2)
+          c.stroke()
+        }
+        // Inner light on scratches
+        c.strokeStyle = `rgba(160, 140, 180, ${0.15 + Math.sin(t) * 0.05})`
+        c.lineWidth = 0.5
+        for (let i = 0; i < numScratches; i++) {
+          const sx = (-0.3 + i * 0.15) * s + 1
+          c.beginPath()
+          c.moveTo(sx, -s * 0.18)
+          c.lineTo(sx, s * 0.18)
+          c.stroke()
+        }
+        break
+      }
+
+      case 'face_relief': {
+        // An eerie face carved into the stone
+        c.fillStyle = `rgba(80, 70, 90, ${0.5 + Math.sin(t * 0.8) * 0.15})`
+        // Face outline
+        c.beginPath()
+        c.ellipse(0, 0, s * 0.2, s * 0.28, 0, 0, Math.PI * 2)
+        c.fill()
+        // Eyes (sunken sockets)
+        c.fillStyle = 'rgba(20, 10, 30, 0.8)'
+        c.beginPath()
+        c.ellipse(-s * 0.07, -s * 0.06, s * 0.04, s * 0.03, 0, 0, Math.PI * 2)
+        c.fill()
+        c.beginPath()
+        c.ellipse(s * 0.07, -s * 0.06, s * 0.04, s * 0.03, 0, 0, Math.PI * 2)
+        c.fill()
+        // Mouth
+        c.strokeStyle = 'rgba(20, 10, 30, 0.6)'
+        c.lineWidth = 1
+        c.beginPath()
+        c.arc(0, s * 0.1, s * 0.08, 0.2, Math.PI - 0.2)
+        c.stroke()
+        break
+      }
+
+      case 'skull': {
+        // A skull on the ground
+        c.fillStyle = 'rgba(180, 170, 150, 0.6)'
+        // Cranium
+        c.beginPath()
+        c.ellipse(0, -s * 0.05, s * 0.18, s * 0.22, 0, 0, Math.PI * 2)
+        c.fill()
+        // Jaw
+        c.beginPath()
+        c.ellipse(0, s * 0.15, s * 0.12, s * 0.08, 0, 0, Math.PI)
+        c.fill()
+        // Eye sockets
+        c.fillStyle = 'rgba(10, 5, 20, 0.9)'
+        c.beginPath()
+        c.ellipse(-s * 0.06, -s * 0.05, s * 0.045, s * 0.04, 0, 0, Math.PI * 2)
+        c.fill()
+        c.beginPath()
+        c.ellipse(s * 0.06, -s * 0.05, s * 0.045, s * 0.04, 0, 0, Math.PI * 2)
+        c.fill()
+        // Nose
+        c.beginPath()
+        c.moveTo(-s * 0.02, s * 0.03)
+        c.lineTo(0, s * 0.07)
+        c.lineTo(s * 0.02, s * 0.03)
+        c.closePath()
+        c.fill()
+        break
+      }
+
+      case 'floating_orb': {
+        // A translucent glowing orb suspended in the air
+        const orbPulse = 0.7 + Math.sin(t * 2 + hash * 8) * 0.3
+        const orbGrad = c.createRadialGradient(s * 0.02, -s * 0.02, 0, 0, 0, s * 0.2)
+        orbGrad.addColorStop(0, `rgba(200, 180, 255, ${0.6 * orbPulse})`)
+        orbGrad.addColorStop(0.4, `rgba(140, 100, 220, ${0.3 * orbPulse})`)
+        orbGrad.addColorStop(1, 'rgba(100, 60, 180, 0)')
+        c.fillStyle = orbGrad
+        c.beginPath()
+        c.arc(0, 0, s * 0.2, 0, Math.PI * 2)
+        c.fill()
+        // Inner spark
+        c.fillStyle = `rgba(255, 240, 255, ${0.3 + Math.sin(t * 5) * 0.2})`
+        c.beginPath()
+        c.arc(s * 0.03, -s * 0.03, s * 0.04, 0, Math.PI * 2)
+        c.fill()
+        break
+      }
+
+      case 'chain': {
+        // Chains hanging from the ceiling
+        const links = 4 + Math.floor(hash * 3)
+        c.strokeStyle = 'rgba(120, 110, 100, 0.7)'
+        c.lineWidth = 2
+        for (let i = 0; i < links; i++) {
+          const ly = -s * 0.4 + i * s * 0.15
+          const swing = Math.sin(t * 0.8 + i * 0.5) * s * 0.02
+          c.beginPath()
+          c.ellipse(swing, ly, s * 0.04, s * 0.06, 0, 0, Math.PI * 2)
+          c.stroke()
+        }
+        break
+      }
+
+      case 'rune': {
+        // A glowing mystical rune
+        const runePulse = 0.6 + Math.sin(t * 2.5 + hash * 12) * 0.4
+        // Glow
+        const runeGlow = c.createRadialGradient(0, 0, 0, 0, 0, s * 0.3)
+        runeGlow.addColorStop(0, `rgba(180, 140, 255, ${0.2 * runePulse})`)
+        runeGlow.addColorStop(1, 'rgba(140, 100, 220, 0)')
+        c.fillStyle = runeGlow
+        c.fillRect(-s * 0.3, -s * 0.3, s * 0.6, s * 0.6)
+        // Rune lines
+        c.strokeStyle = `rgba(200, 170, 255, ${0.7 * runePulse})`
+        c.lineWidth = 1.5
+        // Geometric pattern
+        c.beginPath()
+        c.moveTo(0, -s * 0.2)
+        c.lineTo(-s * 0.15, s * 0.1)
+        c.lineTo(s * 0.15, s * 0.1)
+        c.closePath()
+        c.stroke()
+        c.beginPath()
+        c.moveTo(0, s * 0.2)
+        c.lineTo(-s * 0.15, -s * 0.1)
+        c.lineTo(s * 0.15, -s * 0.1)
+        c.closePath()
+        c.stroke()
+        // Center dot
+        c.fillStyle = `rgba(255, 230, 255, ${0.8 * runePulse})`
+        c.beginPath()
+        c.arc(0, 0, s * 0.025, 0, Math.PI * 2)
+        c.fill()
+        break
+      }
+
+      case 'carved_symbol': {
+        // A mysterious carved geometric symbol
+        c.strokeStyle = `rgba(160, 140, 200, ${0.5 + Math.sin(t * 1.8) * 0.2})`
+        c.lineWidth = 1.5
+        // Outer circle
+        c.beginPath()
+        c.arc(0, 0, s * 0.18, 0, Math.PI * 2)
+        c.stroke()
+        // Cross inside
+        c.beginPath()
+        c.moveTo(0, -s * 0.14); c.lineTo(0, s * 0.14)
+        c.moveTo(-s * 0.14, 0); c.lineTo(s * 0.14, 0)
+        c.stroke()
+        // Inner circle
+        c.beginPath()
+        c.arc(0, 0, s * 0.06, 0, Math.PI * 2)
+        c.stroke()
+        break
+      }
+
+      default: {
+        // Fallback: generic glowing shape
+        const fbGrad = c.createRadialGradient(0, 0, 0, 0, 0, s * 0.15)
+        fbGrad.addColorStop(0, 'rgba(180, 150, 220, 0.5)')
+        fbGrad.addColorStop(1, 'rgba(120, 90, 180, 0)')
+        c.fillStyle = fbGrad
+        c.beginPath()
+        c.arc(0, 0, s * 0.15, 0, Math.PI * 2)
+        c.fill()
+      }
+    }
+
+    // Reset shadow for safety
+    c.shadowBlur = 0
+    c.shadowColor = 'transparent'
+  }
+
   // ===== RENDERING =====
 
   function getCellColor(cell: number, brightness: number, sideDim: number): [number, number, number] {
@@ -2229,7 +2622,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.restore()
     }
 
-    // Render wall objects — specific clickable things on anomaly walls
+    // Render wall objects — procedurally drawn 2D graphics
     const shownObjects = new Set<string>()
     for (const vo of visibleObjects) {
       const key = `${vo.wx},${vo.wy}`
@@ -2246,52 +2639,39 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       let rotation = 0
       const phys = vo.obj.physics || 'static'
       if (phys === 'bob') {
-        objY += Math.sin(time * 1.5 + vo.wx * 2.3) * 6 * baseScale // gentle floating
+        objY += Math.sin(time * 1.5 + vo.wx * 2.3) * 6 * baseScale
       } else if (phys === 'spin') {
         rotation = time * 1.2 + vo.wy * 4.1
       } else if (phys === 'breathe') {
         physScale = baseScale * (0.9 + Math.sin(time * 2 + vo.wx * 3) * 0.15)
       }
 
-      // Pulsing glow behind the object — much more visible
-      const pulse = 0.7 + Math.sin(time * 3 + vo.wy * 2.1) * 0.3
-      const glowR = 16 * physScale * pulse
-      const glowGrad = ctx.createRadialGradient(vo.screenX, objY, 0, vo.screenX, objY, glowR * 3)
-      glowGrad.addColorStop(0, `rgba(160, 120, 240, ${alpha * 0.4 * pulse})`)
-      glowGrad.addColorStop(0.5, `rgba(120, 80, 200, ${alpha * 0.15 * pulse})`)
-      glowGrad.addColorStop(1, 'rgba(100, 60, 180, 0)')
-      ctx.fillStyle = glowGrad
-      ctx.fillRect(vo.screenX - glowR * 3, objY - glowR * 3, glowR * 6, glowR * 6)
-
-      // Drip physics — small particles falling from object
+      // Drip particles
       if (phys === 'drip' && Math.random() < 0.3) {
-        const dripY = objY + Math.random() * 15 * physScale
-        const dripAlpha = alpha * 0.4 * (1 - Math.random() * 0.5)
-        ctx.beginPath()
-        ctx.arc(vo.screenX + (Math.random() - 0.5) * 4, dripY, 1.5 * physScale, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(140, 40, 60, ${dripAlpha})`
-        ctx.fill()
+        for (let d = 0; d < 3; d++) {
+          const dripY = objY + Math.random() * 20 * physScale
+          ctx.beginPath()
+          ctx.arc(vo.screenX + (Math.random() - 0.5) * 6, dripY, 1.5 * physScale, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(140, 40, 60, ${alpha * 0.4})`
+          ctx.fill()
+        }
       }
 
-      // Draw the object symbol — with rotation and scale
-      const fontSize = Math.max(14, Math.floor(24 * physScale))
       ctx.save()
       ctx.translate(vo.screenX, objY)
       if (rotation) ctx.rotate(rotation)
-      ctx.font = `${fontSize}px sans-serif`
-      ctx.fillStyle = `rgba(220, 190, 255, ${alpha})`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(vo.obj.icon, 0, 0)
+      ctx.globalAlpha = alpha
+      drawRenderedObject(ctx, vo.obj.name, physScale * 18, time, vo.wx, vo.wy)
+      ctx.globalAlpha = 1
       ctx.restore()
 
-      // Show description at moderate range
+      // Description at moderate range
       if (vo.dist < 4) {
         const descAlpha = Math.min(0.7, alpha * 0.6)
         ctx.font = `${Math.floor(12 * physScale)}px "Cormorant Garamond", serif`
         ctx.fillStyle = `rgba(200, 180, 230, ${descAlpha})`
         ctx.textAlign = 'center'
-        ctx.fillText(vo.obj.desc, vo.screenX, objY + fontSize * 0.6 + 10 * physScale)
+        ctx.fillText(vo.obj.desc, vo.screenX, objY + physScale * 22 + 10)
       }
     }
 
