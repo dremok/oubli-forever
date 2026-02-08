@@ -367,6 +367,24 @@ const fragments: string[] = [
 
   // Feb 2026 — jon hamm dissociation
   "a viral trend about the bliss of dissociation. the pleasure of choosing to forget your circumstances.",
+
+  // Oubli fruit — the golden thread
+  "oubli: in west africa, a sweet golden fruit. forgetting that nourishes.",
+  "the oubli fruit ripens and falls. what is lost feeds the soil.",
+  "every forgetting is a seed. every seed, a golden fruit.",
+  "the fruit of oubli grows sweetest where memory decays.",
+  "to eat the oubli fruit is to taste what you have forgotten.",
+  "in the garden of forgetting, the oubli tree bears golden fruit.",
+]
+
+// Fragments that trigger the golden fruit effect
+const GOLDEN_MARKERS = [
+  'oubli fruit',
+  'golden fruit',
+  'oubli tree',
+  'fruit of oubli',
+  'seed',
+  'fruit ripens',
 ]
 
 export class Whispers {
@@ -406,6 +424,16 @@ export class Whispers {
     this.el.textContent = text
     this.el.classList.remove('fading')
 
+    // Golden fruit whispers glow amber-gold instead of the default color
+    const isGolden = GOLDEN_MARKERS.some(m => text.toLowerCase().includes(m))
+    if (isGolden) {
+      this.el.style.color = 'rgba(255, 200, 60, 0.35)'
+      this.el.style.textShadow = '0 0 12px rgba(255, 180, 40, 0.15)'
+    } else {
+      this.el.style.color = ''
+      this.el.style.textShadow = ''
+    }
+
     // Force reflow
     void this.el.offsetWidth
     this.el.classList.add('visible')
@@ -413,6 +441,13 @@ export class Whispers {
     setTimeout(() => {
       this.el.classList.remove('visible')
       this.el.classList.add('fading')
+      // Clean up golden styling during fade
+      if (isGolden) {
+        setTimeout(() => {
+          this.el.style.color = ''
+          this.el.style.textShadow = ''
+        }, 2000)
+      }
     }, 5000)
   }
 
