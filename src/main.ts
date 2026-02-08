@@ -82,6 +82,7 @@ import { HouseWeather } from './atmosphere/HouseWeather'
 import { RoomAmbience } from './sound/RoomAmbience'
 import { RoomAfterimage } from './effects/RoomAfterimage'
 import { SpacetimeRipple } from './effects/SpacetimeRipple'
+import { MemoryBleed } from './effects/MemoryBleed'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -365,6 +366,7 @@ roomManager.addRoom(createObservatoryRoom({
   getMemoryById: (id) => constellations.getMemoryById(id),
   getCamera: () => voidRenderer.getCamera(),
   getCanvas: () => voidRenderer.getCanvas(),
+  getScene: () => voidRenderer.getScene(),
   pauseCamera: () => voidRenderer.pauseCameraDrift(),
   resumeCamera: () => voidRenderer.resumeCameraDrift(),
   switchTo: (name) => roomManager.switchTo(name),
@@ -554,6 +556,12 @@ houseWeather.setDegradationSource(() => {
 const roomAfterimage = new RoomAfterimage()
 // Spacetime ripple — the house warps on significant events (GW250114 inspired)
 const spacetimeRipple = new SpacetimeRipple()
+// Memory bleed — your own memories occasionally drift through walls
+const memoryBleed = new MemoryBleed({
+  getMemories: () => journal.getMemories(),
+  getRoom: () => roomManager.getActiveRoom(),
+})
+memoryBleed.start()
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
