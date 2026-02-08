@@ -170,37 +170,55 @@ export function createVoidRoom(deps?: VoidDeps): Room {
   }
 
   function createVoiceHint() {
-    if (!portalContainer || !deps?.voiceSupported) return
+    if (!portalContainer || !deps) return
 
     voiceHintEl = document.createElement('div')
     voiceHintEl.style.cssText = `
       position: absolute;
-      bottom: 28%; left: 50%;
+      bottom: 24%; left: 50%;
       transform: translateX(-50%);
       pointer-events: none;
       text-align: center;
       opacity: 0;
-      transition: opacity 8s ease;
+      transition: opacity 4s ease;
       z-index: 4;
     `
 
-    const inner = document.createElement('div')
-    inner.style.cssText = `
+    // Typing instruction
+    const typeLine = document.createElement('div')
+    typeLine.style.cssText = `
       font-family: 'Cormorant Garamond', serif;
       font-weight: 300;
-      font-size: 11px;
+      font-size: 14px;
       letter-spacing: 2px;
-      color: rgba(255, 215, 0, 0.06);
+      color: rgba(255, 215, 0, 0.18);
       font-style: italic;
+      margin-bottom: 8px;
     `
-    inner.textContent = 'hold space to speak'
-    voiceHintEl.appendChild(inner)
+    typeLine.textContent = 'type to give a memory'
+    voiceHintEl.appendChild(typeLine)
+
+    // Voice instruction
+    if (deps.voiceSupported) {
+      const voiceLine = document.createElement('div')
+      voiceLine.style.cssText = `
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300;
+        font-size: 14px;
+        letter-spacing: 2px;
+        color: rgba(255, 215, 0, 0.18);
+        font-style: italic;
+      `
+      voiceLine.textContent = 'hold space to speak'
+      voiceHintEl.appendChild(voiceLine)
+    }
+
     portalContainer.appendChild(voiceHintEl)
 
-    // Fade in after 25 seconds — long enough for the portals to appear first
+    // Fade in after 8 seconds
     voiceHintTimeout = window.setTimeout(() => {
       if (voiceHintEl) voiceHintEl.style.opacity = '1'
-    }, 25000)
+    }, 8000)
   }
 
   function addBreathingAnimation() {
