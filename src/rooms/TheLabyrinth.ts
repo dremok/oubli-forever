@@ -31,6 +31,7 @@ interface LabyrinthDeps {
 // Cell types
 const WALL = 1
 const INSCRIPTION = 2
+const ANOMALY = 3  // Clickable wall elements — trigger effects
 
 // Region system for forgetting
 const REGION_SIZE = 12
@@ -136,8 +137,26 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   // Jump scare state
   const scareImages: HTMLImageElement[] = []
   const scareBuffers: AudioBuffer[] = []
-  let currentScare: { triggeredAt: number; image: HTMLImageElement | null; duration: number } | null = null
+  let currentScare: {
+    triggeredAt: number
+    image: HTMLImageElement | null
+    duration: number
+    type: 'flash' | 'slowburn' | 'glitch' | 'darkness' | 'bleed'
+  } | null = null
   let lastScareTime = -999
+  let scareCount = 0  // escalation — scares get worse over time
+
+  // Wall anomaly / effect system
+  interface WallEffect {
+    triggeredAt: number
+    duration: number
+    type: string
+    params: Record<string, number>
+  }
+  let currentEffect: WallEffect | null = null
+  let lookingAtAnomaly = false
+  let anomalyDist = 0
+  let anomalyScreenX = 0
 
   // Portal detection
   let nearbyPortal: { room: string; label: string; color: [number, number, number] } | null = null
@@ -234,7 +253,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // This is a wall — determine subtype
     const h2 = cellHash2(wx, wy)
-    if (h2 < 0.10) return INSCRIPTION
+    if (h2 < 0.06) return INSCRIPTION
+    if (h2 < 0.11) return ANOMALY  // ~5% of walls are clickable anomalies
 
     return WALL
   }
@@ -489,16 +509,16 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   // ===== JUMP SCARE SYSTEM =====
 
   async function loadScareAssets() {
-    // Load images
-    for (let i = 1; i <= 5; i++) {
+    // Load images (up to 15)
+    for (let i = 1; i <= 15; i++) {
       const img = new Image()
       img.src = `/assets/labyrinth/labyrinth-scare-${i}.jpg`
       img.onload = () => scareImages.push(img)
     }
 
-    // Load sounds
+    // Load sounds (up to 12)
     if (!audioCtx) return
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 12; i++) {
       try {
         const resp = await fetch(`/assets/labyrinth/labyrinth-sound-${i}.mp3`)
         if (resp.ok) {
@@ -510,7 +530,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
   }
 
-  function playScareSound() {
+  function playScareSound(intensity: number = 1) {
     if (!audioCtx) return
     const dest = getAudioDestination()
     const now = audioCtx.currentTime
@@ -521,81 +541,300 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const source = audioCtx.createBufferSource()
       source.buffer = buf
       const gain = audioCtx.createGain()
-      gain.gain.value = 0.4
+      gain.gain.value = 0.5 * intensity
       source.connect(gain)
       gain.connect(dest)
       if (reverbNode) gain.connect(reverbNode)
       source.start()
     }
 
-    // Always add a synthesized sub-bass thump
+    // Sub-bass body slam — chest-rattling thump
     const thump = audioCtx.createOscillator()
-    thump.frequency.value = 30
+    thump.frequency.setValueAtTime(50, now)
+    thump.frequency.exponentialRampToValueAtTime(20, now + 0.4)
     thump.type = 'sine'
     const thumpGain = audioCtx.createGain()
-    thumpGain.gain.setValueAtTime(0.25, now)
-    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5)
+    thumpGain.gain.setValueAtTime(0.35 * intensity, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
     thump.connect(thumpGain)
     thumpGain.connect(dest)
     thump.start(now)
-    thump.stop(now + 0.5)
+    thump.stop(now + 0.7)
 
-    // High screech
+    // Metallic screech — like nails on a chalkboard
     const screech = audioCtx.createOscillator()
-    screech.frequency.value = 1800 + Math.random() * 600
+    screech.frequency.setValueAtTime(1200 + Math.random() * 800, now)
+    screech.frequency.linearRampToValueAtTime(2800 + Math.random() * 400, now + 0.15)
     screech.type = 'sawtooth'
     const screechGain = audioCtx.createGain()
-    screechGain.gain.setValueAtTime(0.06, now)
-    screechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
+    screechGain.gain.setValueAtTime(0.1 * intensity, now)
+    screechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35)
     const screechFilter = audioCtx.createBiquadFilter()
     screechFilter.type = 'bandpass'
-    screechFilter.frequency.value = 2000
-    screechFilter.Q.value = 5
+    screechFilter.frequency.value = 2200
+    screechFilter.Q.value = 8
     screech.connect(screechFilter)
     screechFilter.connect(screechGain)
     screechGain.connect(dest)
     if (reverbNode) screechGain.connect(reverbNode)
     screech.start(now)
     screech.stop(now + 0.4)
+
+    // Distorted white noise burst — like a broken radio
+    const noiseLen = audioCtx.sampleRate * 0.3
+    const noiseBuf = audioCtx.createBuffer(1, noiseLen, audioCtx.sampleRate)
+    const noiseData = noiseBuf.getChannelData(0)
+    for (let i = 0; i < noiseLen; i++) {
+      noiseData[i] = (Math.random() * 2 - 1) * (1 - i / noiseLen)
+    }
+    const noiseSrc = audioCtx.createBufferSource()
+    noiseSrc.buffer = noiseBuf
+    const noiseGain = audioCtx.createGain()
+    noiseGain.gain.setValueAtTime(0.12 * intensity, now)
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25)
+    const noiseFilter = audioCtx.createBiquadFilter()
+    noiseFilter.type = 'highpass'
+    noiseFilter.frequency.value = 3000
+    noiseSrc.connect(noiseFilter)
+    noiseFilter.connect(noiseGain)
+    noiseGain.connect(dest)
+    noiseSrc.start(now)
+
+    // Detuned chord — deeply unsettling dissonance
+    if (intensity > 0.7) {
+      const dissonanceFreqs = [110, 116.5, 155.6, 233.1] // tritone cluster
+      for (const f of dissonanceFreqs) {
+        const osc = audioCtx.createOscillator()
+        osc.frequency.value = f + Math.random() * 3
+        osc.type = 'triangle'
+        const g = audioCtx.createGain()
+        g.gain.setValueAtTime(0.04 * intensity, now + 0.05)
+        g.gain.exponentialRampToValueAtTime(0.001, now + 1.5)
+        osc.connect(g)
+        g.connect(dest)
+        if (reverbNode) g.connect(reverbNode)
+        osc.start(now + 0.05)
+        osc.stop(now + 1.6)
+      }
+    }
+  }
+
+  // Beautiful/mysterious sound for wall effects
+  function playEffectSound(type: string) {
+    if (!audioCtx) return
+    const dest = getAudioDestination()
+    const now = audioCtx.currentTime
+
+    if (type === 'beautiful') {
+      // Ethereal chord — major with shimmer
+      const freqs = [261.6, 329.6, 392, 523.3] // C major spread
+      for (const f of freqs) {
+        const osc = audioCtx.createOscillator()
+        osc.frequency.value = f
+        osc.type = 'sine'
+        const g = audioCtx.createGain()
+        g.gain.setValueAtTime(0, now)
+        g.gain.linearRampToValueAtTime(0.06, now + 0.3)
+        g.gain.exponentialRampToValueAtTime(0.001, now + 3)
+        osc.connect(g)
+        g.connect(dest)
+        if (reverbNode) g.connect(reverbNode)
+        osc.start(now)
+        osc.stop(now + 3.5)
+      }
+      // High shimmer
+      const shimmer = audioCtx.createOscillator()
+      shimmer.frequency.value = 1047
+      shimmer.type = 'sine'
+      const sg = audioCtx.createGain()
+      sg.gain.setValueAtTime(0, now)
+      sg.gain.linearRampToValueAtTime(0.03, now + 0.5)
+      sg.gain.exponentialRampToValueAtTime(0.001, now + 4)
+      shimmer.connect(sg)
+      sg.connect(dest)
+      if (reverbNode) sg.connect(reverbNode)
+      shimmer.start(now)
+      shimmer.stop(now + 4.5)
+    } else if (type === 'mysterious') {
+      // Low bell tone with beating
+      const osc1 = audioCtx.createOscillator()
+      osc1.frequency.value = 130.8
+      osc1.type = 'sine'
+      const osc2 = audioCtx.createOscillator()
+      osc2.frequency.value = 131.5 // slight detune for beating
+      osc2.type = 'sine'
+      const g1 = audioCtx.createGain()
+      g1.gain.setValueAtTime(0.08, now)
+      g1.gain.exponentialRampToValueAtTime(0.001, now + 4)
+      osc1.connect(g1); g1.connect(dest)
+      const g2 = audioCtx.createGain()
+      g2.gain.setValueAtTime(0.08, now)
+      g2.gain.exponentialRampToValueAtTime(0.001, now + 4)
+      osc2.connect(g2); g2.connect(dest)
+      if (reverbNode) { g1.connect(reverbNode); g2.connect(reverbNode) }
+      osc1.start(now); osc1.stop(now + 4.5)
+      osc2.start(now); osc2.stop(now + 4.5)
+    } else {
+      // Scary effect sound — sudden dissonant stab
+      playScareSound(0.6)
+    }
   }
 
   function triggerScare() {
+    // Pick a scare type — escalates with scare count
+    const types: Array<'flash' | 'slowburn' | 'glitch' | 'darkness' | 'bleed'> =
+      ['flash', 'flash', 'glitch', 'darkness', 'bleed', 'slowburn']
+    const typeIdx = Math.floor(Math.random() * types.length)
+    const scareType = types[typeIdx]
+
     const img = scareImages.length > 0
       ? scareImages[Math.floor(Math.random() * scareImages.length)]
       : null
+
+    const durations: Record<string, number> = {
+      flash: 0.8 + Math.random() * 0.6,
+      slowburn: 2.5 + Math.random() * 1.5,
+      glitch: 1.0 + Math.random() * 0.8,
+      darkness: 1.5 + Math.random() * 1.0,
+      bleed: 3.0 + Math.random() * 2.0,
+    }
+
     currentScare = {
       triggeredAt: time,
       image: img,
-      duration: 1.2,
+      duration: durations[scareType],
+      type: scareType,
     }
     lastScareTime = time
+    scareCount++
+
+    // Intensity escalates with scare count
+    const intensity = Math.min(1.5, 0.7 + scareCount * 0.08)
     tension = 0
     tensionTarget = 0
-    playScareSound()
+    playScareSound(intensity)
   }
 
   function checkScare(): void {
     if (currentScare) return
-    if (time - lastScareTime < 90) return // 90 second cooldown
+    // Cooldown decreases with scareCount (min 12s)
+    const cooldown = Math.max(12, 30 - scareCount * 2)
+    if (time - lastScareTime < cooldown) return
 
     const exits = countExits(Math.floor(px), Math.floor(py))
 
-    // Build tension
+    // Build tension faster
     if (exits <= 1) {
-      tensionTarget = Math.min(1, tensionTarget + 0.0015)
+      tensionTarget = Math.min(1, tensionTarget + 0.004)
+    } else if (exits === 2) {
+      tensionTarget = Math.min(1, tensionTarget + 0.001)
     } else {
-      tensionTarget = Math.max(0, tensionTarget - 0.002)
+      tensionTarget = Math.max(0, tensionTarget - 0.003)
     }
 
-    // Random tension spikes
-    if (Math.random() < 0.0003) {
-      tensionTarget = Math.min(1, tensionTarget + 0.25)
+    // Random tension spikes — more frequent
+    if (Math.random() < 0.001) {
+      tensionTarget = Math.min(1, tensionTarget + 0.3)
     }
 
-    tension += (tensionTarget - tension) * 0.015
+    // Ambient unease builds over time just from wandering
+    if (time > 30) {
+      tensionTarget = Math.min(1, tensionTarget + 0.0003)
+    }
 
-    // Trigger when tension is high enough
-    if (tension > 0.7 && Math.random() < 0.008) {
+    tension += (tensionTarget - tension) * 0.02
+
+    // Trigger at lower threshold, more likely
+    if (tension > 0.4 && Math.random() < 0.015) {
+      triggerScare()
+    }
+
+    // Rare random scare even at low tension (after 60s)
+    if (time > 60 && time - lastScareTime > 45 && Math.random() < 0.002) {
+      triggerScare()
+    }
+  }
+
+  // ===== WALL ANOMALY / CLICK EFFECTS =====
+
+  const EFFECT_TYPES = [
+    // SCARY effects
+    { name: 'face_flash', category: 'scary' },
+    { name: 'screen_invert', category: 'scary' },
+    { name: 'wall_bleed', category: 'scary' },
+    { name: 'static_burst', category: 'scary' },
+    { name: 'lights_out', category: 'scary' },
+    { name: 'eye_track', category: 'scary' },
+    // BEAUTIFUL effects
+    { name: 'rainbow_spiral', category: 'beautiful' },
+    { name: 'golden_particles', category: 'beautiful' },
+    { name: 'aurora', category: 'beautiful' },
+    { name: 'starfield', category: 'beautiful' },
+    { name: 'prismatic', category: 'beautiful' },
+    // MYSTERIOUS effects
+    { name: 'portal_glimpse', category: 'mysterious' },
+    { name: 'time_freeze', category: 'mysterious' },
+    { name: 'cryptic_message', category: 'mysterious' },
+    { name: 'map_reveal', category: 'mysterious' },
+    { name: 'bell_toll', category: 'mysterious' },
+  ]
+
+  const CRYPTIC_MESSAGES = [
+    'you have been walking in circles',
+    'the minotaur remembers your name',
+    'this wall was not here a moment ago',
+    'someone else is in the labyrinth',
+    'the exit moved',
+    'you are closer than you think',
+    'the labyrinth is dreaming you',
+    'turn around slowly',
+    'the walls are listening',
+    'you passed this exact spot 47 minutes ago',
+    'do not look behind you',
+    'the floor is getting warmer',
+    'something followed you here',
+    'the maze has no center',
+    'you are the maze',
+  ]
+
+  function triggerWallEffect() {
+    if (currentEffect) return
+
+    // Weight: 40% scary, 35% beautiful, 25% mysterious
+    const roll = Math.random()
+    let category: string
+    if (roll < 0.40) category = 'scary'
+    else if (roll < 0.75) category = 'beautiful'
+    else category = 'mysterious'
+
+    const options = EFFECT_TYPES.filter(e => e.category === category)
+    const chosen = options[Math.floor(Math.random() * options.length)]
+
+    const durations: Record<string, number> = {
+      face_flash: 1.0, screen_invert: 2.5, wall_bleed: 4.0,
+      static_burst: 1.5, lights_out: 2.0, eye_track: 3.0,
+      rainbow_spiral: 4.0, golden_particles: 5.0, aurora: 6.0,
+      starfield: 5.0, prismatic: 3.5,
+      portal_glimpse: 2.5, time_freeze: 2.0, cryptic_message: 4.0,
+      map_reveal: 3.0, bell_toll: 3.0,
+    }
+
+    currentEffect = {
+      triggeredAt: time,
+      duration: durations[chosen.name] || 3,
+      type: chosen.name,
+      params: {
+        msgIdx: Math.floor(Math.random() * CRYPTIC_MESSAGES.length),
+        hue: Math.random() * 360,
+        spiralDir: Math.random() > 0.5 ? 1 : -1,
+        originX: anomalyScreenX,
+      },
+    }
+
+    playEffectSound(category)
+
+    // Scary effects can also trigger a scare on top
+    if (category === 'scary' && chosen.name === 'face_flash') {
       triggerScare()
     }
   }
@@ -728,6 +967,17 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       nearbyPortal = null
     }
 
+    // Check what center ray hits (for anomaly clicking)
+    const centerHit = castRay(px, py, pa)
+    lookingAtAnomaly = centerHit.cell === ANOMALY && centerHit.dist < 3.5
+    anomalyDist = centerHit.dist
+    anomalyScreenX = canvas ? canvas.width / 2 : 400
+
+    // Expire current effect
+    if (currentEffect && time - currentEffect.triggeredAt > currentEffect.duration) {
+      currentEffect = null
+    }
+
     // Update tension/scare
     checkScare()
 
@@ -767,6 +1017,15 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const tensionR = tension * 15
     const tensionG = -tension * 5
 
+    if (cell === ANOMALY) {
+      // Anomaly walls shimmer with a subtle otherworldly glow
+      const shimmer = 0.5 + Math.sin(time * 2.5) * 0.3
+      return [
+        (45 + tensionR + shimmer * 15) * brightness * sideDim,
+        (32 + tensionG + shimmer * 8) * brightness * sideDim,
+        (70 + shimmer * 20) * brightness * sideDim,
+      ]
+    }
     if (cell === INSCRIPTION) {
       return [
         (50 + tensionR) * brightness * sideDim,
@@ -909,37 +1168,486 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       return
     }
 
-    let alpha = 1
-    if (elapsed > 0.15) {
-      alpha = Math.max(0, 1 - (elapsed - 0.15) / (currentScare.duration - 0.15))
-    }
-
-    // Screen shake
-    const shakeX = (Math.random() - 0.5) * 20 * alpha
-    const shakeY = (Math.random() - 0.5) * 20 * alpha
+    const progress = elapsed / currentScare.duration
+    const type = currentScare.type
 
     ctx.save()
-    ctx.translate(shakeX, shakeY)
 
-    // Red flash
-    ctx.fillStyle = `rgba(80, 0, 0, ${alpha * 0.35})`
-    ctx.fillRect(0, 0, w, h)
+    if (type === 'flash') {
+      // INTENSE flash scare — full screen, violent shake
+      let alpha = 1
+      if (elapsed < 0.05) alpha = elapsed / 0.05 // instant attack
+      else if (elapsed > 0.2) alpha = Math.max(0, 1 - (elapsed - 0.2) / (currentScare.duration - 0.2))
 
-    // Image
-    if (currentScare.image) {
-      ctx.globalAlpha = alpha * 0.8
-      const imgW = w * 0.5
-      const imgH = h * 0.5
-      const imgX = (w - imgW) / 2 + (Math.random() - 0.5) * 10
-      const imgY = (h - imgH) / 2 + (Math.random() - 0.5) * 10
-      ctx.drawImage(currentScare.image, imgX, imgY, imgW, imgH)
-      ctx.globalAlpha = 1
+      // Violent screen shake
+      const shakeIntensity = 30 * alpha * (1 + scareCount * 0.3)
+      ctx.translate(
+        (Math.random() - 0.5) * shakeIntensity,
+        (Math.random() - 0.5) * shakeIntensity,
+      )
+
+      // Blood-red flash
+      ctx.fillStyle = `rgba(120, 0, 0, ${alpha * 0.5})`
+      ctx.fillRect(-20, -20, w + 40, h + 40)
+
+      // Image — BIGGER, closer, more threatening
+      if (currentScare.image) {
+        ctx.globalAlpha = alpha * 0.9
+        const scale = 0.7 + Math.random() * 0.3 // 70-100% of screen
+        const imgW = w * scale
+        const imgH = h * scale
+        const imgX = (w - imgW) / 2 + (Math.random() - 0.5) * 20
+        const imgY = (h - imgH) / 2 + (Math.random() - 0.5) * 20
+        ctx.drawImage(currentScare.image, imgX, imgY, imgW, imgH)
+        ctx.globalAlpha = 1
+      }
+
+      // Harsh scanlines
+      ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.25})`
+      for (let y = 0; y < h; y += 3) {
+        ctx.fillRect(0, y, w, 1)
+      }
+
+      // Chromatic aberration — red/blue split rectangles
+      if (currentScare.image && alpha > 0.3) {
+        ctx.globalCompositeOperation = 'screen'
+        ctx.fillStyle = `rgba(255, 0, 0, ${alpha * 0.15})`
+        ctx.fillRect(3, 0, w, h)
+        ctx.fillStyle = `rgba(0, 0, 255, ${alpha * 0.15})`
+        ctx.fillRect(-3, 0, w, h)
+        ctx.globalCompositeOperation = 'source-over'
+      }
+
+    } else if (type === 'slowburn') {
+      // Slow creeping scare — image fades in gradually then SLAMS
+      let alpha: number
+      if (progress < 0.6) {
+        alpha = progress / 0.6 * 0.3 // slowly creep to 30% opacity
+      } else if (progress < 0.65) {
+        alpha = 0.3 + (progress - 0.6) / 0.05 * 0.7 // SLAM to full
+      } else {
+        alpha = Math.max(0, 1 - (progress - 0.65) / 0.35)
+      }
+
+      // Subtle shake only at slam point
+      if (progress > 0.58 && progress < 0.75) {
+        const slam = Math.min(1, (progress - 0.58) / 0.05) * 40
+        ctx.translate((Math.random() - 0.5) * slam, (Math.random() - 0.5) * slam)
+      }
+
+      ctx.fillStyle = `rgba(40, 0, 0, ${alpha * 0.4})`
+      ctx.fillRect(0, 0, w, h)
+
+      if (currentScare.image) {
+        ctx.globalAlpha = alpha
+        ctx.drawImage(currentScare.image, 0, 0, w, h) // FULL SCREEN
+        ctx.globalAlpha = 1
+      }
+
+    } else if (type === 'glitch') {
+      // Digital glitch scare — broken reality
+      const alpha = progress < 0.1 ? progress / 0.1 : Math.max(0, 1 - (progress - 0.1) / 0.9)
+
+      // Tear the screen into horizontal slices
+      const numSlices = 8 + Math.floor(Math.random() * 12)
+      for (let i = 0; i < numSlices; i++) {
+        const sliceY = Math.random() * h
+        const sliceH = 2 + Math.random() * 30
+        const offsetX = (Math.random() - 0.5) * 60 * alpha
+        ctx.fillStyle = `rgba(${Math.random() > 0.5 ? 180 : 0}, ${Math.random() > 0.7 ? 80 : 0}, ${Math.random() > 0.5 ? 120 : 0}, ${alpha * 0.6})`
+        ctx.fillRect(offsetX, sliceY, w, sliceH)
+      }
+
+      // Random color blocks
+      for (let i = 0; i < 5; i++) {
+        const bx = Math.random() * w
+        const by = Math.random() * h
+        const bw = 20 + Math.random() * 100
+        const bh = 10 + Math.random() * 60
+        ctx.fillStyle = `rgba(${Math.floor(Math.random() * 255)}, 0, ${Math.floor(Math.random() * 255)}, ${alpha * 0.4})`
+        ctx.fillRect(bx, by, bw, bh)
+      }
+
+      // Image fragments scattered
+      if (currentScare.image && alpha > 0.2) {
+        for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = alpha * 0.7
+          const sx = Math.random() * w * 0.5
+          const sy = Math.random() * h * 0.5
+          const sw = w * 0.3
+          const sh = h * 0.2
+          ctx.drawImage(currentScare.image, sx, sy, sw, sh)
+          ctx.globalAlpha = 1
+        }
+      }
+
+    } else if (type === 'darkness') {
+      // Lights go completely out, then slam back with a face
+      const alpha = progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.4)
+
+      if (progress < 0.7) {
+        // Total darkness
+        ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.95})`
+        ctx.fillRect(0, 0, w, h)
+
+        // Occasional tiny red dot (like eyes)
+        if (Math.random() < 0.03) {
+          ctx.fillStyle = 'rgba(180, 0, 0, 0.8)'
+          const eyeX = w * 0.3 + Math.random() * w * 0.4
+          const eyeY = h * 0.3 + Math.random() * h * 0.3
+          ctx.beginPath()
+          ctx.arc(eyeX, eyeY, 2, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.beginPath()
+          ctx.arc(eyeX + 25 + Math.random() * 10, eyeY + (Math.random() - 0.5) * 5, 2, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      } else {
+        // Slam back — bright flash with image
+        const slamAlpha = Math.max(0, 1 - (progress - 0.7) / 0.3)
+        ctx.fillStyle = `rgba(200, 180, 160, ${slamAlpha * 0.3})`
+        ctx.fillRect(0, 0, w, h)
+        if (currentScare.image) {
+          ctx.globalAlpha = slamAlpha * 0.6
+          ctx.drawImage(currentScare.image, w * 0.1, h * 0.1, w * 0.8, h * 0.8)
+          ctx.globalAlpha = 1
+        }
+        const shake = slamAlpha * 25
+        ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake)
+      }
+
+    } else if (type === 'bleed') {
+      // Walls bleed — red drips down the screen for a long time
+      const alpha = progress < 0.1 ? progress / 0.1 : progress > 0.8 ? (1 - progress) / 0.2 : 1
+
+      // Multiple drip streams
+      const numDrips = 15 + scareCount * 3
+      for (let i = 0; i < numDrips; i++) {
+        const dx = (cellHash(i * 7, i * 13) * w)
+        const dripSpeed = 0.3 + cellHash(i * 3, i * 11) * 0.7
+        const dripY = -20 + elapsed * h * dripSpeed * 0.3
+        const dripWidth = 2 + cellHash(i * 5, i * 9) * 6
+
+        const gradient = ctx.createLinearGradient(dx, Math.max(0, dripY - 40), dx, dripY)
+        gradient.addColorStop(0, `rgba(80, 0, 0, 0)`)
+        gradient.addColorStop(0.5, `rgba(140, 10, 10, ${alpha * 0.5})`)
+        gradient.addColorStop(1, `rgba(100, 0, 0, ${alpha * 0.7})`)
+
+        ctx.fillStyle = gradient
+        ctx.fillRect(dx, Math.max(0, dripY - 60), dripWidth, 60)
+
+        // Blood drop at bottom
+        ctx.fillStyle = `rgba(120, 5, 5, ${alpha * 0.6})`
+        ctx.beginPath()
+        ctx.arc(dx + dripWidth / 2, dripY, dripWidth * 0.7, 0, Math.PI * 2)
+        ctx.fill()
+      }
     }
 
-    // Scanlines
-    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.15})`
-    for (let y = 0; y < h; y += 4) {
-      ctx.fillRect(0, y, w, 2)
+    ctx.restore()
+  }
+
+  // ===== WALL EFFECT RENDERING =====
+
+  function renderWallEffect(w: number, h: number): void {
+    if (!currentEffect || !ctx) return
+
+    const elapsed = time - currentEffect.triggeredAt
+    const progress = elapsed / currentEffect.duration
+    if (progress > 1) return
+    const fadeIn = Math.min(1, progress * 5)
+    const fadeOut = progress > 0.7 ? 1 - (progress - 0.7) / 0.3 : 1
+    const alpha = fadeIn * fadeOut
+
+    ctx.save()
+
+    switch (currentEffect.type) {
+      case 'screen_invert': {
+        ctx.globalCompositeOperation = 'difference'
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.8})`
+        ctx.fillRect(0, 0, w, h)
+        ctx.globalCompositeOperation = 'source-over'
+        break
+      }
+
+      case 'wall_bleed': {
+        // Red ooze from walls
+        const numDrips = 20
+        for (let i = 0; i < numDrips; i++) {
+          const dx = (i / numDrips) * w + Math.sin(i * 3.7) * 30
+          const dripLen = elapsed * 80 * (0.5 + Math.sin(i * 2.3) * 0.5)
+          const gradient = ctx.createLinearGradient(dx, h * 0.2, dx, h * 0.2 + dripLen)
+          gradient.addColorStop(0, `rgba(100, 0, 0, ${alpha * 0.4})`)
+          gradient.addColorStop(1, `rgba(80, 0, 0, 0)`)
+          ctx.fillStyle = gradient
+          ctx.fillRect(dx, h * 0.2, 3 + Math.sin(i) * 2, dripLen)
+        }
+        break
+      }
+
+      case 'static_burst': {
+        // TV static
+        const imgData = ctx.getImageData(0, 0, w, h)
+        const d = imgData.data
+        const intensity = alpha * 0.6
+        for (let i = 0; i < d.length; i += 16) { // every 4th pixel for perf
+          const noise = (Math.random() - 0.5) * 255 * intensity
+          d[i] += noise
+          d[i + 1] += noise
+          d[i + 2] += noise
+        }
+        ctx.putImageData(imgData, 0, 0)
+        break
+      }
+
+      case 'lights_out': {
+        ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.92})`
+        ctx.fillRect(0, 0, w, h)
+        // Pair of red eyes
+        if (Math.random() < 0.06) {
+          ctx.fillStyle = `rgba(160, 0, 0, ${alpha * 0.6})`
+          const eyeY = h * 0.4 + Math.random() * h * 0.2
+          const eyeX = w * 0.35 + Math.random() * w * 0.3
+          ctx.beginPath()
+          ctx.arc(eyeX, eyeY, 2, 0, Math.PI * 2)
+          ctx.arc(eyeX + 20, eyeY, 2, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        break
+      }
+
+      case 'eye_track': {
+        // A large eye appears and follows... something
+        const eyeX = w / 2 + Math.sin(time * 0.8) * 50
+        const eyeY = h / 2 + Math.cos(time * 0.6) * 30
+        const eyeR = 60 * alpha
+
+        // Sclera
+        ctx.fillStyle = `rgba(220, 210, 200, ${alpha * 0.7})`
+        ctx.beginPath()
+        ctx.ellipse(eyeX, eyeY, eyeR, eyeR * 0.6, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Iris
+        const irisOffX = Math.sin(time * 1.5) * eyeR * 0.2
+        const irisOffY = Math.cos(time * 1.2) * eyeR * 0.15
+        ctx.fillStyle = `rgba(40, 80, 40, ${alpha * 0.9})`
+        ctx.beginPath()
+        ctx.arc(eyeX + irisOffX, eyeY + irisOffY, eyeR * 0.4, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Pupil
+        ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.95})`
+        ctx.beginPath()
+        ctx.arc(eyeX + irisOffX, eyeY + irisOffY, eyeR * 0.2, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Red veins
+        ctx.strokeStyle = `rgba(180, 30, 30, ${alpha * 0.3})`
+        ctx.lineWidth = 1
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2
+          ctx.beginPath()
+          ctx.moveTo(eyeX + Math.cos(angle) * eyeR * 0.5, eyeY + Math.sin(angle) * eyeR * 0.3)
+          ctx.lineTo(eyeX + Math.cos(angle) * eyeR * 0.9, eyeY + Math.sin(angle) * eyeR * 0.55)
+          ctx.stroke()
+        }
+        break
+      }
+
+      case 'rainbow_spiral': {
+        // Beautiful rainbow spiral emanating from center
+        const dir = currentEffect.params.spiralDir
+        for (let i = 0; i < 200; i++) {
+          const angle = (i / 200) * Math.PI * 8 + time * 2 * dir
+          const radius = (i / 200) * Math.min(w, h) * 0.6 * progress
+          const sx = w / 2 + Math.cos(angle) * radius
+          const sy = h / 2 + Math.sin(angle) * radius
+          const hue = (i * 1.8 + time * 60) % 360
+          const size = 3 + (1 - i / 200) * 8
+          ctx.fillStyle = `hsla(${hue}, 80%, 60%, ${alpha * 0.6 * (1 - i / 200)})`
+          ctx.beginPath()
+          ctx.arc(sx, sy, size, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        break
+      }
+
+      case 'golden_particles': {
+        // Burst of golden firefly particles
+        const numP = 80
+        for (let i = 0; i < numP; i++) {
+          const seed = i * 7.31 + 3.14
+          const angle = seed + elapsed * (0.3 + Math.sin(seed) * 0.2)
+          const dist = elapsed * 80 * (0.3 + (Math.sin(seed * 2) + 1) * 0.5)
+          const gx = w / 2 + Math.cos(angle) * dist
+          const gy = h / 2 + Math.sin(angle) * dist - elapsed * 20
+          if (gx < 0 || gx > w || gy < 0 || gy > h) continue
+          const flicker = 0.5 + Math.sin(time * 5 + seed) * 0.5
+          const pAlpha = alpha * flicker * Math.max(0, 1 - dist / (Math.min(w, h) * 0.5))
+          const size = 2 + Math.sin(seed * 3) * 2
+          ctx.fillStyle = `rgba(255, 215, ${80 + Math.floor(Math.sin(seed) * 50)}, ${pAlpha})`
+          ctx.beginPath()
+          ctx.arc(gx, gy, size, 0, Math.PI * 2)
+          ctx.fill()
+          // Glow
+          ctx.fillStyle = `rgba(255, 200, 50, ${pAlpha * 0.3})`
+          ctx.beginPath()
+          ctx.arc(gx, gy, size * 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        break
+      }
+
+      case 'aurora': {
+        // Northern lights ripple across the ceiling
+        for (let x = 0; x < w; x += 4) {
+          const wave1 = Math.sin(x * 0.008 + time * 0.5) * 40
+          const wave2 = Math.sin(x * 0.015 + time * 0.3 + 2) * 25
+          const wave3 = Math.sin(x * 0.003 + time * 0.7) * 60
+          const baseY = h * 0.15 + wave1 + wave2 + wave3
+          const height = 40 + Math.sin(x * 0.01 + time) * 20
+          const hue = (120 + x * 0.1 + time * 10) % 360
+          const gradient = ctx.createLinearGradient(x, baseY, x, baseY + height)
+          gradient.addColorStop(0, `hsla(${hue}, 70%, 50%, ${alpha * 0.4})`)
+          gradient.addColorStop(0.5, `hsla(${hue + 30}, 60%, 40%, ${alpha * 0.2})`)
+          gradient.addColorStop(1, `hsla(${hue + 60}, 50%, 30%, 0)`)
+          ctx.fillStyle = gradient
+          ctx.fillRect(x, baseY, 5, height)
+        }
+        break
+      }
+
+      case 'starfield': {
+        // Wall becomes transparent, revealing stars
+        ctx.fillStyle = `rgba(0, 0, 5, ${alpha * 0.7})`
+        ctx.fillRect(0, 0, w, h)
+        const numStars = 200
+        for (let i = 0; i < numStars; i++) {
+          const sx = (cellHash(i, 999) * w)
+          const sy = (cellHash(i, 1001) * h)
+          const brightness = 0.3 + cellHash(i, 1003) * 0.7
+          const twinkle = 0.5 + Math.sin(time * (2 + cellHash(i, 1005) * 3) + i) * 0.5
+          const size = 0.5 + cellHash(i, 1007) * 2
+          ctx.fillStyle = `rgba(255, 255, ${200 + Math.floor(cellHash(i, 1009) * 55)}, ${alpha * brightness * twinkle})`
+          ctx.beginPath()
+          ctx.arc(sx, sy, size, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        // Nebula cloud
+        const nebGrad = ctx.createRadialGradient(w * 0.6, h * 0.4, 0, w * 0.6, h * 0.4, w * 0.3)
+        nebGrad.addColorStop(0, `rgba(80, 20, 120, ${alpha * 0.15})`)
+        nebGrad.addColorStop(0.5, `rgba(40, 10, 80, ${alpha * 0.08})`)
+        nebGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+        ctx.fillStyle = nebGrad
+        ctx.fillRect(0, 0, w, h)
+        break
+      }
+
+      case 'prismatic': {
+        // Light refracts through corridors — rainbow bands
+        for (let i = 0; i < 7; i++) {
+          const hue = i * 51.4
+          const bandY = h * 0.2 + i * h * 0.08
+          const bandH = h * 0.06
+          const wave = Math.sin(time * 2 + i * 0.5) * 20
+          ctx.fillStyle = `hsla(${hue}, 90%, 60%, ${alpha * 0.2})`
+          ctx.fillRect(0, bandY + wave, w, bandH)
+        }
+        break
+      }
+
+      case 'portal_glimpse': {
+        // Brief flash of another world through the wall
+        const portalR = Math.min(w, h) * 0.3 * alpha
+        const gradient = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, portalR)
+        gradient.addColorStop(0, `rgba(100, 60, 180, ${alpha * 0.5})`)
+        gradient.addColorStop(0.5, `rgba(60, 30, 120, ${alpha * 0.3})`)
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+        ctx.fillStyle = gradient
+        ctx.fillRect(0, 0, w, h)
+
+        // Swirling particles inside the portal
+        for (let i = 0; i < 30; i++) {
+          const a = time * 1.5 + i * 0.21
+          const r = portalR * 0.3 + Math.sin(time + i) * portalR * 0.2
+          const px2 = w / 2 + Math.cos(a) * r
+          const py2 = h / 2 + Math.sin(a) * r
+          ctx.fillStyle = `rgba(180, 140, 255, ${alpha * 0.5})`
+          ctx.beginPath()
+          ctx.arc(px2, py2, 2, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        break
+      }
+
+      case 'time_freeze': {
+        // Everything gets a blue-white tint, time label appears
+        ctx.fillStyle = `rgba(180, 200, 255, ${alpha * 0.15})`
+        ctx.fillRect(0, 0, w, h)
+        ctx.font = `${24 + Math.sin(time * 3) * 4}px "Cormorant Garamond", serif`
+        ctx.fillStyle = `rgba(200, 220, 255, ${alpha * 0.6})`
+        ctx.textAlign = 'center'
+        ctx.fillText('time has stopped', w / 2, h / 2)
+        ctx.font = '12px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 220, 255, ${alpha * 0.3})`
+        ctx.fillText('...or has it', w / 2, h / 2 + 30)
+        break
+      }
+
+      case 'cryptic_message': {
+        // Text materializes from nothing
+        const msg = CRYPTIC_MESSAGES[currentEffect.params.msgIdx % CRYPTIC_MESSAGES.length]
+        const charReveal = Math.floor(msg.length * Math.min(1, progress * 2))
+        const visible = msg.substring(0, charReveal)
+
+        ctx.font = '18px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(180, 160, 200, ${alpha * 0.7})`
+        ctx.textAlign = 'center'
+        ctx.fillText(visible, w / 2, h / 2)
+
+        // Glitch on each new character
+        if (charReveal > 0 && Math.random() < 0.3) {
+          ctx.fillStyle = `rgba(180, 160, 200, ${alpha * 0.15})`
+          const glitchY = h / 2 + (Math.random() - 0.5) * 40
+          ctx.fillText(msg, w / 2 + (Math.random() - 0.5) * 10, glitchY)
+        }
+        break
+      }
+
+      case 'map_reveal': {
+        // Minimap briefly shows a massive area then shrinks back
+        // Handled by temporarily expanding minimap in renderMinimap
+        // Here just add a flash
+        ctx.fillStyle = `rgba(40, 80, 40, ${alpha * 0.08})`
+        ctx.fillRect(0, 0, w, h)
+        ctx.font = '11px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(80, 160, 80, ${alpha * 0.4})`
+        ctx.textAlign = 'center'
+        ctx.fillText('the labyrinth reveals itself', w / 2, h - 60)
+        break
+      }
+
+      case 'bell_toll': {
+        // Visual ripple from center
+        const rippleR = elapsed * 200
+        const rippleAlpha = alpha * Math.max(0, 1 - rippleR / (Math.min(w, h) * 0.8))
+        ctx.strokeStyle = `rgba(200, 180, 140, ${rippleAlpha * 0.4})`
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.arc(w / 2, h / 2, rippleR, 0, Math.PI * 2)
+        ctx.stroke()
+        // Second ripple
+        if (elapsed > 0.5) {
+          const r2 = (elapsed - 0.5) * 200
+          const a2 = alpha * Math.max(0, 1 - r2 / (Math.min(w, h) * 0.8))
+          ctx.strokeStyle = `rgba(200, 180, 140, ${a2 * 0.3})`
+          ctx.beginPath()
+          ctx.arc(w / 2, h / 2, r2, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+        break
+      }
     }
 
     ctx.restore()
@@ -1083,15 +1791,29 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillRect(0, 0, w, h)
     }
 
-    // Crosshair
-    ctx.strokeStyle = 'rgba(255, 215, 0, 0.04)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(w / 2 - 6, h / 2)
-    ctx.lineTo(w / 2 + 6, h / 2)
-    ctx.moveTo(w / 2, h / 2 - 6)
-    ctx.lineTo(w / 2, h / 2 + 6)
-    ctx.stroke()
+    // Crosshair — changes when looking at anomaly
+    if (lookingAtAnomaly) {
+      const pulse = 0.15 + Math.sin(time * 4) * 0.08
+      ctx.strokeStyle = `rgba(180, 140, 255, ${pulse})`
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(w / 2, h / 2, 8, 0, Math.PI * 2)
+      ctx.stroke()
+      // Inner dot
+      ctx.fillStyle = `rgba(180, 140, 255, ${pulse * 1.5})`
+      ctx.beginPath()
+      ctx.arc(w / 2, h / 2, 2, 0, Math.PI * 2)
+      ctx.fill()
+    } else {
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.04)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(w / 2 - 6, h / 2)
+      ctx.lineTo(w / 2 + 6, h / 2)
+      ctx.moveTo(w / 2, h / 2 - 6)
+      ctx.lineTo(w / 2, h / 2 + 6)
+      ctx.stroke()
+    }
 
     // Wikipedia fragment
     renderWikiFragment(w, h)
@@ -1116,12 +1838,21 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillText(inscriptionText, w / 2, h / 2 + 60)
     }
 
+    // Anomaly interaction prompt
+    if (lookingAtAnomaly && !currentEffect) {
+      const pulse = 0.3 + Math.sin(time * 3) * 0.12
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(180, 140, 255, ${pulse})`
+      ctx.textAlign = 'center'
+      ctx.fillText('click or press space — something is here', w / 2, h / 2 + 45)
+    }
+
     // Portal interaction prompt
     if (nearbyPortal) {
       const [pr, pg, pb] = nearbyPortal.color
-      const alpha = 0.4 + Math.sin(time * 2) * 0.15
+      const portalAlpha = 0.4 + Math.sin(time * 2) * 0.15
       ctx.font = '12px "Cormorant Garamond", serif'
-      ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, ${alpha})`
+      ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, ${portalAlpha})`
       ctx.textAlign = 'center'
       ctx.fillText(`press E — a passage leads to ${nearbyPortal.label}`, w / 2, h - 40)
     }
@@ -1130,7 +1861,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(140, 120, 160, 0.04)'
     ctx.textAlign = 'center'
-    ctx.fillText('WASD to move · the labyrinth is infinite · it forgets behind you', w / 2, h - 8)
+    ctx.fillText('WASD to move · click glowing walls · the labyrinth forgets behind you', w / 2, h - 8)
+
+    // Wall effect overlay
+    renderWallEffect(w, h)
 
     // Jump scare overlay (on top of everything)
     renderJumpScare(w, h)
@@ -1150,10 +1884,25 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (key === 'e' && nearbyPortal && deps.switchTo) {
       deps.switchTo(nearbyPortal.room)
     }
+
+    // Space or Enter to interact with anomaly
+    if ((key === ' ' || key === 'enter') && lookingAtAnomaly) {
+      e.preventDefault()
+      triggerWallEffect()
+    }
   }
 
   function handleKeyUp(e: KeyboardEvent) {
     keys.delete(e.key.toLowerCase())
+  }
+
+  function handleClick(e: MouseEvent) {
+    if (!active) return
+    e.preventDefault()
+    initAudio() // ensure audio on first click
+    if (lookingAtAnomaly) {
+      triggerWallEffect()
+    }
   }
 
   return {
@@ -1176,6 +1925,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       window.addEventListener('keydown', handleKeyDown)
       window.addEventListener('keyup', handleKeyUp)
+      canvas.addEventListener('click', handleClick)
 
       const onResize = () => {
         if (canvas) {
@@ -1234,7 +1984,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       tension = 0
       tensionTarget = 0
       currentScare = null
+      currentEffect = null
       lastScareTime = -999
+      scareCount = 0
       nearbyPortal = null
       inscriptionText = ''
       inscriptionAlpha = 0
@@ -1255,6 +2007,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       keys.clear()
       currentFragment = null
       currentScare = null
+      currentEffect = null
 
       if (dripTimeout) {
         clearTimeout(dripTimeout)
