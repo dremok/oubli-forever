@@ -118,7 +118,22 @@ function generateDeck(): Card[] {
   return deck
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the i ching: 3,000 years of consulting yarrow stalks about the future. randomness as oracle.',
+  'tarot was a card game before it was divination. the arcana accumulated meaning through centuries of use.',
+  'the delphic oracle breathed volcanic fumes and spoke in riddles. prophecy as altered state.',
+  'borges: the library of babel contains every possible page. in infinite text, all prophecy is true.',
+  'isaac julien projects five versions of the same transformation. which screen holds the real future?',
+  'john cage used the i ching to compose music. chance operations as liberation from ego.',
+  'the urim and thummim: ancient hebrew divination stones. yes or no, cast in precious metal.',
+  'programmable self-destructing plastic: material designed with expiration dates. the future written into matter.',
+  'charli xcx\'s the moment: can a cultural phenomenon choose to end itself? the cards say maybe.',
+  'the great meme reset: TikTok declared 2026 a fresh start. collective divination by algorithm.',
+]
+
 export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -975,6 +990,30 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     ctx.fillStyle = 'rgba(140, 120, 160, 0.06)'
     ctx.textAlign = 'left'
     ctx.fillText(`${totalDraws} readings`, 12, h - 18)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 23) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(200, 180, 220, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 45 + li * 14)
+    }
   }
 
   return {

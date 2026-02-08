@@ -47,7 +47,22 @@ interface Beacon {
   receiveTime: number
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the overview effect: astronauts see the earth from space and are forever changed. borders dissolve.',
+  'voyager 1 is 24 billion km away. its golden record carries greetings in 55 languages. some already extinct.',
+  'the ISS orbits at 28,000 km/h. 16 sunrises every day. time compresses until it loses meaning.',
+  'HD 137010 b: an ice-cold earth found in kepler\'s old archives. a frozen world hiding in data nobody examined.',
+  'the wow! signal (1977): 72 seconds of anomalous radio. never repeated. the universe said something once.',
+  'laika died alone in orbit, overheating in sputnik 2. the first earthling in space, unremembered by mission control.',
+  'artemis II delays push moonwalks further away. the moon remembers our footprints but we keep postponing the visit.',
+  'the CMB: cosmic microwave background is the oldest light. the universe\'s first memory, 13.8 billion years old.',
+  'self-destructing plastic: rutgers scientists made material programmed to break down on command. matter that forgets.',
+  'perseverance drove 689 feet on mars, path planned by AI. memory persisting in places humans cannot reach.',
+]
+
 export function createSatelliteRoom(deps: SatelliteDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1140,6 +1155,30 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     c.fillStyle = `rgba(255, 215, 0, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
     c.fillText('artemis waits. the station orbits. your signals persist.', w / 2, h - 4)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(255, 215, 0, 0.03)'
+    const insMaxW = w * 0.8
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 20 + li * 14)
+    }
   }
 
   return {

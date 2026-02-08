@@ -194,7 +194,22 @@ interface GardenPortal {
   clickFlash: number // 0-1, decays after click
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the alerce trees of patagonia are 3,600 years old. this february, they burn.',
+  'the oldest seagrass meadow in australia: 4,500 years old, one plant, cloning itself forever.',
+  'linnaeus gave every living thing two names. he believed naming was the first act of understanding.',
+  'the bodhi tree under which buddha sat still grows in anuradhapura, sri lanka. it remembers enlightenment.',
+  'proust\'s madeleine triggered a garden: combray rising from his teacup, petal by petal.',
+  'a garden is a memory palace you can eat. each plant marks a season you survived.',
+  'global water bankruptcy (UN, jan 2026): 50% of large lakes have shrunk since 1990.',
+  'seed vaults in svalbard hold 1.3 million varieties. insurance against forgetting how to grow food.',
+  'e.O. wilson: half of all species will be extinct by 2100. the garden is closing.',
+  'shape-shifting molecular devices: matter that remembers, thinks, and learns. the new root system.',
+]
+
 export function createGardenRoom(deps: GardenDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -994,6 +1009,30 @@ export function createGardenRoom(deps: GardenDeps): Room {
     ctx.fillStyle = 'rgba(200, 180, 140, 0.12)'
     ctx.textAlign = 'left'
     ctx.fillText(`${memCount} memories growing · ${Math.floor(avgHealth * 100)}% average vitality`, 16, h - 16)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(120, 160, 80, 0.035)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
 
     // Garden portals — organic exits at the edges
     renderPortals(ctx, w, h)

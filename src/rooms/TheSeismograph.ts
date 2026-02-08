@@ -54,6 +54,19 @@ interface FadingLabel {
   driftY: number      // slow upward drift offset
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the earth\'s crust is 5-70km thick. beneath it, the mantle moves at 2cm per year. patience as geology.',
+  'the 2011 tōhoku earthquake shifted earth\'s axis by 17cm. the planet tilted and forgot its angle.',
+  'seismographs were invented in 132 AD by zhang heng. a bronze vessel with dragon mouths that caught bronze balls.',
+  'nikola tesla once accidentally triggered an earthquake in manhattan. resonance as accidental violence.',
+  'the deepest earthquake ever recorded: 735km below the sea of okhotsk. the earth groans from within.',
+  'plate tectonics wasn\'t accepted until the 1960s. for decades, geologists argued the continents didn\'t move.',
+  'every earthquake is the earth adjusting its memory. stress accumulates, then releases.',
+  'the cascadia subduction zone last ruptured in 1700. the indigenous peoples of the northwest coast remember.',
+  'moonquakes last up to an hour. on earth, tremors fade in minutes. the moon holds its grief longer.',
+  'a hidden geometry bends electrons like gravity bends light. invisible forces warping the space of memory.',
+]
+
 // Primary: USGS FDSNWS query API (20 most recent quakes, no key needed, CORS-friendly)
 const FDSNWS_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&limit=20&orderby=time'
 // Fallback: summary feed (all quakes in last 24h)
@@ -76,6 +89,8 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
   let fetchError = false
   let loading = true
   let hoveredStation = -1
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let mouseX = 0
   let mouseY = 0
   let fadingLabels: FadingLabel[] = []
@@ -879,6 +894,30 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     }
 
     ctx.restore()
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(40, 255, 80, 0.035)'
+    const insMaxW = w * 0.8
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
 
     // Refresh data every 5 minutes (respects cache)
     if (Date.now() - lastFetch > CACHE_DURATION_MS) {

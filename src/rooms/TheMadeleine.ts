@@ -153,7 +153,22 @@ const WORD_TRIGGERS = [
   'signal', 'pulse', 'husk', 'silt', 'meridian',
 ]
 
+const CULTURAL_INSCRIPTIONS = [
+  'proust dipped a madeleine in lime blossom tea. all of combray rose from the cup.',
+  'sei shōnagon listed things that make the heart beat faster: sparrow feeding its young, incense smoke, a letter.',
+  'synesthesia: some people taste colors. the senses cross-wire. memory is always multisensory.',
+  'mono no aware: the pathos of things. beauty is inseparable from its transience.',
+  'the great meme reset of 2026: the internet trying to remember what sincerity felt like.',
+  'isaac julien\'s metamorphosis: five screens, mirrored walls. time folds in on itself.',
+  'the word nostalgia was coined in 1688 as a medical diagnosis. homesickness so severe it could kill.',
+  'olfactory memory bypasses the thalamus. smells go directly to the hippocampus. the shortcut to the past.',
+  'mythical creatures at USC PAM: immigrant memory as mythology. 12 rooms, 5000 years of objects.',
+  'italian brainrot: AI-generated nonsense creatures with pseudo-italian names. meaning dissolving in real time.',
+]
+
 export function createMadeleineRoom(deps: MadeleineDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -962,6 +977,30 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
     c.fillStyle = 'rgba(200, 180, 140, 0.06)'
     c.textAlign = 'left'
     c.fillText(`${triggers.length} triggers drifting`, 12, h - 18)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(200, 180, 140, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 45 + li * 14)
+    }
 
     // Update portal glows
     updatePortalGlow()

@@ -190,7 +190,22 @@ function hashDate(dateStr: string): number {
   return Math.abs(hash)
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'on kawara painted the date. every day for 48 years. 3,000 paintings. if he didn\'t finish by midnight, he destroyed it.',
+  'roman opalka painted numbers. 1 to infinity. his voice recorded each number. the canvas grew whiter over decades.',
+  'tehching hsieh punched a time clock every hour for a year. 8,760 photographs of attendance as art.',
+  'the date is the smallest unit of autobiography. to mark a day is to say: I was here.',
+  'wabi-sabi went viral on TikTok in 2026. beauty in imperfection. then it was co-opted and emptied.',
+  'the maya long count calendar reset on december 21, 2012. nothing ended. the count simply started again.',
+  'the doomsday clock reads 85 seconds to midnight. the closest it has ever been. the date is a warning.',
+  'isaac julien: five screens showing the same transformation. which day holds the real version?',
+  'the french republican calendar renamed all the months. vendémiaire, brumaire, frimaire. revolution as temporal reset.',
+  'episodic and semantic memory share the same neural network. dates are both events and facts simultaneously.',
+]
+
 export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1220,6 +1235,30 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
     c.fillStyle = `rgba(200, 190, 170, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.textAlign = 'center'
     c.fillText('I am still alive', w / 2, h - 4)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 22) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(200, 190, 170, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 20 + li * 14)
+    }
   }
 
   function handleWheel(e: WheelEvent) {

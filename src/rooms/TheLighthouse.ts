@@ -71,7 +71,22 @@ interface TrailPoint {
   alpha: number
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'the pharos of alexandria was 130 meters tall. one of the seven wonders, now rubble under the sea.',
+  'morse code: the first digital language. dit-dah as zero-one. transmission as the root of memory.',
+  'flannan isles, 1900: three lighthouse keepers vanished. the clocks had stopped. the table was set.',
+  'virginia woolf\'s to the lighthouse: the beam sweeps across the dark and nothing is ever the same.',
+  'eddystone lighthouse was rebuilt 4 times. the sea kept forgetting it was there.',
+  'number stations still broadcast encrypted sequences. UVB-76 has been buzzing since 1982. no one knows why.',
+  'charli xcx\'s the moment: a cultural era examining whether it should let itself be forgotten.',
+  'the last manned lighthouse in the US was automated in 1998. the keeper\'s memory, replaced by a timer.',
+  'a foghorn\'s low frequency carries further because long waves bend around obstacles. grief travels the same way.',
+  'episodic and semantic memory use the same brain network. what happened to you and what you know are one.',
+]
+
 export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -990,6 +1005,30 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
     ctx.fillText(lightOn ? '\u25A0 transmitting' : '\u25A1 silence', 12, h - 18)
     ctx.textAlign = 'right'
     ctx.fillText(autoMode ? 'auto' : 'manual', w - 12, h - 18)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(255, 250, 200, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 45 + li * 14)
+    }
   }
 
   function handleKey(e: KeyboardEvent) {

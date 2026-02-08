@@ -78,6 +78,19 @@ interface CrisisFragment {
   drift: number
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'hokusai painted the great wave at age 71. he said: by 90 I will have penetrated the mystery of things.',
+  'rachel carson wrote the sea around us (1951). the ocean as memory bank, older than any continent.',
+  'the mariana trench is 11km deep. at the bottom, single-celled organisms carry memories of the first oceans.',
+  'sylvia earle: the ocean is the planet\'s life support system. and we\'ve explored less than 5%.',
+  'messages in bottles have been found after 108 years. glass preserves what the sea cannot erase.',
+  'the ocean absorbs 30% of CO2 emissions. it\'s acidifying — dissolving the shells of creatures that remember the old pH.',
+  'tarkovsky flooded entire sets for stalker. water as the medium of the unconscious.',
+  'the UN declared global water bankruptcy in january 2026. 50% of large lakes have shrunk since 1990.',
+  'deep-sea mining threatens hydrothermal vents — ecosystems that have existed for millions of years.',
+  'an ice-cold earth discovered in kepler archives. a frozen ocean world, 146 light-years away.',
+]
+
 const WATER_CRISIS_FACTS = [
   'fifty percent of large lakes have shrunk since 1990',
   'seventy percent of major aquifers in long-term decline',
@@ -113,6 +126,8 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
   let active = false
   let frameId = 0
   let time = 0
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let flotsam: Flotsam[] = []
   let audioCtx: AudioContext | null = null
   let noiseSource: AudioBufferSourceNode | null = null
@@ -1192,6 +1207,30 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
     ctx.fillStyle = `rgba(${colors.textColor}, 0.08)`
     ctx.textAlign = 'left'
     ctx.fillText(`${onWater} adrift \u00b7 ${onShore} ashore`, 16, h - 16)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 23) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = `rgba(${colors.textColor}, 0.03)`
+    const insMaxW = w * 0.8
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 40 + li * 14)
+    }
   }
 
   // ── Hit testing for portal creatures ────────────────────────

@@ -321,6 +321,52 @@ const fragments: string[] = [
   // Feb 2026 — deep-sea abyss (Clarion-Clipperton Zone detail)
   "the seafloor sediment grows one thousandth of a millimeter per year. any scar takes geological time to heal.",
   "788 species cataloged at the moment of their erasure. discovery and destruction simultaneous.",
+
+  // Feb 2026 — episodic/semantic memory collapse
+  "episodic and semantic memory share the same brain network. what happened to you and what you know are one.",
+  "for decades we said there were two kinds of memory. fMRI shows the distinction dissolves at the neural level.",
+  "remembering your first kiss and knowing the capital of france activate the same circuits.",
+
+  // Feb 2026 — shape-shifting molecular memory
+  "ruthenium molecules that remember, think, and learn. the line between storage and processing dissolves.",
+  "the same molecule can be memory, logic gate, or synapse. matter that changes what it is depending on stimulus.",
+
+  // Feb 2026 — great meme reset
+  "the great meme reset of 2026: TikTok declared a fresh start. the internet trying to remember sincerity.",
+  "a collective yearning to forget brainrot and return to dank memes. nostalgia for 2016.",
+
+  // Feb 2026 — defiantly analog olympics
+  "milan 2026: the olympic rings as massive physical structures lit by fireworks. no drones. no AI.",
+  "the opening ceremony was defiantly analog. humanity over spectacle. fire over projection.",
+
+  // Feb 2026 — italian brainrot
+  "italian brainrot: AI-generated hybrid creatures with pseudo-italian names. meaning dissolving in real time.",
+  "the joke is that there is no joke. gen alpha absurdism found its purest expression in AI-generated nonsense.",
+
+  // Feb 2026 — 3600-year trees burning
+  "the alerce trees of patagonia have lived 3,600 years. this february, they burn. each tree ring is a year of memory.",
+  "45,000 hectares burned. the fire service budget slashed 80%. lightning started it. policy made it unstoppable.",
+
+  // Feb 2026 — transcranial ultrasound
+  "MIT made a tool that can probe consciousness by stimulating deep brain regions. cause and effect, not just correlation.",
+  "transcranial focused ultrasound: sound waves reaching into the brain's depths. consciousness as something you can poke.",
+
+  // Feb 2026 — self-destructing plastic
+  "programmable self-destructing plastic: strong during use, but designed to forget how to be plastic.",
+  "the breakdown speed is tunable from days to years. material with built-in expiration dates.",
+
+  // Feb 2026 — ice-cold earth in kepler archives
+  "HD 137010 b: a frozen earth hiding in old kepler data nobody examined. -68°C. waiting to be noticed.",
+  "a whole world discovered from a single transit shadow. one blink, in archived data, years old.",
+
+  // Feb 2026 — wabi-sabi viral
+  "wabi-sabi went viral on TikTok then was co-opted and hollowed out within days. impermanence of impermanence.",
+
+  // Feb 2026 — charli xcx the moment
+  "charli xcx made a film about whether brat summer should be allowed to die. the tension between preservation and release.",
+
+  // Feb 2026 — jon hamm dissociation
+  "a viral trend about the bliss of dissociation. the pleasure of choosing to forget your circumstances.",
 ]
 
 export class Whispers {

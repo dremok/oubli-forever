@@ -25,6 +25,19 @@ import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
+const CULTURAL_INSCRIPTIONS = [
+  'the library of alexandria burned for days. what survived, we call history. what didn\'t, we call mystery.',
+  'oharai: the japanese ritual of purification by fire. what you burn, you release.',
+  'korakrit arunanondchai films the ghost of his grandmother. thermal imaging as séance.',
+  'ray bradbury\'s firemen burn books to keep people happy. the temperature of ignition: 451°F.',
+  'the burning of notre-dame (2019) — 800 years of memory, saved in 12 hours of panic.',
+  'a phoenix doesn\'t remember its past life. that\'s the point.',
+  'marie kondo asks: does it spark joy? the furnace asks: does it still burn?',
+  'thermodynamics: entropy always increases. order dissolves. fire is just entropy accelerating.',
+  'the milan olympics chose fire over screens. the opening ceremony was defiantly analog.',
+  'an ice-cold earth orbits a dim star 146 light-years away. even frozen worlds remember warmth.',
+]
+
 interface FurnaceDeps {
   getMemories: () => StoredMemory[]
   accelerateDegradation: (id: string, amount: number) => void
@@ -90,6 +103,8 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
   let time = 0
   let embers: Ember[] = []
   let burningChars: BurningChar[] = []
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let fireIntensity = 0.3 // grows as you burn
   let selectedMemory: StoredMemory | null = null
   let burnProgress = 0
@@ -751,6 +766,30 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
         clickedIron = -1
         deps.switchTo!(target)
       }
+    }
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 22) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = `rgba(255, 140, 60, 0.04)`
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
     }
   }
 

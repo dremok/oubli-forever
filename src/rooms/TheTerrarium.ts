@@ -50,6 +50,19 @@ interface TerrariumDeps {
   switchTo?: (name: string) => void
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'david biosphere 2 (1991): 8 humans sealed in a glass dome for 2 years. the oxygen ran out.',
+  'karl sims evolved virtual creatures in 1994. they learned to swim, walk, and fight. none survived power-off.',
+  'the oldest living organism: a seagrass meadow in australia, 4,500 years old. one plant, cloning itself.',
+  'e.O. wilson: half of all species will be extinct by 2100. the terrarium of earth is cracking.',
+  'lynn margulis proved that mitochondria were once free-living bacteria. symbiosis as the engine of complexity.',
+  'the doomsday clock reads 85 seconds to midnight. the ecosystem of civilization, running out of time.',
+  'craig venter created the first synthetic life form in 2010. JCVI-syn1.0. life, authored.',
+  'tardigrades survive in space, boiling water, and radiation. memory encoded in survival itself.',
+  'the alerce trees of patagonia have lived 3,600 years. this winter, they burned.',
+  'USC pacific asia museum: mythical creatures as immigrant memory. 12 immersive rooms, 5000 years of objects.',
+]
+
 export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -62,6 +75,8 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let food: Food[] = []
   let deathParticles: { x: number; y: number; vx: number; vy: number; life: number; hue: number }[] = []
 
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let totalBorn = 0
   let totalDied = 0
   let maxGeneration = 0
@@ -884,6 +899,30 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     ctx.fillStyle = 'rgba(120, 160, 120, 0.04)'
     ctx.textAlign = 'center'
     ctx.fillText('click to add food · watch them live and die', w / 2, h - 8)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(80, 160, 80, 0.035)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 28 + li * 14)
+    }
   }
 
   function handleClick(e: MouseEvent) {

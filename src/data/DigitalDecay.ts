@@ -133,6 +133,14 @@ const DECAY_MEDITATIONS = [
   'the doomsday clock reads 85 seconds. a countdown that asymptotically approaches zero.',
   'we may never know if an AI is conscious. the unknowability is not a failure. it is the condition.',
   'the anti-AI movement: rough edges as authentication. imperfection as proof of humanity.',
+  'episodic and semantic memory are the same network. the brain never drew the line we did.',
+  'shape-shifting molecular devices: matter that remembers, thinks, learns. the substrate is the software.',
+  'the great meme reset: a collective desire to forget an entire era of internet culture.',
+  'milan 2026: fire instead of drones. humanity as spectacle. the defiantly analog olympics.',
+  'programmable self-destructing plastic. material designed with expiration dates for its own existence.',
+  'the alerce trees of patagonia: 3,600 years of ring-memory. burning.',
+  'a frozen earth discovered in kepler\'s archives. a world that existed in data nobody examined.',
+  'transcranial focused ultrasound can now probe consciousness. sound waves testing what it means to be aware.',
 ]
 
 export class DigitalDecay {

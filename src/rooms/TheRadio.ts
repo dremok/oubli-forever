@@ -37,7 +37,22 @@ interface Station {
   bandwidth: number // how wide the signal is (healthy = wider)
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'UVB-76 (the buzzer): broadcasting a 4kHz tone from russia since 1982. occasionally, a voice reads numbers.',
+  'nikola tesla believed he received radio signals from mars. the static speaks if you want it to.',
+  'numbers stations: during the cold war, shortwave radio broadcast encrypted sequences. some still transmit.',
+  'the golden age of radio: families gathered around a speaker. shared hallucination before television.',
+  'italian brainrot: AI-generated nonsense creatures with pseudo-italian names. meaning dissolving at broadcast speed.',
+  'the wow! signal: 72 seconds of anomalous radio from sagittarius. never repeated. the universe cleared its throat.',
+  'pirate radio ships anchored outside territorial waters to broadcast what the state wanted forgotten.',
+  'the defiantly analog olympics: milan chose fire over drones. human voice over digital spectacle.',
+  'FDR\'s fireside chats: the president speaking directly into living rooms. intimacy as political tool.',
+  'the cosmic microwave background: static on your old TV was partly the echo of the big bang.',
+]
+
 export function createRadioRoom(deps: RadioDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1038,6 +1053,30 @@ export function createRadioRoom(deps: RadioDeps): Room {
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(${bandColor}, 0.06)`
     ctx.fillText('drag the dial to tune · hold steady on hidden frequencies to lock on', w / 2, h - 20)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = `rgba(${bandColor}, 0.03)`
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
 
     // Navigation flash overlay (rendered last, on top of everything)
     if (navigatingTo && lockFlashTime > 0) {

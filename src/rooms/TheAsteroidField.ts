@@ -121,7 +121,22 @@ function setCachedData(data: Asteroid[]) {
   }
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'lars von trier\'s melancholia: a rogue planet on collision course. the end of everything as quiet beauty.',
+  'the DART mission: humanity deliberately crashing a spacecraft into an asteroid. defense as controlled violence.',
+  'the tunguska event (1908): something exploded above siberia with the force of 1000 hiroshimas. no crater.',
+  'the chicxulub impactor was 12km wide. it killed 75% of all species. memory reset at the geological level.',
+  'bennu has a 1-in-2,700 chance of hitting earth by 2182. we track it obsessively. anxiety as vigil.',
+  'oumuamua: an interstellar object that tumbled through our solar system in 2017. visited, then left. no explanation.',
+  'jon hamm dancing: a viral trend about the bliss of dissociation. choosing to forget your circumstances.',
+  'neil degrasse tyson: we are made of stellar ash. every atom in your body was forged in a dying star.',
+  'HD 137010 b: ice-cold earth in kepler archives. a frozen world that existed in data nobody examined.',
+  'most near-earth objects pass undetected. the sky is full of things we never notice until they are gone.',
+]
+
 export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1194,6 +1209,30 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
     c.fillStyle = `rgba(150, 140, 130, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
     c.fillText('most things that could destroy us pass unnoticed', w / 2, h - 4)
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(150, 140, 130, 0.03)'
+    const insMaxW = w * 0.8
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 20 + li * 14)
+    }
   }
 
   function handleClick(e: MouseEvent) {

@@ -75,7 +75,22 @@ interface ResonanceZone {
   test: (x: number, y: number, w: number, h: number) => boolean
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'arvo pärt\'s tintinnabuli: each voice has a melodic voice and a tintinnabuli voice. memory and echo.',
+  'ligeti\'s atmosphères: 48 string players, each on a different note. a cloud of sound with no melody.',
+  'hildegard von bingen composed music she heard in visions. the choir as direct channel to the divine.',
+  'the milan olympics opening was defiantly analog. fire instead of drones. voice instead of AI.',
+  'the deep note — THX\'s famous chord — is 30 voices starting in chaos and converging to unison.',
+  'meredith monk treats the voice as an instrument of memory: glossolalia, ululation, prehistoric sound.',
+  'the first polyphony: two monks singing different notes simultaneously, 9th century. harmony as accident.',
+  'transcranial ultrasound: MIT can now probe deep brain structures. sound as the tool of consciousness.',
+  'pauline oliveros: deep listening. attend to all sounds equally. the room\'s hum is as important as the voice.',
+  'wabi-sabi went viral on tiktok, then was co-opted and hollowed out. beauty of imperfection, mass-produced.',
+]
+
 export function createChoirRoom(deps?: ChoirDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1002,6 +1017,30 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     if (!anyZoneActive) {
       ctx.fillStyle = 'rgba(200, 180, 255, 0.03)'
       ctx.fillText('voices placed near the edges create resonance...', w / 2, h - 22)
+    }
+
+    // Cultural inscription
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 22) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(200, 180, 255, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      ctx.fillText(insLines[li], w / 2, h - 50 + li * 14)
     }
   }
 
