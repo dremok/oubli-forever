@@ -27,6 +27,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 const STORAGE_KEY = 'oubli-study'
 const QUOTE_API = 'https://stoic-quotes.com/api/quote'
@@ -129,6 +130,43 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
   let active = false
   let lastWordCount = 0
 
+  // --- Audio state ---
+  let audioNodes: {
+    fireplaceNoise: AudioBufferSourceNode | null
+    fireplaceGain: GainNode | null
+    fireplaceFilter: BiquadFilterNode | null
+    clockOsc: OscillatorNode | null
+    clockGain: GainNode | null
+    creakGain: GainNode | null
+    masterGain: GainNode | null
+  } = {
+    fireplaceNoise: null, fireplaceGain: null, fireplaceFilter: null,
+    clockOsc: null, clockGain: null, creakGain: null, masterGain: null,
+  }
+  let clockTickInterval: number | null = null
+  let creakInterval: number | null = null
+  let audioCtx: AudioContext | null = null
+
+  // --- Visual state ---
+  let atmosCanvas: HTMLCanvasElement | null = null
+  let atmosCtx: CanvasRenderingContext2D | null = null
+  let animFrame: number | null = null
+  let mouseX = -1000
+  let mouseY = -1000
+  let mouseMoveHandler: ((e: MouseEvent) => void) | null = null
+
+  // Dust motes
+  interface DustMote {
+    x: number; y: number; vx: number; vy: number
+    size: number; alpha: number; warmth: number
+  }
+  const dustMotes: DustMote[] = []
+  const DUST_COUNT = 40
+
+  // Flicker state for oil lamp effect
+  let flickerPhase = 0
+  let flickerIntensity = 0.03
+
   function loadText(): string {
     try {
       return localStorage.getItem(STORAGE_KEY) || ''
@@ -218,6 +256,9 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
     quoteEl.textContent = `\u201c${quote.text}\u201d`
     quoteAuthorEl.textContent = `\u2014 ${quote.author}`
 
+    // Page-turn sound when quote appears
+    playPageTurn()
+
     // Fade in
     quoteEl.style.transition = `opacity ${QUOTE_FADE_MS}ms ease-in`
     quoteAuthorEl.style.transition = `opacity ${QUOTE_FADE_MS}ms ease-in ${QUOTE_FADE_MS * 0.3}ms`
@@ -249,6 +290,379 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
   function stopQuoteCycle() {
     if (quoteInterval) { clearInterval(quoteInterval); quoteInterval = null }
     if (quoteTimeout) { clearTimeout(quoteTimeout); quoteTimeout = null }
+  }
+
+  // =============================================
+  // AUDIO SYSTEM — warm study ambience
+  // =============================================
+
+  async function initAudio() {
+    try {
+      audioCtx = await getAudioContext()
+      const dest = getAudioDestination()
+
+      // Master gain for the study's audio
+      const master = audioCtx.createGain()
+      master.gain.value = 0
+      master.connect(dest)
+      audioNodes.masterGain = master
+
+      // --- Fireplace crackle: filtered noise ---
+      const sampleRate = audioCtx.sampleRate
+      const noiseDuration = 4 // seconds of noise buffer, looped
+      const noiseBuffer = audioCtx.createBuffer(1, sampleRate * noiseDuration, sampleRate)
+      const noiseData = noiseBuffer.getChannelData(0)
+      for (let i = 0; i < noiseData.length; i++) {
+        // Shaped noise: mix white noise with bursts for crackle character
+        const base = (Math.random() * 2 - 1) * 0.3
+        // Occasional louder pops
+        const pop = Math.random() < 0.001 ? (Math.random() * 2 - 1) * 0.8 : 0
+        noiseData[i] = base + pop
+      }
+
+      const noiseSource = audioCtx.createBufferSource()
+      noiseSource.buffer = noiseBuffer
+      noiseSource.loop = true
+
+      // Bandpass filter for fireplace warmth
+      const fireFilter = audioCtx.createBiquadFilter()
+      fireFilter.type = 'bandpass'
+      fireFilter.frequency.value = 600
+      fireFilter.Q.value = 0.5
+
+      // Additional lowpass to remove harshness
+      const fireLowpass = audioCtx.createBiquadFilter()
+      fireLowpass.type = 'lowpass'
+      fireLowpass.frequency.value = 1800
+      fireLowpass.Q.value = 0.3
+
+      const fireGain = audioCtx.createGain()
+      fireGain.gain.value = 0.12
+
+      noiseSource.connect(fireFilter)
+      fireFilter.connect(fireLowpass)
+      fireLowpass.connect(fireGain)
+      fireGain.connect(master)
+      noiseSource.start()
+
+      audioNodes.fireplaceNoise = noiseSource
+      audioNodes.fireplaceGain = fireGain
+      audioNodes.fireplaceFilter = fireFilter
+
+      // --- Clock tick: subtle metronome ---
+      // We use a repeating scheduled click sound
+      const clockGain = audioCtx.createGain()
+      clockGain.gain.value = 0
+      clockGain.connect(master)
+      audioNodes.clockGain = clockGain
+
+      // Tick every 1 second using interval + short oscillator bursts
+      clockTickInterval = window.setInterval(() => {
+        if (!audioCtx || !active) return
+        playClockTick()
+      }, 1000)
+
+      // --- Occasional wood creak ---
+      const creakGain = audioCtx.createGain()
+      creakGain.gain.value = 0.04
+      creakGain.connect(master)
+      audioNodes.creakGain = creakGain
+
+      creakInterval = window.setInterval(() => {
+        if (!audioCtx || !active) return
+        if (Math.random() < 0.15) playCreak()
+      }, 6000)
+
+      // Fade master in over 2 seconds
+      master.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.6)
+
+    } catch {
+      // Audio init failed silently — no audio, no problem
+    }
+  }
+
+  function playClockTick() {
+    if (!audioCtx || !audioNodes.clockGain) return
+    const now = audioCtx.currentTime
+    // Short click using oscillator
+    const osc = audioCtx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.value = 800 + Math.random() * 100
+    const tickEnv = audioCtx.createGain()
+    tickEnv.gain.setValueAtTime(0.03, now)
+    tickEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.04)
+    osc.connect(tickEnv)
+    tickEnv.connect(audioNodes.clockGain)
+    osc.start(now)
+    osc.stop(now + 0.05)
+  }
+
+  function playCreak() {
+    if (!audioCtx || !audioNodes.creakGain) return
+    const now = audioCtx.currentTime
+    // Wood creak: low frequency sweep
+    const osc = audioCtx.createOscillator()
+    osc.type = 'sawtooth'
+    const baseFreq = 60 + Math.random() * 40
+    osc.frequency.setValueAtTime(baseFreq, now)
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, now + 0.15)
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, now + 0.4)
+
+    const filter = audioCtx.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.value = 300
+    filter.Q.value = 2
+
+    const env = audioCtx.createGain()
+    env.gain.setValueAtTime(0, now)
+    env.gain.linearRampToValueAtTime(0.06, now + 0.05)
+    env.gain.exponentialRampToValueAtTime(0.001, now + 0.5)
+
+    osc.connect(filter)
+    filter.connect(env)
+    env.connect(audioNodes.creakGain)
+    osc.start(now)
+    osc.stop(now + 0.6)
+  }
+
+  /** Play a soft page-turn sound (called when quotes change) */
+  function playPageTurn() {
+    if (!audioCtx || !audioNodes.masterGain) return
+    const now = audioCtx.currentTime
+
+    // Page turn: short burst of filtered noise with envelope
+    const sampleRate = audioCtx.sampleRate
+    const duration = 0.3
+    const buf = audioCtx.createBuffer(1, sampleRate * duration, sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.5
+    }
+
+    const src = audioCtx.createBufferSource()
+    src.buffer = buf
+
+    const hp = audioCtx.createBiquadFilter()
+    hp.type = 'highpass'
+    hp.frequency.value = 2000
+    hp.Q.value = 0.3
+
+    const lp = audioCtx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = 6000
+
+    const env = audioCtx.createGain()
+    env.gain.setValueAtTime(0, now)
+    env.gain.linearRampToValueAtTime(0.06, now + 0.02)
+    env.gain.exponentialRampToValueAtTime(0.001, now + duration)
+
+    src.connect(hp)
+    hp.connect(lp)
+    lp.connect(env)
+    env.connect(audioNodes.masterGain)
+    src.start(now)
+    src.stop(now + duration + 0.05)
+  }
+
+  function fadeOutAudio() {
+    if (!audioCtx || !audioNodes.masterGain) return
+    const now = audioCtx.currentTime
+    audioNodes.masterGain.gain.setTargetAtTime(0, now, 0.15)
+
+    if (clockTickInterval) { clearInterval(clockTickInterval); clockTickInterval = null }
+    if (creakInterval) { clearInterval(creakInterval); creakInterval = null }
+  }
+
+  function destroyAudio() {
+    fadeOutAudio()
+    // Disconnect and stop after fade
+    setTimeout(() => {
+      try { audioNodes.fireplaceNoise?.stop() } catch { /* already stopped */ }
+      try { audioNodes.fireplaceNoise?.disconnect() } catch { /* */ }
+      try { audioNodes.fireplaceGain?.disconnect() } catch { /* */ }
+      try { audioNodes.fireplaceFilter?.disconnect() } catch { /* */ }
+      try { audioNodes.clockGain?.disconnect() } catch { /* */ }
+      try { audioNodes.creakGain?.disconnect() } catch { /* */ }
+      try { audioNodes.masterGain?.disconnect() } catch { /* */ }
+      audioNodes = {
+        fireplaceNoise: null, fireplaceGain: null, fireplaceFilter: null,
+        clockOsc: null, clockGain: null, creakGain: null, masterGain: null,
+      }
+      audioCtx = null
+    }, 600)
+  }
+
+  // =============================================
+  // VISUAL ATMOSPHERE — dust motes, vignette, flicker, candle cursor
+  // =============================================
+
+  function initDustMotes(w: number, h: number) {
+    dustMotes.length = 0
+    for (let i = 0; i < DUST_COUNT; i++) {
+      dustMotes.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -Math.random() * 0.4 - 0.1, // drift upward
+        size: Math.random() * 2 + 0.5,
+        alpha: Math.random() * 0.3 + 0.05,
+        warmth: Math.random(), // 0 = dim, 1 = warm golden
+      })
+    }
+  }
+
+  function createAtmosphereCanvas(): HTMLCanvasElement {
+    const canvas = document.createElement('canvas')
+    canvas.style.cssText = `
+      position: fixed; top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      pointer-events: none;
+      z-index: 3;
+    `
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+    return canvas
+  }
+
+  function drawAtmosphere() {
+    if (!atmosCtx || !atmosCanvas || !active) return
+    const w = atmosCanvas.width
+    const h = atmosCanvas.height
+
+    atmosCtx.clearRect(0, 0, w, h)
+
+    // --- Oil lamp flicker ---
+    flickerPhase += 0.02 + Math.random() * 0.01
+    flickerIntensity = 0.02 + Math.sin(flickerPhase) * 0.01
+      + Math.sin(flickerPhase * 2.3) * 0.008
+      + Math.sin(flickerPhase * 5.7) * 0.005
+
+    // Subtle warm overlay that flickers
+    const flickerAlpha = 0.015 + flickerIntensity
+    atmosCtx.fillStyle = `rgba(255, 200, 100, ${flickerAlpha})`
+    atmosCtx.fillRect(0, 0, w, h)
+
+    // --- Vignette ---
+    const vigGrad = atmosCtx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.75)
+    vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)')
+    vigGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.15)')
+    vigGrad.addColorStop(1, 'rgba(0, 0, 0, 0.5)')
+    atmosCtx.fillStyle = vigGrad
+    atmosCtx.fillRect(0, 0, w, h)
+
+    // --- Candle cursor glow ---
+    if (mouseX > 0 && mouseY > 0) {
+      const glowRadius = 180 + Math.sin(flickerPhase * 1.5) * 20
+      const cursorGrad = atmosCtx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, glowRadius)
+      cursorGrad.addColorStop(0, `rgba(255, 200, 120, ${0.08 + flickerIntensity})`)
+      cursorGrad.addColorStop(0.3, `rgba(255, 180, 80, ${0.04 + flickerIntensity * 0.5})`)
+      cursorGrad.addColorStop(1, 'rgba(255, 180, 80, 0)')
+      atmosCtx.fillStyle = cursorGrad
+      atmosCtx.fillRect(0, 0, w, h)
+    }
+
+    // --- Dust motes ---
+    for (const mote of dustMotes) {
+      // Update position
+      mote.x += mote.vx + Math.sin(flickerPhase + mote.warmth * 10) * 0.15
+      mote.y += mote.vy
+
+      // Wrap around
+      if (mote.y < -10) { mote.y = h + 10; mote.x = Math.random() * w }
+      if (mote.x < -10) mote.x = w + 10
+      if (mote.x > w + 10) mote.x = -10
+
+      // Brighter near cursor (candle illumination)
+      let cursorBoost = 0
+      if (mouseX > 0 && mouseY > 0) {
+        const dx = mote.x - mouseX
+        const dy = mote.y - mouseY
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        cursorBoost = Math.max(0, 1 - dist / 200) * 0.4
+      }
+
+      const r = 255
+      const g = Math.floor(180 + mote.warmth * 40)
+      const b = Math.floor(80 + mote.warmth * 40)
+      const a = mote.alpha + cursorBoost
+
+      atmosCtx.beginPath()
+      atmosCtx.arc(mote.x, mote.y, mote.size, 0, Math.PI * 2)
+      atmosCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`
+      atmosCtx.fill()
+    }
+
+    // --- Warm quote proximity glow (via cursor affecting quote container) ---
+    updateQuoteWarmth()
+
+    animFrame = requestAnimationFrame(drawAtmosphere)
+  }
+
+  /** Make quotes glow warmer when cursor is near them */
+  function updateQuoteWarmth() {
+    if (!quoteEl || !quoteAuthorEl) return
+    const rect = quoteEl.getBoundingClientRect()
+    if (rect.width === 0) return // not visible
+
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const dx = mouseX - cx
+    const dy = mouseY - cy
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    const proximity = Math.max(0, 1 - dist / 300)
+
+    // Shift quote color warmer when cursor approaches
+    const baseAlpha = 0.35
+    const warmAlpha = baseAlpha + proximity * 0.25
+    const warmR = Math.floor(180 + proximity * 55)
+    const warmG = Math.floor(160 + proximity * 40)
+    const warmB = Math.floor(120 + proximity * 20)
+    const glow = proximity * 12
+    quoteEl.style.color = `rgba(${warmR}, ${warmG}, ${warmB}, ${warmAlpha})`
+    quoteEl.style.textShadow = `0 0 ${8 + glow}px rgba(${warmR}, ${warmG}, ${warmB}, ${0.08 + proximity * 0.1})`
+  }
+
+  function startAtmosphere() {
+    atmosCanvas = createAtmosphereCanvas()
+    atmosCtx = atmosCanvas.getContext('2d')
+    document.body.appendChild(atmosCanvas)
+    initDustMotes(atmosCanvas.width, atmosCanvas.height)
+
+    mouseMoveHandler = (e: MouseEvent) => {
+      mouseX = e.clientX
+      mouseY = e.clientY
+    }
+    window.addEventListener('mousemove', mouseMoveHandler)
+
+    // Handle resize
+    const onResize = () => {
+      if (!atmosCanvas) return
+      atmosCanvas.width = window.innerWidth
+      atmosCanvas.height = window.innerHeight
+      initDustMotes(atmosCanvas.width, atmosCanvas.height)
+    }
+    window.addEventListener('resize', onResize)
+    // Store for cleanup
+    ;(atmosCanvas as any)._resizeHandler = onResize
+
+    drawAtmosphere()
+  }
+
+  function stopAtmosphere() {
+    if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null }
+    if (mouseMoveHandler) {
+      window.removeEventListener('mousemove', mouseMoveHandler)
+      mouseMoveHandler = null
+    }
+    if (atmosCanvas) {
+      const onResize = (atmosCanvas as any)._resizeHandler
+      if (onResize) window.removeEventListener('resize', onResize)
+      atmosCanvas.remove()
+      atmosCanvas = null
+    }
+    atmosCtx = null
+    mouseX = -1000
+    mouseY = -1000
   }
 
   /** Build a study-themed navigation portal */
@@ -554,7 +968,7 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       return overlay
     },
 
-    activate() {
+    async activate() {
       active = true
       // Track word count for new text emissions
       if (textarea) {
@@ -569,6 +983,10 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       setTimeout(() => textarea?.focus(), 1600)
       // Start stoic quote cycle
       startQuoteCycle()
+      // Start ambient audio
+      await initAudio()
+      // Start visual atmosphere
+      startAtmosphere()
     },
 
     deactivate() {
@@ -576,12 +994,16 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       if (saveInterval) clearInterval(saveInterval)
       if (textarea) saveText(textarea.value)
       stopQuoteCycle()
+      fadeOutAudio()
+      stopAtmosphere()
     },
 
     destroy() {
       if (saveInterval) clearInterval(saveInterval)
       if (textarea) saveText(textarea.value)
       stopQuoteCycle()
+      destroyAudio()
+      stopAtmosphere()
       overlay?.remove()
     },
   }

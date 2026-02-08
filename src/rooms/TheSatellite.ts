@@ -23,6 +23,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface Memory {
   id: string
@@ -62,6 +63,61 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
   let fetchInterval: number | null = null
   let totalReceived = 0
   let hoveredLandmark = -1
+  let prevIssLat = 0
+  let prevIssLon = 0
+
+  // --- Audio state ---
+  let audioInitialized = false
+  let audioCtxRef: AudioContext | null = null
+  let masterVol: GainNode | null = null
+  // Life support drone
+  let droneOsc1: OscillatorNode | null = null
+  let droneOsc2: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  // Radar sweep
+  let sweepOsc: OscillatorNode | null = null
+  let sweepGain: GainNode | null = null
+  let sweepLfo: OscillatorNode | null = null
+  let sweepLfoGain: GainNode | null = null
+  // Telemetry beep
+  let beepInterval: number | null = null
+  // Radio static
+  let staticInterval: number | null = null
+  // Cosmic wind (filtered noise)
+  let windSource: AudioBufferSourceNode | null = null
+  let windGain: GainNode | null = null
+  let windFilter: BiquadFilterNode | null = null
+
+  // --- Visual atmosphere state ---
+  interface StarParticle {
+    x: number; y: number; vx: number; vy: number
+    size: number; alpha: number; twinkleSpeed: number
+  }
+  interface ShootingStar {
+    x: number; y: number; vx: number; vy: number
+    life: number; maxLife: number; length: number
+  }
+  interface Debris {
+    x: number; y: number; vx: number; vy: number
+    size: number; alpha: number
+  }
+  let starField: StarParticle[] = []
+  let shootingStars: ShootingStar[] = []
+  let debris: Debris[] = []
+  let auroraPhase = 0
+
+  // --- Cursor interactivity state ---
+  interface StarTrail {
+    x: number; y: number; alpha: number; size: number
+  }
+  interface RadioBurst {
+    x: number; y: number; radius: number; alpha: number
+  }
+  let starTrails: StarTrail[] = []
+  let radioBursts: RadioBurst[] = []
+  let mouseX = 0
+  let mouseY = 0
+  let orbitalRingAlpha = 0
 
   const landmarks: {
     room: string; label: string; lat: number; lon: number;
@@ -87,6 +143,8 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
   }
 
   async function fetchISS() {
+    prevIssLat = issLat
+    prevIssLon = issLon
     try {
       const resp = await fetch('http://api.open-notify.org/iss-now.json', {
         signal: AbortSignal.timeout(5000),
@@ -103,6 +161,10 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       issLon += 0.067 * 5 // approximate for 5-second intervals
       if (issLon > 180) issLon -= 360
       issLat = 30 * Math.sin(issLon * Math.PI / 180 * 0.5) // sinusoidal orbit approximation
+    }
+    // If position actually changed, play a subtle telemetry ping
+    if (Math.abs(issLat - prevIssLat) > 0.01 || Math.abs(issLon - prevIssLon) > 0.01) {
+      playBeep()
     }
   }
 
@@ -164,6 +226,8 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
           text: beacon.memory.currentText,
           alpha: 1,
         }
+        // Data-received ping sound
+        playDataReceivedPing()
       }
     }
 
@@ -285,6 +349,468 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     [[115,-15],[130,-12],[150,-15],[155,-25],[150,-35],[140,-38],[130,-35],[115,-25],[115,-15]],
   ]
 
+  // --- Audio ---
+  async function initAudio() {
+    if (audioInitialized) return
+    audioInitialized = true
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+      audioCtxRef = ac
+
+      masterVol = ac.createGain()
+      masterVol.gain.value = 0
+      masterVol.connect(dest)
+      masterVol.gain.setTargetAtTime(1, ac.currentTime, 0.8)
+
+      // --- Life support drone: two low detuned sines ---
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0.025
+      const droneLowpass = ac.createBiquadFilter()
+      droneLowpass.type = 'lowpass'
+      droneLowpass.frequency.value = 160
+      droneLowpass.Q.value = 0.7
+      droneGain.connect(droneLowpass)
+      droneLowpass.connect(masterVol)
+
+      droneOsc1 = ac.createOscillator()
+      droneOsc1.type = 'sine'
+      droneOsc1.frequency.value = 60
+      droneOsc1.connect(droneGain)
+      droneOsc1.start()
+
+      droneOsc2 = ac.createOscillator()
+      droneOsc2.type = 'sine'
+      droneOsc2.frequency.value = 60.4 // slight detune for beating
+      droneOsc2.connect(droneGain)
+      droneOsc2.start()
+
+      // --- Radar sweep oscillator: slow sweeping sine ---
+      sweepGain = ac.createGain()
+      sweepGain.gain.value = 0
+      const sweepFilter = ac.createBiquadFilter()
+      sweepFilter.type = 'bandpass'
+      sweepFilter.frequency.value = 800
+      sweepFilter.Q.value = 8
+      sweepGain.connect(sweepFilter)
+      sweepFilter.connect(masterVol)
+
+      sweepOsc = ac.createOscillator()
+      sweepOsc.type = 'sine'
+      sweepOsc.frequency.value = 600
+      sweepOsc.connect(sweepGain)
+      sweepOsc.start()
+
+      // LFO to modulate sweep gain (slow pulse)
+      sweepLfoGain = ac.createGain()
+      sweepLfoGain.gain.value = 0.012
+      sweepLfoGain.connect(sweepGain.gain)
+
+      sweepLfo = ac.createOscillator()
+      sweepLfo.type = 'sine'
+      sweepLfo.frequency.value = 0.15 // one sweep every ~6.7s
+      sweepLfo.connect(sweepLfoGain)
+      sweepLfo.start()
+
+      // --- Cosmic wind: filtered noise ---
+      const windBufLen = ac.sampleRate * 4
+      const windBuf = ac.createBuffer(1, windBufLen, ac.sampleRate)
+      const windData = windBuf.getChannelData(0)
+      for (let i = 0; i < windBufLen; i++) {
+        windData[i] = (Math.random() * 2 - 1) * 0.5
+      }
+
+      windSource = ac.createBufferSource()
+      windSource.buffer = windBuf
+      windSource.loop = true
+
+      windFilter = ac.createBiquadFilter()
+      windFilter.type = 'lowpass'
+      windFilter.frequency.value = 300
+      windFilter.Q.value = 0.5
+
+      windGain = ac.createGain()
+      windGain.gain.value = 0.008
+
+      windSource.connect(windFilter)
+      windFilter.connect(windGain)
+      windGain.connect(masterVol)
+      windSource.start()
+
+      // --- Telemetry beeps: regular interval ---
+      beepInterval = window.setInterval(() => {
+        playBeep()
+      }, 4000)
+
+      // --- Radio static bursts: irregular ---
+      scheduleStaticBurst()
+
+    } catch {
+      // Audio may not be available
+    }
+  }
+
+  function playBeep() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = 1200
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, ac.currentTime)
+      g.gain.linearRampToValueAtTime(0.03, ac.currentTime + 0.005)
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.15)
+
+      osc.connect(g)
+      g.connect(masterVol)
+      osc.start(ac.currentTime)
+      osc.stop(ac.currentTime + 0.15)
+    } catch { /* ignore */ }
+  }
+
+  function playDataReceivedPing() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      // Two-tone ping: ascending pair
+      const osc1 = ac.createOscillator()
+      osc1.type = 'sine'
+      osc1.frequency.value = 880
+
+      const osc2 = ac.createOscillator()
+      osc2.type = 'sine'
+      osc2.frequency.value = 1320
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, ac.currentTime)
+      g.gain.linearRampToValueAtTime(0.05, ac.currentTime + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.6)
+
+      osc1.connect(g)
+      osc2.connect(g)
+      g.connect(masterVol)
+
+      osc1.start(ac.currentTime)
+      osc1.stop(ac.currentTime + 0.3)
+      osc2.start(ac.currentTime + 0.15)
+      osc2.stop(ac.currentTime + 0.6)
+    } catch { /* ignore */ }
+  }
+
+  function scheduleStaticBurst() {
+    if (!active) return
+    const delay = 3000 + Math.random() * 8000
+    staticInterval = window.setTimeout(() => {
+      playStaticBurst()
+      scheduleStaticBurst()
+    }, delay)
+  }
+
+  function playStaticBurst() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      const duration = 0.1 + Math.random() * 0.3
+      const bufLen = Math.ceil(ac.sampleRate * duration)
+      const buf = ac.createBuffer(1, bufLen, ac.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < bufLen; i++) {
+        data[i] = (Math.random() * 2 - 1)
+      }
+
+      const src = ac.createBufferSource()
+      src.buffer = buf
+
+      const filter = ac.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.value = 2000 + Math.random() * 3000
+      filter.Q.value = 2
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, ac.currentTime)
+      g.gain.linearRampToValueAtTime(0.015, ac.currentTime + 0.01)
+      g.gain.setValueAtTime(0.015, ac.currentTime + duration * 0.7)
+      g.gain.linearRampToValueAtTime(0, ac.currentTime + duration)
+
+      src.connect(filter)
+      filter.connect(g)
+      g.connect(masterVol)
+      src.start(ac.currentTime)
+      src.stop(ac.currentTime + duration)
+    } catch { /* ignore */ }
+  }
+
+  function playClickRadioBurst() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      const duration = 0.25
+      const bufLen = Math.ceil(ac.sampleRate * duration)
+      const buf = ac.createBuffer(1, bufLen, ac.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < bufLen; i++) {
+        data[i] = (Math.random() * 2 - 1)
+      }
+
+      const src = ac.createBufferSource()
+      src.buffer = buf
+
+      const filter = ac.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.value = 1500
+      filter.Q.value = 5
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, ac.currentTime)
+      g.gain.linearRampToValueAtTime(0.04, ac.currentTime + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + duration)
+
+      src.connect(filter)
+      filter.connect(g)
+      g.connect(masterVol)
+      src.start(ac.currentTime)
+      src.stop(ac.currentTime + duration)
+    } catch { /* ignore */ }
+  }
+
+  function stopAudio() {
+    if (masterVol && audioCtxRef) {
+      masterVol.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.5)
+    }
+  }
+
+  function destroyAudio() {
+    stopAudio()
+    if (beepInterval !== null) { clearInterval(beepInterval); beepInterval = null }
+    if (staticInterval !== null) { clearTimeout(staticInterval); staticInterval = null }
+    try {
+      droneOsc1?.stop(); droneOsc2?.stop()
+      sweepOsc?.stop(); sweepLfo?.stop()
+      windSource?.stop()
+    } catch { /* already stopped */ }
+    droneOsc1 = null; droneOsc2 = null; droneGain = null
+    sweepOsc = null; sweepGain = null; sweepLfo = null; sweepLfoGain = null
+    windSource = null; windGain = null; windFilter = null
+    masterVol = null; audioCtxRef = null
+    audioInitialized = false
+  }
+
+  // --- Visual atmosphere helpers ---
+  function initStarField() {
+    const w = canvas?.width || window.innerWidth
+    const h = canvas?.height || window.innerHeight
+    starField = []
+    for (let i = 0; i < 150; i++) {
+      starField.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.05,
+        vy: (Math.random() - 0.5) * 0.05,
+        size: Math.random() * 1.2 + 0.3,
+        alpha: Math.random() * 0.4 + 0.1,
+        twinkleSpeed: Math.random() * 2 + 0.5,
+      })
+    }
+    debris = []
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 0.15 + Math.random() * 0.3
+      debris.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: Math.random() * 1.5 + 0.5,
+        alpha: Math.random() * 0.15 + 0.03,
+      })
+    }
+  }
+
+  function updateAndDrawAtmosphere(c: CanvasRenderingContext2D, w: number, h: number) {
+    // --- Star field ---
+    for (const star of starField) {
+      star.x += star.vx
+      star.y += star.vy
+      if (star.x < 0) star.x = w
+      if (star.x > w) star.x = 0
+      if (star.y < 0) star.y = h
+      if (star.y > h) star.y = 0
+
+      const twinkle = Math.sin(time * star.twinkleSpeed + star.x * 0.01) * 0.3 + 0.7
+      const a = star.alpha * twinkle
+      c.fillStyle = `rgba(200, 220, 255, ${a})`
+      c.beginPath()
+      c.arc(star.x, star.y, star.size, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // --- Shooting stars ---
+    if (Math.random() < 0.003) {
+      const startX = Math.random() * w
+      const startY = Math.random() * h * 0.4
+      const angle = Math.PI * 0.15 + Math.random() * 0.3
+      const speed = 4 + Math.random() * 6
+      shootingStars.push({
+        x: startX, y: startY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1, maxLife: 1,
+        length: 20 + Math.random() * 40,
+      })
+    }
+
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+      const s = shootingStars[i]
+      s.x += s.vx
+      s.y += s.vy
+      s.life -= 0.02
+      if (s.life <= 0 || s.x > w + 50 || s.y > h + 50) {
+        shootingStars.splice(i, 1)
+        continue
+      }
+      const tailX = s.x - (s.vx / Math.sqrt(s.vx * s.vx + s.vy * s.vy)) * s.length * s.life
+      const tailY = s.y - (s.vy / Math.sqrt(s.vx * s.vx + s.vy * s.vy)) * s.length * s.life
+      const grad = c.createLinearGradient(tailX, tailY, s.x, s.y)
+      grad.addColorStop(0, `rgba(255, 255, 255, 0)`)
+      grad.addColorStop(1, `rgba(255, 255, 255, ${0.6 * s.life})`)
+      c.strokeStyle = grad
+      c.lineWidth = 1.2
+      c.beginPath()
+      c.moveTo(tailX, tailY)
+      c.lineTo(s.x, s.y)
+      c.stroke()
+      // Bright head
+      c.fillStyle = `rgba(255, 255, 255, ${0.8 * s.life})`
+      c.beginPath()
+      c.arc(s.x, s.y, 1, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // --- Orbital debris ---
+    for (const d of debris) {
+      d.x += d.vx
+      d.y += d.vy
+      if (d.x < -10) d.x = w + 10
+      if (d.x > w + 10) d.x = -10
+      if (d.y < -10) d.y = h + 10
+      if (d.y > h + 10) d.y = -10
+      c.fillStyle = `rgba(150, 150, 160, ${d.alpha})`
+      c.beginPath()
+      c.arc(d.x, d.y, d.size, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // --- Aurora glow at edges ---
+    auroraPhase += 0.005
+    // Top edge aurora
+    const auroraH = h * 0.12
+    const topGrad = c.createLinearGradient(0, 0, 0, auroraH)
+    const greenA = 0.015 + Math.sin(auroraPhase) * 0.008
+    const purpleA = 0.01 + Math.sin(auroraPhase * 1.3 + 1.5) * 0.006
+    topGrad.addColorStop(0, `rgba(80, 220, 120, ${greenA})`)
+    topGrad.addColorStop(0.5, `rgba(130, 80, 200, ${purpleA})`)
+    topGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    c.fillStyle = topGrad
+    c.fillRect(0, 0, w, auroraH)
+
+    // Bottom edge aurora (fainter)
+    const botGrad = c.createLinearGradient(0, h, 0, h - auroraH * 0.7)
+    const greenB = 0.008 + Math.sin(auroraPhase + 2) * 0.004
+    const purpleB = 0.006 + Math.sin(auroraPhase * 0.8 + 3) * 0.003
+    botGrad.addColorStop(0, `rgba(80, 220, 120, ${greenB})`)
+    botGrad.addColorStop(0.5, `rgba(130, 80, 200, ${purpleB})`)
+    botGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    c.fillStyle = botGrad
+    c.fillRect(0, h - auroraH * 0.7, w, auroraH * 0.7)
+
+    // Left/right edge shimmer
+    const sideW = w * 0.06
+    const leftGrad = c.createLinearGradient(0, 0, sideW, 0)
+    const sideA = 0.006 + Math.sin(auroraPhase * 0.7 + 1) * 0.003
+    leftGrad.addColorStop(0, `rgba(100, 200, 160, ${sideA})`)
+    leftGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    c.fillStyle = leftGrad
+    c.fillRect(0, 0, sideW, h)
+
+    const rightGrad = c.createLinearGradient(w, 0, w - sideW, 0)
+    rightGrad.addColorStop(0, `rgba(100, 200, 160, ${sideA})`)
+    rightGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    c.fillStyle = rightGrad
+    c.fillRect(w - sideW, 0, sideW, h)
+  }
+
+  // --- Cursor effects ---
+  function updateAndDrawCursorEffects(c: CanvasRenderingContext2D, w: number, h: number) {
+    // Star trails from mouse
+    for (let i = starTrails.length - 1; i >= 0; i--) {
+      const t = starTrails[i]
+      t.alpha -= 0.008
+      if (t.alpha <= 0) {
+        starTrails.splice(i, 1)
+        continue
+      }
+      c.fillStyle = `rgba(220, 230, 255, ${t.alpha})`
+      c.beginPath()
+      c.arc(t.x, t.y, t.size, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // Radio bursts from clicks
+    for (let i = radioBursts.length - 1; i >= 0; i--) {
+      const b = radioBursts[i]
+      b.radius += 3
+      b.alpha -= 0.02
+      if (b.alpha <= 0) {
+        radioBursts.splice(i, 1)
+        continue
+      }
+      c.strokeStyle = `rgba(100, 200, 255, ${b.alpha * 0.5})`
+      c.lineWidth = 1.5
+      c.beginPath()
+      c.arc(b.x, b.y, b.radius, 0, Math.PI * 2)
+      c.stroke()
+      // Inner ring
+      if (b.radius > 8) {
+        c.strokeStyle = `rgba(100, 200, 255, ${b.alpha * 0.2})`
+        c.lineWidth = 0.5
+        c.beginPath()
+        c.arc(b.x, b.y, b.radius * 0.6, 0, Math.PI * 2)
+        c.stroke()
+      }
+    }
+
+    // Orbital ring effect near ISS icon
+    if (canvas) {
+      const issP = project(issLat, issLon, w, h)
+      const dx = mouseX - issP.x
+      const dy = mouseY - issP.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const targetAlpha = dist < 60 ? Math.max(0, 1 - dist / 60) * 0.3 : 0
+      orbitalRingAlpha += (targetAlpha - orbitalRingAlpha) * 0.08
+
+      if (orbitalRingAlpha > 0.005) {
+        const ringAngle = time * 0.8
+        c.strokeStyle = `rgba(255, 215, 0, ${orbitalRingAlpha})`
+        c.lineWidth = 0.8
+        c.save()
+        c.translate(issP.x, issP.y)
+        c.rotate(ringAngle)
+        c.beginPath()
+        c.ellipse(0, 0, 20, 8, 0, 0, Math.PI * 2)
+        c.stroke()
+        // Second ring at different angle
+        c.rotate(Math.PI / 3)
+        c.strokeStyle = `rgba(255, 215, 0, ${orbitalRingAlpha * 0.6})`
+        c.beginPath()
+        c.ellipse(0, 0, 18, 7, 0, 0, Math.PI * 2)
+        c.stroke()
+        c.restore()
+      }
+    }
+  }
+
   function drawContinents(c: CanvasRenderingContext2D, w: number, h: number) {
     c.strokeStyle = 'rgba(100, 160, 200, 0.08)'
     c.lineWidth = 1
@@ -317,16 +843,8 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     c.fillStyle = 'rgba(2, 3, 8, 1)'
     c.fillRect(0, 0, w, h)
 
-    // Stars
-    for (let i = 0; i < 80; i++) {
-      const sx = ((i * 137.5 + 50) % w)
-      const sy = ((i * 97.3 + 30) % h)
-      const twinkle = Math.sin(time * 1.5 + i * 2.7) * 0.3 + 0.5
-      c.fillStyle = `rgba(200, 220, 255, ${0.05 * twinkle})`
-      c.beginPath()
-      c.arc(sx, sy, 0.8, 0, Math.PI * 2)
-      c.fill()
-    }
+    // Visual atmosphere: star field, shooting stars, debris, aurora
+    updateAndDrawAtmosphere(c, w, h)
 
     // Map border (subtle)
     const mapW = w * 0.85
@@ -614,6 +1132,9 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       }
     }
 
+    // Cursor interactivity effects (star trails, radio bursts, orbital ring)
+    updateAndDrawCursorEffects(c, w, h)
+
     // Context
     c.font = '9px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(255, 215, 0, ${0.03 + Math.sin(time * 0.2) * 0.01})`
@@ -639,8 +1160,12 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Landmark click navigation (only illuminated landmarks are clickable)
+      // Landmark click navigation + radio burst visual/audio
       canvas.addEventListener('click', (e) => {
+        // Radio burst visual + sound on any click
+        radioBursts.push({ x: e.clientX, y: e.clientY, radius: 2, alpha: 0.8 })
+        playClickRadioBurst()
+
         if (!deps.switchTo || !canvas) return
         const w = canvas.width
         const h = canvas.height
@@ -657,8 +1182,23 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
         }
       })
 
-      // Landmark hover detection
+      // Landmark hover detection + star trail creation
       canvas.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX
+        mouseY = e.clientY
+
+        // Star trail: tiny bright points that linger
+        if (Math.random() < 0.4) {
+          starTrails.push({
+            x: e.clientX + (Math.random() - 0.5) * 6,
+            y: e.clientY + (Math.random() - 0.5) * 6,
+            alpha: 0.3 + Math.random() * 0.3,
+            size: Math.random() * 1.2 + 0.3,
+          })
+        }
+        // Cap star trails
+        if (starTrails.length > 120) starTrails.splice(0, starTrails.length - 120)
+
         if (!canvas) return
         const w = canvas.width
         const h = canvas.height
@@ -689,28 +1229,46 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       return overlay
     },
 
-    activate() {
+    async activate() {
       active = true
       issTrail = []
       totalReceived = 0
       receivedMessage = null
+      starTrails = []
+      radioBursts = []
+      shootingStars = []
+      orbitalRingAlpha = 0
       placeBeacons()
+      initStarField()
       fetchISS()
       // Fetch ISS position every 5 seconds
       fetchInterval = window.setInterval(fetchISS, 5000)
       render()
+      // Initialize audio (requires user gesture, handled by AudioBus)
+      await initAudio()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
       if (fetchInterval) clearInterval(fetchInterval)
+      fetchInterval = null
+      stopAudio()
+      if (beepInterval !== null) { clearInterval(beepInterval); beepInterval = null }
+      if (staticInterval !== null) { clearTimeout(staticInterval); staticInterval = null }
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
       if (fetchInterval) clearInterval(fetchInterval)
+      fetchInterval = null
+      destroyAudio()
+      starField = []
+      shootingStars = []
+      debris = []
+      starTrails = []
+      radioBursts = []
       overlay?.remove()
     },
   }

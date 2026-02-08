@@ -22,6 +22,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface RootsDeps {
   getMemories: () => StoredMemory[]
@@ -142,6 +143,520 @@ export function createRootsRoom(deps: RootsDeps): Room {
   // Growing root tendril navigation
   let tendrils: NavTendril[] = []
   let tendrilsInitialized = false
+
+  // ─── Audio state ───
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  let subBassOsc: OscillatorNode | null = null
+  let subBassGain: GainNode | null = null
+  let subBassLfo: OscillatorNode | null = null
+  let subBassLfoGain: GainNode | null = null
+  let soilNoiseNode: AudioBufferSourceNode | null = null
+  let soilFilter: BiquadFilterNode | null = null
+  let soilGain: GainNode | null = null
+  let fungalOsc: OscillatorNode | null = null
+  let fungalGain: GainNode | null = null
+  let fungalLfo: OscillatorNode | null = null
+  let fungalLfoGain: GainNode | null = null
+  let dripInterval: ReturnType<typeof setInterval> | null = null
+  let crackleInterval: ReturnType<typeof setInterval> | null = null
+
+  // ─── Atmosphere state ───
+  interface SoilSpeck {
+    x: number; y: number; vx: number; vy: number
+    alpha: number; size: number
+  }
+  interface SporeFlash {
+    x: number; y: number; radius: number
+    alpha: number; hue: number; life: number; maxLife: number
+  }
+  interface CursorSpore {
+    x: number; y: number; vx: number; vy: number
+    alpha: number; size: number; hue: number
+  }
+  interface MyceliumPulse {
+    x: number; y: number; radius: number
+    alpha: number; speed: number; phase: number
+  }
+  let soilSpecks: SoilSpeck[] = []
+  let sporeFlashes: SporeFlash[] = []
+  let cursorSpores: CursorSpore[] = []
+  let myceliumPulses: MyceliumPulse[] = []
+  let lastMouseX = 0
+  let lastMouseY = 0
+  let mouseSpeed = 0
+
+  // ─── Audio functions ───
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // ── Sub-bass drone: deep earth breathing (25Hz with slow LFO) ──
+      subBassOsc = ac.createOscillator()
+      subBassOsc.type = 'sine'
+      subBassOsc.frequency.value = 25
+
+      subBassGain = ac.createGain()
+      subBassGain.gain.value = 0.06
+
+      // Slow breathing LFO on the sub-bass (0.04Hz — one cycle per 25s)
+      subBassLfo = ac.createOscillator()
+      subBassLfo.type = 'sine'
+      subBassLfo.frequency.value = 0.04
+
+      subBassLfoGain = ac.createGain()
+      subBassLfoGain.gain.value = 0.03
+
+      subBassLfo.connect(subBassLfoGain)
+      subBassLfoGain.connect(subBassGain.gain)
+
+      subBassOsc.connect(subBassGain)
+      subBassGain.connect(audioMaster)
+
+      subBassOsc.start()
+      subBassLfo.start()
+
+      // ── Soil-shifting crackle: filtered brown noise ──
+      const bufferLen = ac.sampleRate * 4
+      const noiseBuf = ac.createBuffer(1, bufferLen, ac.sampleRate)
+      const noiseData = noiseBuf.getChannelData(0)
+      let lastOut = 0
+      for (let i = 0; i < bufferLen; i++) {
+        const white = Math.random() * 2 - 1
+        lastOut = (lastOut + 0.02 * white) / 1.02
+        noiseData[i] = lastOut * 3.5
+      }
+
+      soilNoiseNode = ac.createBufferSource()
+      soilNoiseNode.buffer = noiseBuf
+      soilNoiseNode.loop = true
+
+      soilFilter = ac.createBiquadFilter()
+      soilFilter.type = 'lowpass'
+      soilFilter.frequency.value = 200
+      soilFilter.Q.value = 1.5
+
+      soilGain = ac.createGain()
+      soilGain.gain.value = 0.012
+
+      soilNoiseNode.connect(soilFilter)
+      soilFilter.connect(soilGain)
+      soilGain.connect(audioMaster)
+      soilNoiseNode.start()
+
+      // ── Fungal network hum: very quiet high harmonic ──
+      fungalOsc = ac.createOscillator()
+      fungalOsc.type = 'sine'
+      fungalOsc.frequency.value = 180
+
+      fungalGain = ac.createGain()
+      fungalGain.gain.value = 0.008
+
+      fungalLfo = ac.createOscillator()
+      fungalLfo.type = 'sine'
+      fungalLfo.frequency.value = 0.07
+
+      fungalLfoGain = ac.createGain()
+      fungalLfoGain.gain.value = 0.004
+
+      fungalLfo.connect(fungalLfoGain)
+      fungalLfoGain.connect(fungalGain.gain)
+
+      fungalOsc.connect(fungalGain)
+      fungalGain.connect(audioMaster)
+
+      fungalOsc.start()
+      fungalLfo.start()
+
+      // ── Water dripping: periodic filtered blips ──
+      dripInterval = setInterval(() => {
+        if (!active || !audioMaster) return
+        try {
+          if (Math.random() < 0.3) playDrip(ac)
+        } catch { /* silent */ }
+      }, 2500 + Math.random() * 2000)
+
+      // ── Soil crackle: periodic brief noise bursts ──
+      crackleInterval = setInterval(() => {
+        if (!active || !audioMaster) return
+        try {
+          if (Math.random() < 0.25) playSoilCrackle(ac)
+        } catch { /* silent */ }
+      }, 3000)
+
+      audioInitialized = true
+    } catch {
+      // silent fallback — audio not critical
+    }
+  }
+
+  function playDrip(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const now = ac.currentTime
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(800 + Math.random() * 400, now)
+      osc.frequency.exponentialRampToValueAtTime(200, now + 0.08)
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.012, now)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12)
+
+      const lp = ac.createBiquadFilter()
+      lp.type = 'lowpass'
+      lp.frequency.value = 600
+
+      osc.connect(lp)
+      lp.connect(g)
+      g.connect(audioMaster)
+      osc.start(now)
+      osc.stop(now + 0.15)
+
+      osc.onended = () => {
+        osc.disconnect()
+        lp.disconnect()
+        g.disconnect()
+      }
+    } catch { /* silent */ }
+  }
+
+  function playSoilCrackle(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const duration = 0.015
+      const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * duration), ac.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < data.length; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+
+      const src = ac.createBufferSource()
+      src.buffer = buf
+
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 1000 + Math.random() * 2000
+      bp.Q.value = 2
+
+      const g = ac.createGain()
+      const now = ac.currentTime
+      g.gain.setValueAtTime(0.008, now)
+      g.gain.linearRampToValueAtTime(0, now + 0.04)
+
+      src.connect(bp)
+      bp.connect(g)
+      g.connect(audioMaster)
+      src.start(now)
+      src.stop(now + 0.04)
+
+      src.onended = () => {
+        src.disconnect()
+        bp.disconnect()
+        g.disconnect()
+      }
+    } catch { /* silent */ }
+  }
+
+  function playRootGrowSound(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const now = ac.currentTime
+
+      // Squelchy filtered sweep
+      const osc = ac.createOscillator()
+      osc.type = 'sawtooth'
+      osc.frequency.setValueAtTime(60, now)
+      osc.frequency.linearRampToValueAtTime(120, now + 0.15)
+      osc.frequency.linearRampToValueAtTime(40, now + 0.3)
+
+      const lp = ac.createBiquadFilter()
+      lp.type = 'lowpass'
+      lp.frequency.setValueAtTime(300, now)
+      lp.frequency.linearRampToValueAtTime(800, now + 0.1)
+      lp.frequency.linearRampToValueAtTime(200, now + 0.3)
+      lp.Q.value = 5
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.015, now)
+      g.gain.linearRampToValueAtTime(0, now + 0.3)
+
+      osc.connect(lp)
+      lp.connect(g)
+      g.connect(audioMaster)
+      osc.start(now)
+      osc.stop(now + 0.35)
+
+      osc.onended = () => {
+        osc.disconnect()
+        lp.disconnect()
+        g.disconnect()
+      }
+    } catch { /* silent */ }
+  }
+
+  function playWoodyCrack(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const now = ac.currentTime
+      const duration = 0.008
+      const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * duration), ac.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < data.length; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / data.length)
+      }
+
+      const src = ac.createBufferSource()
+      src.buffer = buf
+
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 600
+      bp.Q.value = 1
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.01, now)
+      g.gain.linearRampToValueAtTime(0, now + 0.05)
+
+      src.connect(bp)
+      bp.connect(g)
+      g.connect(audioMaster)
+      src.start(now)
+      src.stop(now + 0.05)
+
+      src.onended = () => {
+        src.disconnect()
+        bp.disconnect()
+        g.disconnect()
+      }
+    } catch { /* silent */ }
+  }
+
+  function fadeAudioIn() {
+    if (!audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(1.0, now + 1.5)
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      audioMaster.gain.cancelScheduledValues(now)
+      audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+      audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+    } catch { /* silent */ }
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    if (dripInterval) { clearInterval(dripInterval); dripInterval = null }
+    if (crackleInterval) { clearInterval(crackleInterval); crackleInterval = null }
+
+    setTimeout(() => {
+      try { subBassOsc?.stop() } catch { /* already stopped */ }
+      try { subBassLfo?.stop() } catch { /* already stopped */ }
+      try { soilNoiseNode?.stop() } catch { /* already stopped */ }
+      try { fungalOsc?.stop() } catch { /* already stopped */ }
+      try { fungalLfo?.stop() } catch { /* already stopped */ }
+
+      subBassOsc?.disconnect()
+      subBassGain?.disconnect()
+      subBassLfo?.disconnect()
+      subBassLfoGain?.disconnect()
+      soilNoiseNode?.disconnect()
+      soilFilter?.disconnect()
+      soilGain?.disconnect()
+      fungalOsc?.disconnect()
+      fungalGain?.disconnect()
+      fungalLfo?.disconnect()
+      fungalLfoGain?.disconnect()
+      audioMaster?.disconnect()
+
+      subBassOsc = null
+      subBassGain = null
+      subBassLfo = null
+      subBassLfoGain = null
+      soilNoiseNode = null
+      soilFilter = null
+      soilGain = null
+      fungalOsc = null
+      fungalGain = null
+      fungalLfo = null
+      fungalLfoGain = null
+      audioMaster = null
+      audioInitialized = false
+    }, 600)
+  }
+
+  // ─── Atmosphere functions ───
+
+  function updateAtmosphere(w: number, h: number) {
+    // Cursor speed for spore trail
+    const dx = mouseX - lastMouseX
+    const dy = mouseY - lastMouseY
+    mouseSpeed = Math.sqrt(dx * dx + dy * dy)
+    lastMouseX = mouseX
+    lastMouseY = mouseY
+
+    // Spawn cursor spores when moving
+    if (mouseSpeed > 2) {
+      const numSpores = Math.min(3, Math.floor(mouseSpeed / 5))
+      for (let i = 0; i < numSpores; i++) {
+        cursorSpores.push({
+          x: mouseX + (Math.random() - 0.5) * 10,
+          y: mouseY + (Math.random() - 0.5) * 10,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: (Math.random() - 0.5) * 0.8 - 0.3,
+          alpha: 0.25 + Math.random() * 0.2,
+          size: 1 + Math.random() * 1.5,
+          hue: 120 + Math.random() * 40,
+        })
+      }
+    }
+
+    // Update cursor spores
+    for (let i = cursorSpores.length - 1; i >= 0; i--) {
+      const s = cursorSpores[i]
+      s.x += s.vx
+      s.y += s.vy
+      s.alpha -= 0.006
+      s.size *= 0.995
+      if (s.alpha <= 0) { cursorSpores.splice(i, 1) }
+    }
+    if (cursorSpores.length > 80) cursorSpores.splice(0, 20)
+
+    // Spawn soil specks
+    if (soilSpecks.length < 50 && Math.random() < 0.15) {
+      soilSpecks.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.15,
+        vy: (Math.random() - 0.5) * 0.1,
+        alpha: 0.05 + Math.random() * 0.08,
+        size: 0.5 + Math.random() * 1.5,
+      })
+    }
+
+    // Update soil specks
+    for (let i = soilSpecks.length - 1; i >= 0; i--) {
+      const s = soilSpecks[i]
+      s.x += s.vx + Math.sin(time * 0.3 + s.y * 0.01) * 0.05
+      s.y += s.vy
+      s.alpha -= 0.0005
+      if (s.alpha <= 0 || s.x < -10 || s.x > w + 10 || s.y < -10 || s.y > h + 10) {
+        soilSpecks.splice(i, 1)
+      }
+    }
+
+    // Spawn bioluminescent spore flashes (rare)
+    if (sporeFlashes.length < 5 && Math.random() < 0.008) {
+      sporeFlashes.push({
+        x: Math.random() * w,
+        y: h * 0.3 + Math.random() * h * 0.6,
+        radius: 3 + Math.random() * 8,
+        alpha: 0,
+        hue: 140 + Math.random() * 60, // green-blue range
+        life: 0,
+        maxLife: 60 + Math.random() * 80,
+      })
+    }
+
+    // Update spore flashes
+    for (let i = sporeFlashes.length - 1; i >= 0; i--) {
+      const f = sporeFlashes[i]
+      f.life++
+      const t = f.life / f.maxLife
+      // Fade in then out
+      f.alpha = t < 0.3 ? (t / 0.3) * 0.15 : 0.15 * (1 - (t - 0.3) / 0.7)
+      if (f.life >= f.maxLife) { sporeFlashes.splice(i, 1) }
+    }
+
+    // Mycelium pulses (background glow network)
+    if (myceliumPulses.length < 8 && Math.random() < 0.005) {
+      myceliumPulses.push({
+        x: Math.random() * w,
+        y: h * 0.2 + Math.random() * h * 0.7,
+        radius: 20 + Math.random() * 60,
+        alpha: 0,
+        speed: 0.003 + Math.random() * 0.005,
+        phase: Math.random() * Math.PI * 2,
+      })
+    }
+
+    // Update mycelium pulses
+    for (let i = myceliumPulses.length - 1; i >= 0; i--) {
+      const m = myceliumPulses[i]
+      m.phase += m.speed
+      m.alpha = Math.sin(m.phase) * 0.03
+      if (m.alpha < 0) m.alpha = 0
+      if (m.phase > Math.PI * 2) {
+        myceliumPulses.splice(i, 1)
+      }
+    }
+  }
+
+  function drawAtmosphere(w: number, h: number) {
+    if (!ctx) return
+
+    // Mycelium background glow (drawn first, behind everything)
+    for (const m of myceliumPulses) {
+      if (m.alpha <= 0) continue
+      const grad = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.radius)
+      grad.addColorStop(0, `rgba(60, 180, 100, ${m.alpha})`)
+      grad.addColorStop(0.5, `rgba(40, 140, 80, ${m.alpha * 0.5})`)
+      grad.addColorStop(1, 'rgba(40, 140, 80, 0)')
+      ctx.fillStyle = grad
+      ctx.fillRect(m.x - m.radius, m.y - m.radius, m.radius * 2, m.radius * 2)
+    }
+
+    // Soil specks
+    for (const s of soilSpecks) {
+      ctx.beginPath()
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(140, 110, 70, ${s.alpha})`
+      ctx.fill()
+    }
+
+    // Bioluminescent spore flashes
+    for (const f of sporeFlashes) {
+      if (f.alpha <= 0) continue
+      const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.radius)
+      grad.addColorStop(0, `hsla(${f.hue}, 70%, 55%, ${f.alpha})`)
+      grad.addColorStop(0.6, `hsla(${f.hue}, 60%, 40%, ${f.alpha * 0.3})`)
+      grad.addColorStop(1, `hsla(${f.hue}, 60%, 40%, 0)`)
+      ctx.fillStyle = grad
+      ctx.fillRect(f.x - f.radius, f.y - f.radius, f.radius * 2, f.radius * 2)
+    }
+
+    // Moisture sheen — subtle wet reflections near mouse
+    const sheenAlpha = 0.015 + mouseSpeed * 0.001
+    const sheenGrad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 80)
+    sheenGrad.addColorStop(0, `rgba(100, 140, 120, ${Math.min(sheenAlpha, 0.03)})`)
+    sheenGrad.addColorStop(0.5, `rgba(80, 120, 100, ${Math.min(sheenAlpha * 0.3, 0.01)})`)
+    sheenGrad.addColorStop(1, 'rgba(80, 120, 100, 0)')
+    ctx.fillStyle = sheenGrad
+    ctx.fillRect(mouseX - 80, mouseY - 80, 160, 160)
+
+    // Cursor spore trail
+    for (const s of cursorSpores) {
+      ctx.beginPath()
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${s.hue}, 50%, 50%, ${s.alpha})`
+      ctx.fill()
+    }
+  }
 
   function buildTendrilPath(
     startX: number, startY: number,
@@ -387,40 +902,57 @@ export function createRootsRoom(deps: RootsDeps): Room {
     const a = 0.2 + health * 0.4
     const thickness = Math.max(0.5, 3 - node.depth * 0.5)
 
+    // Cursor attraction — bend root nodes toward cursor
+    const cursorDx = mouseX - node.x
+    const cursorDy = mouseY - node.y
+    const cursorDist = Math.sqrt(cursorDx * cursorDx + cursorDy * cursorDy)
+    const attractRadius = 120
+    let attractX = 0
+    let attractY = 0
+    if (cursorDist < attractRadius && cursorDist > 1) {
+      const strength = (1 - cursorDist / attractRadius) * 8 * (node.depth * 0.3 + 0.2)
+      attractX = (cursorDx / cursorDist) * strength
+      attractY = (cursorDy / cursorDist) * strength
+    }
+
+    const drawNodeX = node.x + attractX
+    const drawNodeY = node.y + attractY
+
     // Draw segment from parent to this node
     ctx.beginPath()
     ctx.moveTo(parentX, parentY)
 
-    // Slight curve
-    const midX = (parentX + node.x) / 2 + Math.sin(time * 0.5 + node.depth) * 2
-    const midY = (parentY + node.y) / 2
-    ctx.quadraticCurveTo(midX, midY, node.x, node.y)
+    // Slight curve with cursor attraction applied
+    const midX = (parentX + drawNodeX) / 2 + Math.sin(time * 0.5 + node.depth) * 2
+    const midY = (parentY + drawNodeY) / 2
+    ctx.quadraticCurveTo(midX, midY, drawNodeX, drawNodeY)
 
     ctx.strokeStyle = `hsla(${h}, ${s}%, ${l}%, ${a})`
     ctx.lineWidth = thickness
     ctx.lineCap = 'round'
     ctx.stroke()
 
-    // Root tip glow for deep roots
+    // Root tip glow for deep roots — brightens near cursor
     if (node.children.length === 0 && node.depth > 2) {
+      const tipBright = cursorDist < attractRadius ? 1 + (1 - cursorDist / attractRadius) * 0.8 : 1
       ctx.beginPath()
-      ctx.arc(node.x, node.y, 2, 0, Math.PI * 2)
-      ctx.fillStyle = `hsla(${h}, ${s + 20}%, ${l + 20}%, ${a * 0.5})`
+      ctx.arc(drawNodeX, drawNodeY, 2 * tipBright, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${h}, ${s + 20}%, ${l + 20}%, ${a * 0.5 * tipBright})`
       ctx.fill()
     }
 
     // Mycorrhizal glow — bioluminescent nodes at connections
     if (node.depth === 2 && health > 0.4) {
-      const glowSize = 4 + Math.sin(time * 0.8 + node.x * 0.1) * 2
+      const glowSize = 4 + Math.sin(time * 0.8 + drawNodeX * 0.1) * 2
       ctx.beginPath()
-      ctx.arc(node.x, node.y, glowSize, 0, Math.PI * 2)
-      ctx.fillStyle = `hsla(120, 60%, 40%, ${0.05 + Math.sin(time + node.y * 0.05) * 0.03})`
+      ctx.arc(drawNodeX, drawNodeY, glowSize, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(120, 60%, 40%, ${0.05 + Math.sin(time + drawNodeY * 0.05) * 0.03})`
       ctx.fill()
     }
 
-    // Recurse
+    // Recurse — pass the drawn position so child segments connect smoothly
     for (const child of node.children) {
-      drawRoot(child, node.x, node.y)
+      drawRoot(child, drawNodeX, drawNodeY)
     }
   }
 
@@ -444,6 +976,10 @@ export function createRootsRoom(deps: RootsDeps): Room {
     bg.addColorStop(1, 'rgba(5, 3, 2, 1)')
     ctx.fillStyle = bg
     ctx.fillRect(0, 0, w, h)
+
+    // Atmosphere — background layer (mycelium glow, soil specks, spore flashes)
+    updateAtmosphere(w, h)
+    drawAtmosphere(w, h)
 
     // Surface line at top
     ctx.strokeStyle = 'rgba(80, 60, 30, 0.15)'
@@ -656,18 +1192,38 @@ export function createRootsRoom(deps: RootsDeps): Room {
         } else if (e.clientX > window.innerWidth * 0.7 && e.clientY > window.innerHeight * 0.85 && deps.onDeeper) {
           deps.onDeeper()
         } else {
-          // Tremor ripple + spawn particles from click point
+          // Tremor ripple + burst of new root growth from click point
           clickRipples.push({ x: e.clientX, y: e.clientY, radius: 5, alpha: 0.3 })
-          for (let i = 0; i < 5; i++) {
+          // Root-like particle burst spreading outward and downward
+          for (let i = 0; i < 12; i++) {
+            const angle = Math.random() * Math.PI * 2
+            const speed = 0.3 + Math.random() * 1.5
             particles.push({
               x: e.clientX + (Math.random() - 0.5) * 20,
-              y: e.clientY,
-              vy: -0.5 - Math.random() * 1,
-              alpha: 0.3 + Math.random() * 0.2,
-              size: 1 + Math.random() * 2,
-              hue: 30 + Math.random() * 30,
+              y: e.clientY + Math.random() * 10,
+              vy: Math.sin(angle) * speed * 0.5 + 0.2, // bias downward
+              alpha: 0.3 + Math.random() * 0.3,
+              size: 1 + Math.random() * 2.5,
+              hue: 25 + Math.random() * 35,
             })
           }
+          // Spawn bioluminescent spore burst at click
+          for (let i = 0; i < 3; i++) {
+            sporeFlashes.push({
+              x: e.clientX + (Math.random() - 0.5) * 40,
+              y: e.clientY + (Math.random() - 0.5) * 40,
+              radius: 4 + Math.random() * 6,
+              alpha: 0,
+              hue: 130 + Math.random() * 50,
+              life: 0,
+              maxLife: 40 + Math.random() * 40,
+            })
+          }
+          // Play root-grow squelch sound
+          getAudioContext().then(ac => {
+            playRootGrowSound(ac)
+            if (Math.random() < 0.5) playWoodyCrack(ac)
+          })
         }
       })
 
@@ -688,19 +1244,38 @@ export function createRootsRoom(deps: RootsDeps): Room {
     activate() {
       active = true
       particles = []
+      soilSpecks = []
+      sporeFlashes = []
+      cursorSpores = []
+      myceliumPulses = []
       tendrilsInitialized = false
       tendrils = []
       render()
+      initAudio().then(() => {
+        if (active) fadeAudioIn()
+      })
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      fadeAudioOut()
+      if (dripInterval) { clearInterval(dripInterval); dripInterval = null }
+      if (crackleInterval) { clearInterval(crackleInterval); crackleInterval = null }
+      soilSpecks.length = 0
+      sporeFlashes.length = 0
+      cursorSpores.length = 0
+      myceliumPulses.length = 0
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
+      soilSpecks.length = 0
+      sporeFlashes.length = 0
+      cursorSpores.length = 0
+      myceliumPulses.length = 0
       overlay?.remove()
     },
   }
