@@ -125,26 +125,63 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Y -> pitch (top = high, bottom = low)
-    // EMaj7add9 chord: E, F#, G#, B, D# across 3 octaves
-    const pitchRatio = 1 - y / h
+    // EMaj7add9 chord with proper voicing:
+    // E and B (root+fifth) tend lower, F# G# D# (color tones) tend higher
+    const pitchRatio = 1 - y / h // 0=low, 1=high
     const baseFreq = 82.41 // E2
-    // Semitone offsets for E, F#, G#, B, D# across 3 octaves
-    const chord = [0, 2, 4, 7, 11, 12, 14, 16, 19, 23, 24, 26, 28, 31, 35]
-    const approxIndex = pitchRatio * (chord.length - 1)
-    // Semi-random jitter: ±1 note for organic variation
-    const jitter = Math.floor(Math.random() * 3) - 1
-    const noteIndex = Math.max(0, Math.min(chord.length - 1, Math.round(approxIndex) + jitter))
-    const semitone = chord[noteIndex]
+
+    // 5 chord tones across 3 octaves with octave-preference weights
+    // weights: [octave2, octave3, octave4] — higher weight = more likely
+    const voicedNotes = [
+      { semitones: [0, 12, 24],  weights: [0.55, 0.35, 0.10] },  // E: strongly low
+      { semitones: [7, 19, 31],  weights: [0.50, 0.35, 0.15] },  // B: strongly low
+      { semitones: [2, 14, 26],  weights: [0.10, 0.35, 0.55] },  // F#: tends high
+      { semitones: [4, 16, 28],  weights: [0.08, 0.27, 0.65] },  // G#: strongly high
+      { semitones: [11, 23, 35], weights: [0.08, 0.22, 0.70] },  // D#: strongly high
+    ]
+
+    // Pick a random chord tone
+    const note = voicedNotes[Math.floor(Math.random() * voicedNotes.length)]
+
+    // Y position shifts the octave preference (higher click → higher octaves)
+    const adjusted = note.weights.map((w, i) => {
+      const octaveBias = (i - 1) * 0.6 // -0.6, 0, +0.6
+      return Math.max(0.01, w * (1 + (pitchRatio - 0.5) * octaveBias))
+    })
+    const wSum = adjusted[0] + adjusted[1] + adjusted[2]
+    const norm = adjusted.map(w => w / wSum)
+
+    // Weighted random octave selection
+    const roll = Math.random()
+    const octIdx = roll < norm[0] ? 0 : roll < norm[0] + norm[1] ? 1 : 2
+    const semitone = note.semitones[octIdx]
     const freq = baseFreq * Math.pow(2, semitone / 12)
 
-    // X -> timbre (left = dark/warm, right = bright/nasal)
-    const brightness = x / w
+    // X,Y -> continuous waveform shape via custom PeriodicWave
+    const xNorm = x / w // 0=left(pure), 1=right(bright)
+    const yNorm = y / h // 0=top, 1=bottom
 
     try {
-      // Main oscillator (triangle for voice-like quality)
       const osc = audioCtx.createOscillator()
-      osc.type = brightness < 0.3 ? 'sine' : brightness < 0.7 ? 'triangle' : 'sawtooth'
+
+      // Build custom waveform: X controls harmonic richness, Y affects even/odd balance
+      const nH = 20
+      const real = new Float32Array(nH)
+      const imag = new Float32Array(nH)
+      real[0] = 0; imag[0] = 0
+      for (let k = 1; k < nH; k++) {
+        if (k === 1) { imag[k] = 1.0; continue }
+        const isOdd = k % 2 === 1
+        // X: left=fundamental only, middle=odd harmonics(hollow), right=all harmonics(bright)
+        const evenPresence = isOdd ? 1.0 : Math.max(0, (xNorm - 0.25) / 0.75)
+        const richness = Math.pow(xNorm, 0.4)
+        // Y: top adds slight emphasis on higher partials, bottom on lower
+        const yShift = 1.0 + (1 - yNorm - 0.5) * 0.3
+        const falloff = 1.0 / Math.pow(k, (1.8 - xNorm * 0.9) * yShift)
+        imag[k] = richness * evenPresence * falloff
+      }
+      const wave = audioCtx.createPeriodicWave(real, imag, { disableNormalization: false })
+      osc.setPeriodicWave(wave)
       osc.frequency.value = freq
 
       // Vibrato
@@ -155,11 +192,11 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       vibrato.connect(vibratoGain)
       vibratoGain.connect(osc.frequency)
 
-      // Formant filter (simulates vowel)
+      // Formant filter: X controls openness, Y affects resonance
       const filter = audioCtx.createBiquadFilter()
       filter.type = 'bandpass'
-      filter.frequency.value = 300 + brightness * 2000 // 300-2300 Hz
-      filter.Q.value = 2 + brightness * 4
+      filter.frequency.value = 300 + xNorm * 2200 + pitchRatio * 800 // 300-3300 Hz
+      filter.Q.value = 1.5 + (1 - xNorm) * 3 + yNorm * 1.5 // more resonant when pure/low
 
       // Gain envelope
       const gain = audioCtx.createGain()
@@ -445,7 +482,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     ctx.textAlign = 'right'
     ctx.fillText('high \u2191', w - 12, h * 0.15)
     ctx.fillText('low \u2193', w - 12, h * 0.85)
-    ctx.fillText('\u2190 warm \u00b7 bright \u2192', w - 12, h - 18)
+    ctx.fillText('\u2190 pure \u00b7 rich \u2192', w - 12, h - 18)
 
     // --- Draw resonance zone effects ---
     if (deps?.switchTo) {
