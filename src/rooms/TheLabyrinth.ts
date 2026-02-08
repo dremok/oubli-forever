@@ -1485,6 +1485,289 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
   }
 
+  // ===== MEMORY PICTOGRAPH SYSTEM =====
+  // Converts memory text keywords into procedural symbol drawings on walls
+
+  /** Keyword-to-symbol mapping: words found in memories trigger pictograph drawings */
+  const PICTOGRAPH_KEYWORDS: { words: string[]; draw: (c: CanvasRenderingContext2D, s: number, t: number) => void }[] = [
+    { words: ['sun', 'sunny', 'sunrise', 'sunset', 'dawn', 'morning', 'bright'],
+      draw: (c, s, t) => {
+        // Sun with rays
+        const pulse = 0.8 + Math.sin(t * 2) * 0.2
+        c.strokeStyle = `rgba(255, 200, 60, ${0.6 * pulse})`
+        c.lineWidth = 1.5
+        c.beginPath(); c.arc(0, 0, s * 0.15, 0, Math.PI * 2); c.stroke()
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + t * 0.3
+          c.beginPath()
+          c.moveTo(Math.cos(a) * s * 0.2, Math.sin(a) * s * 0.2)
+          c.lineTo(Math.cos(a) * s * 0.32, Math.sin(a) * s * 0.32)
+          c.stroke()
+        }
+      }},
+    { words: ['moon', 'night', 'dark', 'midnight', 'stars', 'dream'],
+      draw: (c, s, t) => {
+        // Crescent moon
+        c.strokeStyle = `rgba(200, 200, 255, ${0.5 + Math.sin(t) * 0.15})`
+        c.lineWidth = 1.5
+        c.beginPath(); c.arc(0, 0, s * 0.18, 0, Math.PI * 2); c.stroke()
+        c.fillStyle = 'rgba(5, 3, 10, 0.9)'
+        c.beginPath(); c.arc(s * 0.07, -s * 0.03, s * 0.14, 0, Math.PI * 2); c.fill()
+        // Tiny stars
+        c.fillStyle = `rgba(200, 200, 255, ${0.3 + Math.sin(t * 3) * 0.15})`
+        c.fillRect(-s * 0.3, -s * 0.25, 1.5, 1.5)
+        c.fillRect(s * 0.2, -s * 0.3, 1, 1)
+        c.fillRect(s * 0.1, s * 0.2, 1.5, 1.5)
+      }},
+    { words: ['water', 'ocean', 'sea', 'river', 'rain', 'wave', 'swim', 'lake', 'beach'],
+      draw: (c, s, t) => {
+        // Waves
+        c.strokeStyle = `rgba(80, 160, 220, ${0.5 + Math.sin(t * 1.5) * 0.2})`
+        c.lineWidth = 1.5
+        for (let row = -1; row <= 1; row++) {
+          c.beginPath()
+          for (let x = -s * 0.35; x <= s * 0.35; x += 2) {
+            const y = row * s * 0.12 + Math.sin(x * 0.12 + t * 2 + row) * s * 0.04
+            if (x === -s * 0.35) c.moveTo(x, y)
+            else c.lineTo(x, y)
+          }
+          c.stroke()
+        }
+      }},
+    { words: ['heart', 'love', 'loved', 'kiss', 'hug', 'care'],
+      draw: (c, s, t) => {
+        // Heart shape
+        const beat = 1 + Math.sin(t * 3) * 0.08
+        c.strokeStyle = `rgba(220, 80, 100, ${0.6 + Math.sin(t * 2) * 0.15})`
+        c.lineWidth = 1.5
+        c.beginPath()
+        c.moveTo(0, s * 0.1 * beat)
+        c.bezierCurveTo(-s * 0.2 * beat, -s * 0.1 * beat, -s * 0.25 * beat, -s * 0.2 * beat, 0, -s * 0.08 * beat)
+        c.bezierCurveTo(s * 0.25 * beat, -s * 0.2 * beat, s * 0.2 * beat, -s * 0.1 * beat, 0, s * 0.1 * beat)
+        c.stroke()
+      }},
+    { words: ['tree', 'forest', 'wood', 'leaf', 'garden', 'grow', 'plant', 'flower'],
+      draw: (c, s, t) => {
+        // Simple tree
+        c.strokeStyle = `rgba(100, 140, 80, ${0.5 + Math.sin(t * 0.8) * 0.15})`
+        c.lineWidth = 2
+        c.beginPath(); c.moveTo(0, s * 0.2); c.lineTo(0, -s * 0.05); c.stroke()
+        // Branches
+        c.lineWidth = 1
+        const sway = Math.sin(t * 0.5) * 0.05
+        c.beginPath()
+        c.moveTo(0, -s * 0.05); c.lineTo(-s * 0.15 + sway * s, -s * 0.2)
+        c.moveTo(0, -s * 0.05); c.lineTo(s * 0.15 + sway * s, -s * 0.18)
+        c.moveTo(0, 0); c.lineTo(-s * 0.1 + sway * s, -s * 0.12)
+        c.stroke()
+        // Foliage
+        c.fillStyle = `rgba(80, 140, 60, ${0.2 + Math.sin(t * 0.7) * 0.08})`
+        c.beginPath(); c.arc(0, -s * 0.15, s * 0.15, 0, Math.PI * 2); c.fill()
+      }},
+    { words: ['house', 'home', 'room', 'door', 'window', 'family', 'kitchen'],
+      draw: (c, s, t) => {
+        // Simple house
+        c.strokeStyle = `rgba(180, 160, 120, ${0.5 + Math.sin(t * 0.6) * 0.15})`
+        c.lineWidth = 1.5
+        // Walls
+        c.strokeRect(-s * 0.15, -s * 0.05, s * 0.3, s * 0.2)
+        // Roof
+        c.beginPath()
+        c.moveTo(-s * 0.18, -s * 0.05)
+        c.lineTo(0, -s * 0.22)
+        c.lineTo(s * 0.18, -s * 0.05)
+        c.stroke()
+        // Door
+        c.strokeRect(-s * 0.03, s * 0.05, s * 0.06, s * 0.1)
+        // Window glow
+        const glow = 0.15 + Math.sin(t * 1.5) * 0.1
+        c.fillStyle = `rgba(255, 200, 80, ${glow})`
+        c.fillRect(s * 0.04, -s * 0.01, s * 0.06, s * 0.05)
+      }},
+    { words: ['fire', 'burn', 'flame', 'warm', 'hot', 'candle'],
+      draw: (c, s, t) => {
+        // Flickering flame
+        const flick = Math.sin(t * 6) * 0.15
+        c.fillStyle = `rgba(255, 140, 40, ${0.4 + flick})`
+        c.beginPath()
+        c.moveTo(-s * 0.06, s * 0.1)
+        c.quadraticCurveTo(-s * 0.1, -s * 0.1 + flick * s, 0, -s * (0.25 + flick * 0.3))
+        c.quadraticCurveTo(s * 0.1, -s * 0.1 - flick * s, s * 0.06, s * 0.1)
+        c.fill()
+        // Inner blue core
+        c.fillStyle = `rgba(80, 120, 255, ${0.3 + flick * 0.5})`
+        c.beginPath()
+        c.moveTo(-s * 0.02, s * 0.06)
+        c.quadraticCurveTo(-s * 0.03, 0, 0, -s * 0.06)
+        c.quadraticCurveTo(s * 0.03, 0, s * 0.02, s * 0.06)
+        c.fill()
+      }},
+    { words: ['eye', 'see', 'watch', 'look', 'stare', 'gaze', 'vision'],
+      draw: (c, s, t) => {
+        // Eye
+        c.strokeStyle = `rgba(200, 180, 160, ${0.5 + Math.sin(t) * 0.15})`
+        c.lineWidth = 1.5
+        c.beginPath()
+        c.moveTo(-s * 0.2, 0)
+        c.quadraticCurveTo(0, -s * 0.15, s * 0.2, 0)
+        c.quadraticCurveTo(0, s * 0.15, -s * 0.2, 0)
+        c.stroke()
+        // Iris
+        c.beginPath(); c.arc(Math.sin(t * 0.5) * s * 0.03, 0, s * 0.06, 0, Math.PI * 2); c.stroke()
+        // Pupil
+        c.fillStyle = `rgba(20, 10, 30, 0.8)`
+        c.beginPath(); c.arc(Math.sin(t * 0.5) * s * 0.03, 0, s * 0.025, 0, Math.PI * 2); c.fill()
+      }},
+    { words: ['mountain', 'hill', 'climb', 'peak', 'snow', 'high', 'sky'],
+      draw: (c, s, t) => {
+        // Mountains
+        c.strokeStyle = `rgba(140, 130, 160, ${0.5 + Math.sin(t * 0.4) * 0.1})`
+        c.lineWidth = 1.5
+        c.beginPath()
+        c.moveTo(-s * 0.35, s * 0.15)
+        c.lineTo(-s * 0.1, -s * 0.2)
+        c.lineTo(s * 0.05, s * 0.05)
+        c.lineTo(s * 0.2, -s * 0.12)
+        c.lineTo(s * 0.35, s * 0.15)
+        c.stroke()
+        // Snow cap
+        c.strokeStyle = `rgba(220, 230, 255, ${0.3 + Math.sin(t * 0.6) * 0.1})`
+        c.lineWidth = 1
+        c.beginPath()
+        c.moveTo(-s * 0.15, -s * 0.12)
+        c.lineTo(-s * 0.1, -s * 0.2)
+        c.lineTo(-s * 0.05, -s * 0.12)
+        c.stroke()
+      }},
+    { words: ['bird', 'fly', 'wing', 'feather', 'crow', 'sparrow'],
+      draw: (c, s, t) => {
+        // Flying bird (simple V shapes)
+        c.strokeStyle = `rgba(160, 150, 170, ${0.5 + Math.sin(t * 1.2) * 0.15})`
+        c.lineWidth = 1.5
+        const flap = Math.sin(t * 3) * s * 0.04
+        c.beginPath()
+        c.moveTo(-s * 0.15, flap)
+        c.quadraticCurveTo(-s * 0.05, -s * 0.08 + flap, 0, 0)
+        c.quadraticCurveTo(s * 0.05, -s * 0.08 - flap, s * 0.15, -flap)
+        c.stroke()
+        // Second bird further away
+        c.globalAlpha = 0.5
+        c.beginPath()
+        c.moveTo(-s * 0.08 + s * 0.15, -s * 0.1 + flap * 0.5)
+        c.quadraticCurveTo(-s * 0.02 + s * 0.15, -s * 0.15 + flap * 0.5, s * 0.02 + s * 0.15, -s * 0.1)
+        c.stroke()
+        c.globalAlpha = 1
+      }},
+    { words: ['clock', 'time', 'hour', 'minute', 'wait', 'year', 'old', 'age', 'yesterday'],
+      draw: (c, s, t) => {
+        // Clock face
+        c.strokeStyle = `rgba(180, 170, 160, ${0.5 + Math.sin(t * 0.3) * 0.1})`
+        c.lineWidth = 1.5
+        c.beginPath(); c.arc(0, 0, s * 0.18, 0, Math.PI * 2); c.stroke()
+        // Hour marks
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 - Math.PI / 2
+          c.beginPath()
+          c.moveTo(Math.cos(a) * s * 0.14, Math.sin(a) * s * 0.14)
+          c.lineTo(Math.cos(a) * s * 0.17, Math.sin(a) * s * 0.17)
+          c.stroke()
+        }
+        // Hands (moving)
+        const hourAngle = (t * 0.05) % (Math.PI * 2) - Math.PI / 2
+        const minAngle = (t * 0.3) % (Math.PI * 2) - Math.PI / 2
+        c.beginPath()
+        c.moveTo(0, 0)
+        c.lineTo(Math.cos(hourAngle) * s * 0.1, Math.sin(hourAngle) * s * 0.1)
+        c.stroke()
+        c.lineWidth = 1
+        c.beginPath()
+        c.moveTo(0, 0)
+        c.lineTo(Math.cos(minAngle) * s * 0.14, Math.sin(minAngle) * s * 0.14)
+        c.stroke()
+      }},
+    { words: ['spiral', 'round', 'circle', 'loop', 'again', 'repeat', 'cycle'],
+      draw: (c, s, t) => {
+        // Spiral
+        c.strokeStyle = `rgba(180, 140, 200, ${0.5 + Math.sin(t * 0.8) * 0.15})`
+        c.lineWidth = 1
+        c.beginPath()
+        for (let a = 0; a < Math.PI * 6; a += 0.1) {
+          const r = a * s * 0.015 + Math.sin(t + a * 0.5) * s * 0.005
+          const x = Math.cos(a + t * 0.2) * r
+          const y = Math.sin(a + t * 0.2) * r
+          if (a === 0) c.moveTo(x, y)
+          else c.lineTo(x, y)
+        }
+        c.stroke()
+      }},
+    { words: ['hand', 'touch', 'hold', 'grab', 'finger', 'reach'],
+      draw: (c, s, t) => {
+        // Open hand outline
+        c.strokeStyle = `rgba(180, 160, 140, ${0.5 + Math.sin(t * 0.7) * 0.1})`
+        c.lineWidth = 1.5
+        // Palm
+        c.beginPath(); c.ellipse(0, s * 0.05, s * 0.1, s * 0.13, 0, 0, Math.PI * 2); c.stroke()
+        // Fingers (simplified)
+        const fPos = [[-0.07, -0.15], [-0.025, -0.2], [0.025, -0.19], [0.07, -0.14], [0.12, 0.02]]
+        for (const [fx, fy] of fPos) {
+          c.beginPath()
+          c.moveTo(fx * s * 0.8, (fy + 0.1) * s)
+          c.lineTo(fx * s * 1.2, fy * s)
+          c.stroke()
+        }
+      }},
+    { words: ['key', 'lock', 'open', 'close', 'secret', 'hidden'],
+      draw: (c, s, t) => {
+        // Key shape
+        c.strokeStyle = `rgba(200, 180, 100, ${0.5 + Math.sin(t * 1.5) * 0.15})`
+        c.lineWidth = 1.5
+        // Ring
+        c.beginPath(); c.arc(-s * 0.1, 0, s * 0.08, 0, Math.PI * 2); c.stroke()
+        // Shaft
+        c.beginPath(); c.moveTo(-s * 0.02, 0); c.lineTo(s * 0.2, 0); c.stroke()
+        // Teeth
+        c.beginPath()
+        c.moveTo(s * 0.12, 0); c.lineTo(s * 0.12, s * 0.06)
+        c.moveTo(s * 0.17, 0); c.lineTo(s * 0.17, s * 0.05)
+        c.stroke()
+      }},
+  ]
+
+  /** Extract pictograph symbols from text and draw them */
+  function drawMemoryPictographs(c: CanvasRenderingContext2D, text: string, size: number, alpha: number, wx: number, wy: number) {
+    const lowerText = text.toLowerCase()
+    const matched: typeof PICTOGRAPH_KEYWORDS = []
+
+    for (const pk of PICTOGRAPH_KEYWORDS) {
+      for (const word of pk.words) {
+        if (lowerText.includes(word)) {
+          matched.push(pk)
+          break
+        }
+      }
+    }
+
+    if (matched.length === 0) return
+
+    // Draw up to 2 matched symbols, spaced along the wall
+    const toDraw = matched.slice(0, 2)
+    const spacing = size * 0.8
+    const startX = -spacing * (toDraw.length - 1) / 2
+
+    for (let i = 0; i < toDraw.length; i++) {
+      c.save()
+      // Position symbols below the text
+      c.translate(startX + i * spacing, size * 0.5)
+      c.globalAlpha = alpha * 0.7
+      // Slight per-wall variation
+      const wobble = cellHash2(wx + i * 17, wy + i * 31) * 0.2 - 0.1
+      c.rotate(wobble)
+      toDraw[i].draw(c, size, time)
+      c.globalAlpha = 1
+      c.restore()
+    }
+  }
+
   // ===== PROCEDURAL OBJECT RENDERING =====
 
   /** Draw a wall object using Canvas2D procedural graphics instead of icons */
@@ -2704,6 +2987,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       if (insc.isMemory) {
         // Hand-drawn style for user memories — per-character jitter with handwriting font
         drawHandwrittenText(ctx, insc.text.substring(0, 24), fontSize * 1.2, alpha, insc.wx, insc.wy)
+        // Pictograph symbols extracted from memory content — actual drawings, not text
+        drawMemoryPictographs(ctx, insc.text, fontSize * 2.5, alpha, insc.wx, insc.wy)
       } else {
         // Standard inscription rendering
         ctx.font = `${fontSize}px "Cormorant Garamond", serif`
