@@ -126,12 +126,16 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     const h = canvas.height
 
     // Y -> pitch (top = high, bottom = low)
-    // Use a pentatonic-ish scale for harmony
+    // EMaj7add9 chord: E, F#, G#, B, D# across 3 octaves
     const pitchRatio = 1 - y / h
-    const baseFreq = 110 // A2
-    const scale = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24] // pentatonic over 2 octaves
-    const noteIndex = Math.floor(pitchRatio * scale.length)
-    const semitone = scale[Math.min(noteIndex, scale.length - 1)]
+    const baseFreq = 82.41 // E2
+    // Semitone offsets for E, F#, G#, B, D# across 3 octaves
+    const chord = [0, 2, 4, 7, 11, 12, 14, 16, 19, 23, 24, 26, 28, 31, 35]
+    const approxIndex = pitchRatio * (chord.length - 1)
+    // Semi-random jitter: ±1 note for organic variation
+    const jitter = Math.floor(Math.random() * 3) - 1
+    const noteIndex = Math.max(0, Math.min(chord.length - 1, Math.round(approxIndex) + jitter))
+    const semitone = chord[noteIndex]
     const freq = baseFreq * Math.pow(2, semitone / 12)
 
     // X -> timbre (left = dark/warm, right = bright/nasal)
