@@ -1272,6 +1272,42 @@ Surface: 36 | Hidden: 7
 - 30+ new whisper fragments: JWST dark matter map, GW250114, coral reef collapse (84% bleached), Alzheimer's jumbled replay, Project Hail Mary, Sydney Biennale "Rememory"
 - 7 new DigitalDecay meditations: coral growth/death rates, dark matter neural network, gravitational lensing, marine thermal migration, 1.5°C threshold
 
+### 111. TheCatacombs Deepened
+- Torch/light mechanic: radial gradient overlay follows cursor, room mostly dark
+- Clickable inscriptions with expandable detail panels (dead internet history)
+- 3-layer parallax depth (stone crack textures scrolling at different speeds)
+- Hidden memory integration: user memories scratched into walls every 30s
+- Torch-aware dust particles (visible only within light radius)
+- 4 environmental inscriptions about western US snow drought (Feb 2026)
+
+### 112. TheBetween Deepened
+- Enhanced shadow figures: pause at doors, "enter" rooms with whisper text, larger/more visible
+- Memory echoes on walls: 2-3 fragments from user memories cycling every 17s with parallax
+- Dramatic blackout system: 200-400ms darkness, doors glow faintly during blackout
+- Door glow states: warm for visited rooms (localStorage), pulsing for degraded memories
+- Distant footstep audio synthesis (bandpass noise bursts with stereo panning)
+- Mechanistic interpretability wall inscriptions (Feb 2026)
+
+### 113. ThePalimpsestGallery Deepened
+- Cursor-driven text reveal (offscreen canvas mask, radial brush stamps replace auto-reveal)
+- Painting RGB distortion for degraded memories (channel separation + crack lines)
+- Gravity-accelerated ink drips with permanent trails, spawning from revealed text
+- Multi-painting gallery mode (3 paintings loaded in parallel, thumbnail strip)
+- Scratch audio tied to cursor speed
+- Tracey Emin confession (cultural grounding, Feb 2026)
+
+### 114. TheRememory Deepened
+- Click-to-expand panels with state-matched styling (document/trace/ghost)
+- Drag-between-columns: cosmetic override with 10-15s expiry ("you can't force memory")
+- 6 Morrison quotes drifting in background at very low alpha
+- Dissolve/reform transition animation with scatter particles
+- Column atmosphere: matrix rain (document), amber streaks (trace), rising mist (ghost)
+- Epigenetic inscription (CRISPR Feb 2026 cultural grounding)
+
+### 115. Feb 2026 Cultural Content Update (Round 2)
+- 30+ new whisper fragments: snow drought, CRISPR epigenetic editing, mechanistic interpretability, Tracey Emin, EPiC salt mine, Roman Space Telescope
+- 5 new DigitalDecay meditations
+
 ---
-*Last updated: Era 9, Feature 110 — System-level effects (afterimage, ripple, bleed) + Radio/Observatory deepened*
-*"two black holes collided and spacetime rang like a bell for three seconds"*
+*Last updated: Era 9, Feature 115 — Four thinnest rooms deepened with interactivity + cultural grounding*
+*"the mountains forgot how to hold snow. february, and the peaks are bare."*
