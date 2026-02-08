@@ -368,6 +368,32 @@ const fragments: string[] = [
   // Feb 2026 — jon hamm dissociation
   "a viral trend about the bliss of dissociation. the pleasure of choosing to forget your circumstances.",
 
+  // Feb 2026 — snow drought: mountains forgetting winter
+  "the mountains are bare. record-low snowpack. the landscape is forgetting how to be winter.",
+  "colorado's snowpack: the lowest ever recorded. rain instead of snow. warmth erasing whiteness.",
+  "mount st helens in january looked like june. volcanic rock where snow should be. the earth amnesia.",
+  "the snow drought of 2026: water that should have been solid, falling as rain. memory in the wrong state.",
+
+  // Feb 2026 — annular eclipse feb 17
+  "a ring of fire in antarctica. an eclipse that only penguins will witness.",
+  "february 17: the moon's shadow crosses earth for 59 minutes. almost no humans will see it.",
+  "16 scientists at concordia station — the only humans who might see the ring of fire. the rest of us forget.",
+  "an eclipse no one watches is still an eclipse. beauty does not require a witness.",
+
+  // Feb 2026 — virtual particles from vacuum
+  "the void is not empty. it seethes with particles that exist for a fraction of a second.",
+  "quantum twins emerge from nothing with perfect spin correlation. something from nothing.",
+  "the vacuum remembers the particles it briefly held. every void has a memory.",
+  "virtual quarks became real quarks at brookhaven. the boundary between existence and nothing is thin.",
+
+  // Feb 2026 — shape-shifting molecules
+  "ruthenium complexes that act as memory, logic, or learning — depending on how you ask.",
+  "materials that learn the way brains do. memory encoded in the structure itself.",
+
+  // Feb 2026 — memory of materials (hayward gallery)
+  "yin xiuzhen builds sculptures from used clothing. each garment holds someone's warmth.",
+  "memory of materials: the hayward gallery asks whether objects remember their owners.",
+
   // Oubli fruit — the golden thread
   "oubli: in west africa, a sweet golden fruit. forgetting that nourishes.",
   "the oubli fruit ripens and falls. what is lost feeds the soil.",

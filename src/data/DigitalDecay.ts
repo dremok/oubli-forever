@@ -144,6 +144,13 @@ const DECAY_MEDITATIONS = [
   'oubli: a sweet golden fruit from west africa. in the language of forgetting, something nourishes.',
   'the oubli fruit ripens in the shade. what decays feeds the soil for what comes next.',
   'every dead link is a seed. the internet forgets so the next thing can grow.',
+  'the void is not empty. virtual particles flicker in and out of existence. something from nothing.',
+  'quantum twins: particle pairs born from vacuum with 100% spin correlation. the void remembers its children.',
+  'an annular eclipse on feb 17, 2026. a ring of fire that only 16 scientists and some penguins will see.',
+  'colorado and utah: lowest snowpack ever recorded. the mountains forgot how to hold winter.',
+  'yin xiuzhen builds art from secondhand clothing. each shirt remembers the body it covered.',
+  'memory of materials: the hayward gallery, february 2026. objects that hold their owners\' warmth.',
+  'ruthenium complexes that switch between memory, logic, and learning. the molecule decides what to be.',
 ]
 
 export class DigitalDecay {
