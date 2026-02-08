@@ -43,6 +43,34 @@ interface ActiveNote {
   freq: number
 }
 
+interface NoteParticle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  hue: number
+  alpha: number
+  size: number
+  birth: number
+}
+
+interface PortalParticle {
+  x: number
+  y: number
+  vy: number
+  hue: number
+  alpha: number
+  size: number
+}
+
+interface GhostKey {
+  key: string
+  label: string
+  glow: number       // current glow intensity (0..1)
+  targetGlow: number  // target glow
+  hue: number
+}
+
 interface InstrumentDeps {
   onNote?: (freq: number, velocity: number) => void
   switchTo?: (name: string) => void
@@ -77,6 +105,29 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
   // Visual state
   let noteFlash = 0
   let lastNoteHue = 0
+  let lastNotePitch = 0.5 // normalized 0..1 based on semitone
+
+  // Note particles — spawned on noteOn, drift outward and fade
+  const noteParticles: NoteParticle[] = []
+  const MAX_NOTE_PARTICLES = 100
+
+  // Portal hover particles — emitted while hovering a portal band
+  const portalParticles: PortalParticle[] = []
+
+  // Ghost keyboard — faint key labels that light up when pressed
+  const ghostKeys: GhostKey[] = []
+  const LOWER_KEYS = ['a','w','s','e','d','f','t','g','y','h','u','j']
+  const UPPER_KEYS = ['k','o','l','p',';','[',"'"]
+  for (let i = 0; i < LOWER_KEYS.length; i++) {
+    ghostKeys.push({ key: LOWER_KEYS[i], label: LOWER_KEYS[i], glow: 0, targetGlow: 0, hue: (i / 12) * 360 })
+  }
+  for (let i = 0; i < UPPER_KEYS.length; i++) {
+    ghostKeys.push({ key: UPPER_KEYS[i], label: UPPER_KEYS[i] === ';' ? ';' : UPPER_KEYS[i] === '[' ? '[' : UPPER_KEYS[i] === "'" ? "'" : UPPER_KEYS[i], glow: 0, targetGlow: 0, hue: ((12 + i) / 12) * 360 })
+  }
+
+  // Cursor crosshair state — shows filter (Y) and echo (X)
+  let cursorNormX = 0.3 // delay feedback normalized
+  let cursorNormY = 0.5 // filter cutoff normalized
 
   // Portal band state — frequency zones on the waveform canvas
   const portalBands = [
@@ -207,6 +258,39 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     // Visual feedback
     noteFlash = 1.0
     lastNoteHue = (semitone % 12) / 12 * 360
+    lastNotePitch = semitone / 18 // normalize across the 19 semitone range
+
+    // Spawn note particles at canvas center
+    if (waveCanvas) {
+      const cx = waveCanvas.width / 2
+      const cy = waveCanvas.height / 2
+      const count = 5 + Math.floor(Math.random() * 4)
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2
+        const speed = 0.5 + Math.random() * 2
+        noteParticles.push({
+          x: cx + (Math.random() - 0.5) * 20,
+          y: cy + (Math.random() - 0.5) * 10,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          hue: lastNoteHue,
+          alpha: 0.6,
+          size: 1.5 + Math.random() * 3,
+          birth: performance.now(),
+        })
+      }
+      // Trim to max
+      while (noteParticles.length > MAX_NOTE_PARTICLES) {
+        noteParticles.shift()
+      }
+    }
+
+    // Light up ghost key
+    const gk = ghostKeys.find(g => g.key === key)
+    if (gk) {
+      gk.targetGlow = 1
+      gk.hue = lastNoteHue
+    }
   }
 
   function noteOff(key: string) {
@@ -225,6 +309,12 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     }, 400)
 
     activeNotes.delete(key)
+
+    // Release ghost key
+    const gk = ghostKeys.find(g => g.key === key)
+    if (gk) {
+      gk.targetGlow = 0
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -261,6 +351,10 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     const xRatio = e.clientX / window.innerWidth
     delayFeedback = xRatio * 0.75
     feedbackGain.gain.linearRampToValueAtTime(delayFeedback, audioCtx.currentTime + 0.1)
+
+    // Track for crosshair
+    cursorNormX = xRatio
+    cursorNormY = 1 - yRatio // flip so top=0 in canvas coords
   }
 
   let waveButtons: HTMLElement[] = []
@@ -289,10 +383,61 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     const h = waveCanvas.height
     const ctx = waveCtx
     const bandBarH = 15
+    const ghostKeyH = 28 // height reserved for ghost keyboard at bottom (above portal bars)
+    const now = performance.now()
 
     ctx.clearRect(0, 0, w, h)
 
-    // --- Portal frequency band bars at the bottom of the canvas ---
+    // === 1. AMBIENT GLOW BACKGROUND ===
+    // Radial gradient that pulses with noteFlash, center shifts with pitch
+    {
+      const glowAlpha = 0.02 + noteFlash * 0.08
+      const centerX = w * (0.35 + lastNotePitch * 0.3) // shifts with pitch
+      const centerY = h * 0.45
+      const grad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, w * 0.6)
+      grad.addColorStop(0, `hsla(${lastNoteHue}, 60%, 50%, ${glowAlpha})`)
+      grad.addColorStop(0.5, `hsla(${lastNoteHue}, 40%, 30%, ${glowAlpha * 0.4})`)
+      grad.addColorStop(1, `hsla(${lastNoteHue}, 30%, 10%, 0)`)
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, w, h)
+    }
+
+    // === 2. CURSOR CROSSHAIR (filter Y / echo X) ===
+    {
+      const crossX = cursorNormX * w
+      const crossY = cursorNormY * (h - bandBarH - ghostKeyH)
+      const crossAlpha = 0.06
+
+      // Vertical line (echo / delay feedback)
+      ctx.beginPath()
+      ctx.moveTo(crossX, 0)
+      ctx.lineTo(crossX, h - bandBarH - ghostKeyH)
+      ctx.strokeStyle = `rgba(255, 255, 255, ${crossAlpha})`
+      ctx.lineWidth = 0.5
+      ctx.setLineDash([4, 6])
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Horizontal line (filter cutoff)
+      ctx.beginPath()
+      ctx.moveTo(0, crossY)
+      ctx.lineTo(w, crossY)
+      ctx.strokeStyle = `rgba(255, 255, 255, ${crossAlpha})`
+      ctx.lineWidth = 0.5
+      ctx.setLineDash([4, 6])
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Labels
+      ctx.font = '9px monospace'
+      ctx.fillStyle = `rgba(255, 255, 255, 0.08)`
+      ctx.textAlign = 'left'
+      ctx.fillText('filter', 4, crossY - 4)
+      ctx.textAlign = 'center'
+      ctx.fillText('echo', crossX, 10)
+    }
+
+    // === 3. PORTAL FREQUENCY BAND BARS (at the very bottom) ===
     for (let bi = 0; bi < portalBands.length; bi++) {
       const band = portalBands[bi]
       const x0 = Math.floor(band.freqRange[0] * w)
@@ -305,7 +450,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
 
       // Flash white on click
       const isClicked = bi === clickedBand
-      const clickElapsed = clickTime ? (performance.now() - clickTime) / 1000 : 1
+      const clickElapsed = clickTime ? (now - clickTime) / 1000 : 1
       const clickFlash = isClicked ? Math.max(0, 1 - clickElapsed / 0.3) : 0
 
       // Bar background
@@ -345,19 +490,101 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
         ctx.font = '12px "Cormorant Garamond", serif'
         ctx.textAlign = 'center'
         ctx.fillStyle = `hsla(${band.hue}, 50%, 75%, ${labelAlpha})`
-        ctx.fillText(band.label, x0 + bw / 2, h - bandBarH - 6)
+        ctx.fillText(band.label, x0 + bw / 2, h - bandBarH - ghostKeyH - 6)
       }
+
+      // === 5. PORTAL BAND HOVER PARTICLES ===
+      if (bi === hoveredBand && band.hoverGlow > 0.3) {
+        // Emit 2-3 particles per frame from this band zone
+        const emitCount = 2 + Math.floor(Math.random() * 2)
+        for (let ei = 0; ei < emitCount; ei++) {
+          portalParticles.push({
+            x: x0 + Math.random() * bw,
+            y: h - bandBarH,
+            vy: -(0.3 + Math.random() * 1.2),
+            hue: band.hue,
+            alpha: 0.3 + Math.random() * 0.2,
+            size: 1 + Math.random() * 2,
+          })
+        }
+      }
+    }
+
+    // Update and render portal particles
+    for (let i = portalParticles.length - 1; i >= 0; i--) {
+      const p = portalParticles[i]
+      p.y += p.vy
+      p.alpha -= 0.008
+      if (p.alpha <= 0 || p.y < 0) {
+        portalParticles.splice(i, 1)
+        continue
+      }
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${p.hue}, 70%, 65%, ${p.alpha})`
+      ctx.fill()
+    }
+    // Cap portal particles
+    while (portalParticles.length > 60) {
+      portalParticles.shift()
     }
 
     // --- Handle delayed navigation on click ---
     if (clickedBand >= 0 && clickTime) {
-      const elapsed = (performance.now() - clickTime) / 1000
+      const elapsed = (now - clickTime) / 1000
       if (elapsed >= 0.3 && instrumentDeps.switchTo) {
         const dest = portalBands[clickedBand].name
         clickedBand = -1
         clickTime = 0
         instrumentDeps.switchTo(dest)
         return // stop rendering, we're navigating away
+      }
+    }
+
+    // === 4. GHOST KEYBOARD (above portal bars) ===
+    {
+      const keyW = 22
+      const keyH = 18
+      const gap = 3
+      const totalKeys = ghostKeys.length
+      const totalW = totalKeys * (keyW + gap) - gap
+      const startX = (w - totalW) / 2
+      const keyY = h - bandBarH - ghostKeyH + 4
+
+      ctx.font = '10px monospace'
+      ctx.textAlign = 'center'
+
+      for (let i = 0; i < ghostKeys.length; i++) {
+        const gk = ghostKeys[i]
+        // Smooth glow interpolation
+        gk.glow += (gk.targetGlow - gk.glow) * 0.15
+
+        const kx = startX + i * (keyW + gap)
+        const ky = keyY
+
+        // Key background
+        const bgAlpha = 0.02 + gk.glow * 0.2
+        if (gk.glow > 0.05) {
+          ctx.fillStyle = `hsla(${gk.hue}, 70%, 55%, ${bgAlpha})`
+        } else {
+          ctx.fillStyle = `rgba(255, 255, 255, ${bgAlpha})`
+        }
+        ctx.fillRect(kx, ky, keyW, keyH)
+
+        // Key border
+        const borderAlpha = 0.04 + gk.glow * 0.25
+        ctx.strokeStyle = gk.glow > 0.05
+          ? `hsla(${gk.hue}, 60%, 60%, ${borderAlpha})`
+          : `rgba(255, 255, 255, ${borderAlpha})`
+        ctx.lineWidth = 0.5
+        ctx.strokeRect(kx, ky, keyW, keyH)
+
+        // Key label
+        const labelAlpha = 0.06 + gk.glow * 0.6
+        ctx.fillStyle = gk.glow > 0.05
+          ? `hsla(${gk.hue}, 60%, 75%, ${labelAlpha})`
+          : `rgba(255, 255, 255, ${labelAlpha})`
+        ctx.fillText(gk.label, kx + keyW / 2, ky + keyH - 4)
       }
     }
 
@@ -425,6 +652,29 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     ctx.strokeStyle = `rgba(255, 20, 147, 0.05)`
     ctx.lineWidth = 0.5
     ctx.stroke()
+
+    // === 1b. NOTE PARTICLES (rendered on top of waveform) ===
+    for (let i = noteParticles.length - 1; i >= 0; i--) {
+      const p = noteParticles[i]
+      const age = (now - p.birth) / 1000
+      if (age > 2.0 || p.alpha <= 0) {
+        noteParticles.splice(i, 1)
+        continue
+      }
+      // Update position
+      p.x += p.vx
+      p.y += p.vy
+      // Slow down slightly
+      p.vx *= 0.99
+      p.vy *= 0.99
+      // Fade out over lifetime
+      p.alpha = Math.max(0, 0.6 * (1 - age / 2.0))
+
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size * (1 - age * 0.3), 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${p.hue}, 70%, 65%, ${p.alpha})`
+      ctx.fill()
+    }
   }
 
   function animate() {
@@ -463,10 +713,10 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       // Waveform canvas
       waveCanvas = document.createElement('canvas')
       waveCanvas.width = 600
-      waveCanvas.height = 200
+      waveCanvas.height = 240
       waveCanvas.style.cssText = `
         width: 560px; max-width: 90vw;
-        height: 180px;
+        height: 216px;
         border: 1px solid rgba(255, 20, 147, 0.08);
         border-radius: 2px;
         margin-bottom: 24px;

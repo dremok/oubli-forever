@@ -27,7 +27,7 @@
  */
 
 import type { Room } from './RoomManager'
-import { getAudioContext } from '../sound/AudioBus'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface Memory {
   id: string
@@ -48,7 +48,16 @@ interface TapeLoop {
   position: number // 0-1 through the loop
   pass: number // how many times it's looped
   degradedText: string
-  particles: { x: number; y: number; char: string; alpha: number; vy: number }[]
+  particles: { x: number; y: number; char: string; alpha: number; vy: number; vx: number; rotation: number; rotSpeed: number }[]
+}
+
+interface TapeSpark {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  alpha: number
+  life: number
 }
 
 interface TapeTear {
@@ -60,6 +69,10 @@ interface TapeTear {
   label: string
   alpha: number
   hovered: boolean
+  flickerPhase: number
+  sparks: TapeSpark[]
+  labelDriftX: number
+  labelDriftY: number
 }
 
 export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
@@ -75,11 +88,17 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
   let audioCtx: AudioContext | null = null
   let droneOsc: OscillatorNode | null = null
   let droneGain: GainNode | null = null
+  let hissSource: AudioBufferSourceNode | null = null
+  let hissGain: GainNode | null = null
+  let rumbleOsc: OscillatorNode | null = null
+  let rumbleGain: GainNode | null = null
+  let rumbleLfo: OscillatorNode | null = null
   let totalPasses = 0
 
   let tapeTears: TapeTear[] = []
   let mouseX = 0
   let mouseY = 0
+  let mouseOverTape = false
 
   function buildLoops() {
     const memories = deps.getMemories()
@@ -129,8 +148,9 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
   async function initAudio() {
     try {
       audioCtx = await getAudioContext()
+      const dest = getAudioDestination()
 
-      // Low drone — the sound of the tape machine
+      // --- Low drone — the sound of the tape machine ---
       droneOsc = audioCtx.createOscillator()
       droneOsc.type = 'sine'
       droneOsc.frequency.value = 55 // low A
@@ -139,47 +159,151 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       droneGain.gain.value = 0
 
       // Warm it with slight overdrive
-      const filter = audioCtx.createBiquadFilter()
-      filter.type = 'lowpass'
-      filter.frequency.value = 200
-      filter.Q.value = 1
+      const droneFilter = audioCtx.createBiquadFilter()
+      droneFilter.type = 'lowpass'
+      droneFilter.frequency.value = 200
+      droneFilter.Q.value = 1
 
-      droneOsc.connect(filter)
-      filter.connect(droneGain)
-      droneGain.connect(audioCtx.destination)
+      droneOsc.connect(droneFilter)
+      droneFilter.connect(droneGain)
+      droneGain.connect(dest)
 
       droneOsc.start()
 
-      // Fade in
+      // Fade in drone
       droneGain.gain.setValueAtTime(0, audioCtx.currentTime)
       droneGain.gain.linearRampToValueAtTime(0.03, audioCtx.currentTime + 3)
+
+      // --- Tape hiss — filtered noise (highpass ~4000Hz) ---
+      const hissLength = audioCtx.sampleRate * 4 // 4 second buffer, looped
+      const hissBuffer = audioCtx.createBuffer(1, hissLength, audioCtx.sampleRate)
+      const hissData = hissBuffer.getChannelData(0)
+      for (let i = 0; i < hissLength; i++) {
+        hissData[i] = (Math.random() * 2 - 1)
+      }
+
+      hissSource = audioCtx.createBufferSource()
+      hissSource.buffer = hissBuffer
+      hissSource.loop = true
+
+      const hissFilter = audioCtx.createBiquadFilter()
+      hissFilter.type = 'highpass'
+      hissFilter.frequency.value = 4000
+      hissFilter.Q.value = 0.5
+
+      hissGain = audioCtx.createGain()
+      hissGain.gain.value = 0
+
+      hissSource.connect(hissFilter)
+      hissFilter.connect(hissGain)
+      hissGain.connect(dest)
+
+      hissSource.start()
+      hissGain.gain.setValueAtTime(0, audioCtx.currentTime)
+      hissGain.gain.linearRampToValueAtTime(0.008, audioCtx.currentTime + 3)
+
+      // --- Machine rumble — very low 30Hz oscillator with LFO wobble ---
+      rumbleOsc = audioCtx.createOscillator()
+      rumbleOsc.type = 'sine'
+      rumbleOsc.frequency.value = 30
+
+      rumbleLfo = audioCtx.createOscillator()
+      rumbleLfo.type = 'sine'
+      rumbleLfo.frequency.value = 0.3 // slow wobble
+
+      const lfoGain = audioCtx.createGain()
+      lfoGain.gain.value = 2 // ±2Hz modulation depth
+
+      rumbleLfo.connect(lfoGain)
+      lfoGain.connect(rumbleOsc.frequency) // modulate rumble frequency
+
+      rumbleGain = audioCtx.createGain()
+      rumbleGain.gain.value = 0
+
+      const rumbleFilter = audioCtx.createBiquadFilter()
+      rumbleFilter.type = 'lowpass'
+      rumbleFilter.frequency.value = 60
+      rumbleFilter.Q.value = 0.7
+
+      rumbleOsc.connect(rumbleFilter)
+      rumbleFilter.connect(rumbleGain)
+      rumbleGain.connect(dest)
+
+      rumbleOsc.start()
+      rumbleLfo.start()
+      rumbleGain.gain.setValueAtTime(0, audioCtx.currentTime)
+      rumbleGain.gain.linearRampToValueAtTime(0.015, audioCtx.currentTime + 4)
     } catch {
       // Audio not available
     }
   }
 
-  function playDegradationClick() {
+  function playDegradationCrackle() {
     if (!audioCtx) return
     try {
+      const dest = getAudioDestination()
+      const burstCount = 2 + Math.floor(Math.random() * 4) // 2-5 bursts
+      for (let b = 0; b < burstCount; b++) {
+        const delay = b * (0.015 + Math.random() * 0.025) // staggered 15-40ms apart
+        const burstDuration = 0.01 + Math.random() * 0.02 // 10-30ms each
+
+        // Each burst is a tiny noise snippet
+        const burstLen = Math.floor(audioCtx.sampleRate * burstDuration)
+        const buf = audioCtx.createBuffer(1, burstLen, audioCtx.sampleRate)
+        const data = buf.getChannelData(0)
+        for (let i = 0; i < burstLen; i++) {
+          data[i] = (Math.random() * 2 - 1)
+        }
+
+        const src = audioCtx.createBufferSource()
+        src.buffer = buf
+
+        const filter = audioCtx.createBiquadFilter()
+        filter.type = 'bandpass'
+        filter.frequency.value = 1000 + Math.random() * 3000
+        filter.Q.value = 1.5
+
+        const gain = audioCtx.createGain()
+        gain.gain.value = 0.012 + Math.random() * 0.008
+
+        src.connect(filter)
+        filter.connect(gain)
+        gain.connect(dest)
+
+        src.start(audioCtx.currentTime + delay)
+        gain.gain.setValueAtTime(gain.gain.value, audioCtx.currentTime + delay)
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + burstDuration)
+        src.stop(audioCtx.currentTime + delay + burstDuration + 0.01)
+      }
+    } catch {}
+  }
+
+  function playPassChime() {
+    if (!audioCtx) return
+    try {
+      const dest = getAudioDestination()
       const osc = audioCtx.createOscillator()
-      osc.type = 'square'
-      osc.frequency.value = 800 + Math.random() * 2000
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(600, audioCtx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.3)
+
       const gain = audioCtx.createGain()
-      gain.gain.value = 0.01
+      gain.gain.setValueAtTime(0.02, audioCtx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35)
+
       osc.connect(gain)
-      gain.connect(audioCtx.destination)
+      gain.connect(dest)
       osc.start()
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05)
-      osc.stop(audioCtx.currentTime + 0.05)
+      osc.stop(audioCtx.currentTime + 0.4)
     } catch {}
   }
 
   function initTears(w: number, h: number) {
     const tapeY = h * 0.45 // matches displayY in render
     tapeTears = [
-      { x: w * 0.18, y: tapeY - 8, width: 0, targetWidth: 60, room: 'furnace', label: 'FURNACE', alpha: 0, hovered: false },
-      { x: w * 0.50, y: tapeY - 8, width: 0, targetWidth: 70, room: 'projection', label: 'PROJECTION', alpha: 0, hovered: false },
-      { x: w * 0.82, y: tapeY - 8, width: 0, targetWidth: 60, room: 'radio', label: 'RADIO', alpha: 0, hovered: false },
+      { x: w * 0.18, y: tapeY - 8, width: 0, targetWidth: 60, room: 'furnace', label: 'FURNACE', alpha: 0, hovered: false, flickerPhase: Math.random() * Math.PI * 2, sparks: [], labelDriftX: 0, labelDriftY: 0 },
+      { x: w * 0.50, y: tapeY - 8, width: 0, targetWidth: 70, room: 'projection', label: 'PROJECTION', alpha: 0, hovered: false, flickerPhase: Math.random() * Math.PI * 2, sparks: [], labelDriftX: 0, labelDriftY: 0 },
+      { x: w * 0.82, y: tapeY - 8, width: 0, targetWidth: 60, room: 'radio', label: 'RADIO', alpha: 0, hovered: false, flickerPhase: Math.random() * Math.PI * 2, sparks: [], labelDriftX: 0, labelDriftY: 0 },
     ]
   }
 
@@ -192,6 +316,36 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       tear.width += (tear.targetWidth - tear.width) * approachRate
       // Alpha fades in as tear widens
       tear.alpha = Math.min(1, tear.width / 30)
+
+      // Flicker phase advances
+      tear.flickerPhase += 0.04 + Math.random() * 0.02
+
+      // Label drift — slow wobble
+      tear.labelDriftX = Math.sin(time * 0.7 + tear.x * 0.01) * 1.5
+      tear.labelDriftY = Math.cos(time * 0.5 + tear.x * 0.02) * 1.0
+
+      // Occasionally spawn sparks near tear edges
+      if (tear.width > 10 && Math.random() < 0.06) {
+        const halfW = tear.width / 2
+        const side = Math.random() < 0.5 ? -1 : 1
+        tear.sparks.push({
+          x: tear.x + side * halfW + (Math.random() - 0.5) * 4,
+          y: tear.y + (Math.random() - 0.5) * 20,
+          vx: side * (0.2 + Math.random() * 0.5),
+          vy: (Math.random() - 0.5) * 0.4,
+          alpha: 0.4 + Math.random() * 0.3,
+          life: 1,
+        })
+      }
+
+      // Update sparks
+      tear.sparks = tear.sparks.filter(s => {
+        s.x += s.vx
+        s.y += s.vy
+        s.life -= 0.02
+        s.alpha *= 0.97
+        return s.life > 0 && s.alpha > 0.01
+      })
     }
   }
 
@@ -217,6 +371,10 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       const topY = tear.y - tearH / 2
       const hoverScale = tear.hovered ? 1.15 : 1
       const drawHalfW = halfW * hoverScale
+
+      // Flicker — occasional pulsing inner light
+      const flickerVal = Math.sin(tear.flickerPhase) * 0.5 + 0.5 // 0-1
+      const flickerBoost = flickerVal > 0.85 ? (flickerVal - 0.85) * 4 : 0 // spiky flicker
 
       // Save context for clipping
       c.save()
@@ -248,8 +406,9 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       c.fillStyle = 'rgba(2, 1, 0, 0.95)'
       c.fill()
 
-      // Glow emanating from the tear
-      const glowAlpha = tear.alpha * (tear.hovered ? 0.35 : 0.12)
+      // Glow emanating from the tear — now with flicker
+      const baseGlowAlpha = tear.alpha * (tear.hovered ? 0.35 : 0.12)
+      const glowAlpha = baseGlowAlpha + flickerBoost * 0.2
       const glowGrad = c.createRadialGradient(
         tear.x, tear.y, 0,
         tear.x, tear.y, drawHalfW * 1.5
@@ -260,7 +419,19 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       c.fillStyle = glowGrad
       c.fillRect(tear.x - drawHalfW * 2, topY - 10, drawHalfW * 4, tearH + 20)
 
-      // Destination label glowing through the tear
+      // Inner flicker pulse — bright flash inside the tear
+      if (flickerBoost > 0) {
+        const innerGrad = c.createRadialGradient(
+          tear.x, tear.y, 0,
+          tear.x, tear.y, drawHalfW * 0.8
+        )
+        innerGrad.addColorStop(0, `rgba(255, 220, 150, ${flickerBoost * 0.25})`)
+        innerGrad.addColorStop(1, 'rgba(255, 220, 150, 0)')
+        c.fillStyle = innerGrad
+        c.fillRect(tear.x - drawHalfW, topY, drawHalfW * 2, tearH)
+      }
+
+      // Destination label glowing through the tear — now with drift/wobble
       const labelAlpha = tear.alpha * (tear.hovered ? 0.7 : 0.25)
       c.font = `${tear.hovered ? 9 : 8}px monospace`
       c.fillStyle = `rgba(255, 200, 100, ${labelAlpha})`
@@ -269,7 +440,7 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
 
       // Only show label if tear is wide enough
       if (tear.width > 20) {
-        c.fillText(tear.label, tear.x, tear.y)
+        c.fillText(tear.label, tear.x + tear.labelDriftX, tear.y + tear.labelDriftY)
       }
 
       // Tape edge curling (small highlights along the jagged edges)
@@ -295,6 +466,16 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
         else c.lineTo(ex, ey)
       }
       c.stroke()
+
+      // Draw sparks near tear edges
+      for (const spark of tear.sparks) {
+        const sparkAlpha = spark.alpha * spark.life
+        c.fillStyle = `rgba(255, 200, 100, ${sparkAlpha})`
+        c.fillRect(spark.x - 0.5, spark.y - 0.5, 1, 1)
+        // Tiny glow around each spark
+        c.fillStyle = `rgba(255, 180, 80, ${sparkAlpha * 0.3})`
+        c.fillRect(spark.x - 1.5, spark.y - 1.5, 3, 3)
+      }
 
       c.restore()
     }
@@ -342,12 +523,15 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       loop.pass++
       totalPasses++
 
+      // Pass chime — tape head crossing splice point
+      playPassChime()
+
       // Degrade the text
       const degradation = loop.memory.degradation + loop.pass * 0.1
       const result = degradeText(loop.degradedText, degradation)
       loop.degradedText = result.text
 
-      // Spawn particles from lost characters
+      // Spawn particles from lost characters — enhanced with drift and rotation
       for (const lostChar of result.lost) {
         loop.particles.push({
           x: w * 0.2 + Math.random() * w * 0.6,
@@ -355,13 +539,16 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
           char: lostChar,
           alpha: 0.4,
           vy: -0.3 - Math.random() * 0.5,
+          vx: (Math.random() - 0.5) * 0.8,
+          rotation: (Math.random() - 0.5) * 0.3,
+          rotSpeed: (Math.random() - 0.5) * 0.04,
         })
       }
 
       // Actually accelerate real degradation (small amount)
       if (loop.pass % 3 === 0) {
         deps.accelerateDegradation(loop.memory.id, 0.02)
-        playDegradationClick()
+        playDegradationCrackle()
       }
 
       // After many passes, switch to next loop
@@ -423,6 +610,11 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     const totalWidth = text.length * charWidth
     const scrollX = -loop.position * totalWidth
 
+    // Determine if mouse is over the tape area
+    const tapeTop = displayY - 30
+    const tapeBottom = displayY + 15
+    mouseOverTape = mouseY >= tapeTop && mouseY <= tapeBottom
+
     c.font = '18px monospace'
     c.textAlign = 'left'
 
@@ -434,8 +626,17 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       if (char === ' ') continue
 
       // Characters degrade visually based on pass count
-      const passAlpha = Math.max(0.05, 1 - loop.pass * 0.04)
-      const jitter = loop.pass > 5 ? (Math.random() - 0.5) * loop.pass * 0.3 : 0
+      let passAlpha = Math.max(0.05, 1 - loop.pass * 0.04)
+      let jitter = loop.pass > 5 ? (Math.random() - 0.5) * loop.pass * 0.3 : 0
+
+      // Cursor proximity damage — hovering over tape damages characters
+      const distToMouse = Math.sqrt((cx - mouseX) ** 2 + (displayY - mouseY) ** 2)
+      const cursorRadius = 60
+      if (mouseOverTape && distToMouse < cursorRadius) {
+        const proximity = 1 - distToMouse / cursorRadius
+        jitter += (Math.random() - 0.5) * proximity * 6
+        passAlpha *= (1 - proximity * 0.5) // reduce alpha near cursor
+      }
 
       // Color shifts from warm amber to gray with degradation
       const warmth = Math.max(0, 1 - loop.pass * 0.05)
@@ -456,33 +657,83 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     c.lineTo(headX, displayY + 15)
     c.stroke()
 
-    // Magnetic oxide particles (falling from tape)
+    // Cursor "head" icon when hovering over tape area
+    if (mouseOverTape) {
+      c.save()
+      // Small tape head shape at cursor
+      c.strokeStyle = 'rgba(255, 200, 100, 0.12)'
+      c.lineWidth = 1
+      // Vertical line
+      c.beginPath()
+      c.moveTo(mouseX, mouseY - 8)
+      c.lineTo(mouseX, mouseY + 8)
+      c.stroke()
+      // Small horizontal bars (tape head contacts)
+      c.beginPath()
+      c.moveTo(mouseX - 4, mouseY - 8)
+      c.lineTo(mouseX + 4, mouseY - 8)
+      c.stroke()
+      c.beginPath()
+      c.moveTo(mouseX - 4, mouseY + 8)
+      c.lineTo(mouseX + 4, mouseY + 8)
+      c.stroke()
+      // Faint glow around head
+      const headGlow = c.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 20)
+      headGlow.addColorStop(0, 'rgba(255, 200, 100, 0.04)')
+      headGlow.addColorStop(1, 'rgba(255, 200, 100, 0)')
+      c.fillStyle = headGlow
+      c.fillRect(mouseX - 20, mouseY - 20, 40, 40)
+      c.restore()
+    }
+
+    // Magnetic oxide particles (falling from tape) — with drift and rotation
     loop.particles = loop.particles.filter(p => {
       p.y += p.vy
+      p.x += p.vx
+      p.rotation += p.rotSpeed
       p.alpha -= 0.003
 
       if (p.alpha <= 0) return false
 
+      c.save()
+      c.translate(p.x, p.y)
+      c.rotate(p.rotation)
       c.font = '12px monospace'
       c.fillStyle = `rgba(160, 130, 90, ${p.alpha})`
       c.textAlign = 'center'
-      c.fillText(p.char, p.x, p.y)
+      c.fillText(p.char, 0, 0)
+      c.restore()
 
       return true
     })
 
-    // Pass counter — like a VU meter
+    // Pass counter — like a VU meter with orange glow
     const passRatio = loop.pass / 20
     const meterW = w * 0.3
     const meterX = (w - meterW) / 2
     const meterY = h * 0.65
+    const meterFillW = meterW * Math.min(1, passRatio)
+
+    // Glow behind the meter — intensifies as it fills
+    if (passRatio > 0.1) {
+      const glowIntensity = passRatio * 0.08
+      const meterCenterX = meterX + meterFillW / 2
+      const meterGlow = c.createRadialGradient(
+        meterCenterX, meterY + 2, 0,
+        meterCenterX, meterY + 2, meterFillW * 0.6 + 10
+      )
+      meterGlow.addColorStop(0, `rgba(255, 160, 40, ${glowIntensity})`)
+      meterGlow.addColorStop(1, 'rgba(255, 160, 40, 0)')
+      c.fillStyle = meterGlow
+      c.fillRect(meterX - 15, meterY - 12, meterW + 30, 28)
+    }
 
     c.strokeStyle = 'rgba(120, 100, 80, 0.08)'
     c.lineWidth = 1
     c.strokeRect(meterX, meterY, meterW, 4)
 
     c.fillStyle = `rgba(${passRatio > 0.7 ? 200 : 160}, ${passRatio > 0.7 ? 80 : 130}, ${passRatio > 0.7 ? 60 : 90}, 0.2)`
-    c.fillRect(meterX, meterY, meterW * Math.min(1, passRatio), 4)
+    c.fillRect(meterX, meterY, meterFillW, 4)
 
     // Loop selector — small dots at bottom
     const selectorY = h * 0.72
@@ -530,6 +781,24 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     c.fillStyle = `rgba(160, 130, 90, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText('each pass through the machine costs something', w / 2, h - 4)
 
+    // --- Film grain overlay ---
+    // Draw faint random noise pixels across the canvas (~1.5% density)
+    const grainCount = Math.floor(w * h * 0.015 / 100)
+    for (let g = 0; g < grainCount; g++) {
+      const gx = Math.random() * w
+      const gy = Math.random() * h
+      const brightness = Math.floor(Math.random() * 40 + 10)
+      const grainAlpha = 0.02 + Math.random() * 0.02
+      c.fillStyle = `rgba(${brightness}, ${Math.floor(brightness * 0.9)}, ${Math.floor(brightness * 0.7)}, ${grainAlpha})`
+      c.fillRect(gx, gy, 1, 1)
+    }
+
+    // --- Scan lines (CRT effect) ---
+    c.fillStyle = 'rgba(0, 0, 0, 0.02)'
+    for (let sy = 0; sy < h; sy += 3) {
+      c.fillRect(0, sy, w, 1)
+    }
+
     // Tape tears — navigation through rips in the tape
     if (deps.switchTo) {
       updateTears()
@@ -566,7 +835,7 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click: advance loop, or navigate if clicking a tape tear
+      // Click: navigate tear, advance tape, or switch loop
       canvas.addEventListener('click', (e) => {
         const rect = canvas!.getBoundingClientRect()
         const cx = (e.clientX - rect.left) * (canvas!.width / rect.width)
@@ -574,6 +843,15 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
         const tear = hitTestTears(cx, cy)
         if (tear && deps.switchTo) {
           deps.switchTo(tear.room)
+          return
+        }
+        // Click on tape area — accelerate the loop position slightly
+        const ch = canvas!.height
+        const tapeTop = ch * 0.45 - 30
+        const tapeBottom = ch * 0.45 + 15
+        if (cy >= tapeTop && cy <= tapeBottom && loops.length > 0) {
+          const loop = loops[activeLoop % loops.length]
+          loop.position = Math.min(0.99, loop.position + 0.05)
           return
         }
         // Default: advance to next loop
@@ -619,12 +897,43 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       try {
-        droneOsc?.stop()
-        droneOsc?.disconnect()
-        droneGain?.disconnect()
+        // Fade out audio before stopping
+        if (audioCtx && droneGain) {
+          droneGain.gain.setValueAtTime(droneGain.gain.value, audioCtx.currentTime)
+          droneGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5)
+        }
+        if (audioCtx && hissGain) {
+          hissGain.gain.setValueAtTime(hissGain.gain.value, audioCtx.currentTime)
+          hissGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5)
+        }
+        if (audioCtx && rumbleGain) {
+          rumbleGain.gain.setValueAtTime(rumbleGain.gain.value, audioCtx.currentTime)
+          rumbleGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5)
+        }
+        // Stop after fade
+        setTimeout(() => {
+          try {
+            droneOsc?.stop()
+            droneOsc?.disconnect()
+            droneGain?.disconnect()
+            hissSource?.stop()
+            hissSource?.disconnect()
+            hissGain?.disconnect()
+            rumbleOsc?.stop()
+            rumbleOsc?.disconnect()
+            rumbleLfo?.stop()
+            rumbleLfo?.disconnect()
+            rumbleGain?.disconnect()
+          } catch {}
+          droneOsc = null
+          droneGain = null
+          hissSource = null
+          hissGain = null
+          rumbleOsc = null
+          rumbleGain = null
+          rumbleLfo = null
+        }, 600)
       } catch {}
-      droneOsc = null
-      droneGain = null
     },
 
     destroy() {
@@ -632,7 +941,17 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       cancelAnimationFrame(frameId)
       try {
         droneOsc?.stop()
+        hissSource?.stop()
+        rumbleOsc?.stop()
+        rumbleLfo?.stop()
       } catch {}
+      droneOsc = null
+      droneGain = null
+      hissSource = null
+      hissGain = null
+      rumbleOsc = null
+      rumbleGain = null
+      rumbleLfo = null
       overlay?.remove()
     },
   }

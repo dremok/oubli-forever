@@ -1153,6 +1153,30 @@ Surface: 36 | Hidden: 7
 - Rooms without sounds get silence
 - Separate from AmbientTextures (void drift states)
 
+### 96. Choir EMaj7add9 Voicing Refinement
+- Weighted octave selection: E and B weighted toward lower octaves, F#/G#/D# toward higher
+- Custom PeriodicWave replaces discrete oscillator types for continuous harmonic control
+- X axis → harmonic richness (pure to bright), Y axis → even/odd harmonic balance + octave bias
+- Filter responds continuously to both X and Y position
+
+### 97. Room Deepening — Batch 1-5 (20 rooms)
+- **Batch 1**: Catacombs, ClockTower, PalimpsestGallery, Rememory (+1663 lines)
+- **Batch 2**: Mirror, Cipher, Automaton, OracleDeck (+1573 lines)
+- **Batch 3**: Terrarium, Garden, Darkroom, Seismograph (+1154 lines)
+- **Batch 4**: Study, Archive, Roots, Satellite (committed as 7bbbe76)
+- **Batch 5**: AsteroidField, Library, Seance, Well (+2103 lines)
+- Each room gained: Web Audio synthesis (room-specific drones, ambient sounds, interaction SFX), cursor interactivity (trails, ripples, proximity effects), visual atmosphere (particles, shimmer, glow effects), while preserving all existing functionality
+
+### 98. Font Size Readability Pass
+- CSS font sizes: 8px→11px, 9px→12px, 10px→12px, 11px→13px across 22 files
+- Canvas-drawn font sizes: same mapping across 38 files (229 occurrences)
+- All navigation text, room labels, info displays now readable
+
+### 99. Room Deepening — Batch 6 (in progress)
+- TheVoid: adding room-specific audio, cursor proximity portal effects, ripples, vignette
+- TheInstrument: adding note particles, ambient glow, keyboard ghost hints, cursor indicators
+- TheDisintegrationLoops: adding tape hiss, machine rumble, film grain, cursor degradation
+
 ---
-*Last updated: Era 8, Feature 95 — Voice input, API integrations, room ambience, all 43 rooms fully navigable*
+*Last updated: Era 9, Feature 99 — 20+ rooms deepened with audio/visual, font readability pass, final thin rooms being enhanced*
 *"every room speaks its own language. the house is alive."*
