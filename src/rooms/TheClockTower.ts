@@ -601,7 +601,7 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
         const textDist = radius * 0.65
         const tx = cx + Math.cos(angle) * textDist
         const ty = cy + Math.sin(angle) * textDist
-        ctx.font = '8px "Cormorant Garamond", serif'
+        ctx.font = '11px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(180, 160, 120, ${health * 0.08})`
         const fragment = mem.currentText.slice(0, 12)
         ctx.fillText(fragment, tx, ty)
@@ -848,7 +848,7 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
           const hintRadius = navRadius + 22
           const hx = cx + Math.cos(navAngle) * hintRadius
           const hy = cy + Math.sin(navAngle) * hintRadius
-          ctx.font = '9px "Cormorant Garamond", serif'
+          ctx.font = '12px "Cormorant Garamond", serif'
           ctx.fillStyle = 'rgba(210, 190, 120, 0.25)'
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
@@ -881,7 +881,7 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     }
 
     // === TITLE & INFO ===
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(180, 160, 120, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'alphabetic'
@@ -892,12 +892,12 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     const degradedTime = avgDeg > 0.2
       ? timeStr.split('').map(c => Math.random() < avgDeg * 0.3 ? '?' : c).join('')
       : timeStr
-    ctx.font = '11px monospace'
+    ctx.font = '13px monospace'
     ctx.fillStyle = 'rgba(180, 160, 120, 0.1)'
     ctx.fillText(degradedTime, w / 2, h - 30)
 
     // Memory count
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 160, 120, 0.06)'
     ctx.fillText(
       `${memories.length} memories on the face · ${Math.floor(avgDeg * 100)}% degraded`,
@@ -906,7 +906,7 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
 
     // Direction indicator (when running backwards)
     if (avgDeg > 0.6) {
-      ctx.font = '9px monospace'
+      ctx.font = '12px monospace'
       ctx.fillStyle = `rgba(255, 80, 80, ${0.1 + Math.sin(time * 2) * 0.05})`
       ctx.fillText('◄ time is running backwards', w / 2, cy + radius + 18)
     }
@@ -923,7 +923,7 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
 
     if (portalVisible && portalAlpha > 0.02) {
       portalAlpha *= 0.998 // slow fade
-      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.font = '13px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(180, 160, 220, ${portalAlpha})`
       ctx.textAlign = 'center'
       ctx.fillText('▸ the hour has changed. step through.', w / 2, h - 60)

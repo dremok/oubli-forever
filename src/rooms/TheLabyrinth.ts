@@ -263,7 +263,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const charsToShow = Math.floor(frag.extract.length * frag.revealProgress)
       const visibleText = frag.extract.substring(0, charsToShow)
 
-      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.font = '13px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(130, 120, 105, ${baseAlpha * 0.7})`
 
       // Word-wrap the text manually
@@ -866,7 +866,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     renderWikiFragment(w, h)
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(140, 120, 160, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the labyrinth', w / 2, 25)
@@ -875,7 +875,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const totalArtifacts = 3
     const found = discovered.size
     if (found > 0) {
-      ctx.font = '8px monospace'
+      ctx.font = '11px monospace'
       ctx.fillStyle = `rgba(255, 215, 0, ${0.08 + Math.sin(time * 0.5) * 0.03})`
       ctx.textAlign = 'right'
       ctx.fillText(`${found}/${totalArtifacts} found`, w - 16, 20)
@@ -923,7 +923,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Bottom hint (only if no nearby object)
     if (!nearbyObject) {
-      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = 'rgba(140, 120, 160, 0.04)'
       ctx.textAlign = 'center'
       const hint = found < totalArtifacts

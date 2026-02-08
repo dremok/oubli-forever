@@ -802,7 +802,7 @@ export function createRootsRoom(deps: RootsDeps): Room {
 
       // Label near tip (fades in on hover)
       if (tendril.labelAlpha > 0.01) {
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${tendril.labelAlpha})`
         if (tendril.room === 'garden') {
           ctx.textAlign = 'left'
@@ -991,7 +991,7 @@ export function createRootsRoom(deps: RootsDeps): Room {
     ctx.stroke()
     ctx.setLineDash([])
 
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(120, 90, 50, 0.15)'
     ctx.textAlign = 'left'
     ctx.fillText('surface', 12, 35)
@@ -1010,7 +1010,7 @@ export function createRootsRoom(deps: RootsDeps): Room {
       ctx.lineTo(w, layer.y)
       ctx.stroke()
       ctx.setLineDash([])
-      ctx.font = '8px "Cormorant Garamond", serif'
+      ctx.font = '11px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(120, 90, 50, ${layer.alpha * 2})`
       ctx.fillText(layer.label, 12, layer.y - 4)
     }
@@ -1090,21 +1090,21 @@ export function createRootsRoom(deps: RootsDeps): Room {
     ctx.fill()
 
     // Ascend link
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(120, 90, 50, ${0.1 + Math.sin(time * 0.5) * 0.05})`
     ctx.textAlign = 'center'
     ctx.fillText('▲ ascend to the garden', w / 2, 24)
 
     // Ossuary link — bottom right
     if (deps.onDeeper && memories.some(m => m.degradation > 0.4)) {
-      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(220, 210, 190, ${0.06 + Math.sin(time * 0.3 + 2) * 0.02})`
       ctx.textAlign = 'right'
       ctx.fillText('the ossuary →', w - 12, h - 12)
     }
 
     // Info
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(120, 90, 50, 0.1)'
     ctx.textAlign = 'left'
     const decomposing = memories.filter(m => m.degradation > 0.5).length

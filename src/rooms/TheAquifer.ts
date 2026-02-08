@@ -972,20 +972,20 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     drawCurrentParticles(w, h)
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(80, 140, 200, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'left'
     ctx.fillText('the aquifer', 15, h - 15)
 
     // Info
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(80, 140, 200, 0.06)'
     ctx.textAlign = 'right'
     ctx.fillText(`${fragments.length} fragments dissolved`, w - 15, h - 15)
 
     // Depth indicator
     const cursorZone = getZone(mouseY, h)
-    ctx.font = '8px monospace'
+    ctx.font = '11px monospace'
     ctx.fillStyle = 'rgba(60, 120, 180, 0.04)'
     ctx.textAlign = 'right'
     ctx.fillText(`depth: ${cursorZone}`, w - 15, h - 28)

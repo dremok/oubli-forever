@@ -444,7 +444,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       ctx.fill()
 
       // Note label (very faint)
-      ctx.font = '8px monospace'
+      ctx.font = '11px monospace'
       ctx.fillStyle = `rgba(200, 180, 255, ${v.alpha * 0.06})`
       ctx.textAlign = 'center'
       ctx.fillText(`${v.freq.toFixed(0)}Hz`, v.x, v.y + 22)
@@ -466,13 +466,13 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     }
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 180, 255, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the choir', w / 2, 25)
 
     // Stats
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(200, 180, 255, 0.06)'
     ctx.textAlign = 'left'
     ctx.fillText(`${voices.length} voices`, 12, h - 30)
@@ -497,7 +497,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
         // Show label when resonance > 0.7
         if (zone.resonance > 0.7) {
           const labelAlpha = (zone.resonance - 0.7) / 0.3 * 0.25
-          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.font = '12px "Cormorant Garamond", serif'
           ctx.fillStyle = `rgba(200, 180, 255, ${labelAlpha})`
           ctx.textAlign = 'center'
           if (zi === 0) {
@@ -520,7 +520,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
 
     // Hint — show only when no zones are active
     const anyZoneActive = resonanceZones.some(z => z.resonance > 0.1)
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.textAlign = 'center'
     ctx.fillStyle = 'rgba(200, 180, 255, 0.04)'
     ctx.fillText('click to add a voice \u00b7 position determines pitch and timbre', w / 2, h - 8)

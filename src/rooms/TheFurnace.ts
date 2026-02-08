@@ -594,7 +594,7 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     if (fireIntensity < 0.3) fireIntensity = 0.3
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(255, 150, 80, ${0.1 + Math.sin(time * 0.3) * 0.03})`
     ctx.textAlign = 'center'
     ctx.fillText('the furnace', w / 2, 30)
@@ -719,7 +719,7 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
         if (warmth > 0.05) {
           ctx.shadowColor = 'transparent'
           ctx.shadowBlur = 0
-          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.font = '12px "Cormorant Garamond", serif'
           ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${warmth * 0.7})`
           ctx.textAlign = 'center'
           ctx.fillText(p.label, 0, sz + 16)

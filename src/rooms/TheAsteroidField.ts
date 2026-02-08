@@ -484,7 +484,7 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
     c.lineWidth = 0.5
     c.strokeRect(px, py, panelW, panelH)
 
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.textAlign = 'left'
     const textX = px + 6
     let textY = py + 12
@@ -1098,7 +1098,7 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
       c.fill()
 
       // Memory text
-      c.font = '9px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.textAlign = 'center'
 
       let text = mp.memory.currentText
@@ -1152,7 +1152,7 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
     }
 
     // Data panel
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(150, 140, 130, 0.12)'
     c.textAlign = 'left'
     c.fillText(`near-earth objects today: ${asteroidCount}`, 12, h - 54)
@@ -1165,7 +1165,7 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(150, 140, 130, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the asteroid field', w / 2, 25)
@@ -1176,21 +1176,21 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
       c.fillStyle = 'rgba(150, 140, 130, 0.1)'
       c.textAlign = 'center'
       c.fillText('nothing to protect', w / 2, h / 2)
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(150, 140, 130, 0.06)'
       c.fillText('your memories float among the rocks', w / 2, h / 2 + 20)
     }
 
     // Loading
     if (!dataLoaded) {
-      c.font = '9px monospace'
+      c.font = '12px monospace'
       c.fillStyle = 'rgba(150, 140, 130, 0.15)'
       c.textAlign = 'center'
       c.fillText('scanning near-earth space...', w / 2, h * 0.95)
     }
 
     // Context line
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(150, 140, 130, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
     c.fillText('most things that could destroy us pass unnoticed', w / 2, h - 4)

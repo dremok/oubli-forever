@@ -906,11 +906,11 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
 
     // Label on hover
     if (dawnPortalHovered) {
-      c.font = '11px "Cormorant Garamond", serif'
+      c.font = '13px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(255, 220, 160, ${0.4 + Math.sin(time) * 0.1})`
       c.textAlign = 'center'
       c.fillText('walk toward the dawn', cx, cy - radius * 0.7 - 8)
-      c.font = '9px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(255, 200, 140, ${0.25})`
       c.fillText('the clock tower', cx, cy - radius * 0.7 + 5)
     }
@@ -1018,12 +1018,12 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     if (hour >= 22 || hour <= 1) {
       const secondsInHour = now.getMinutes() * 60 + now.getSeconds()
       const doomAlpha = vividness * 0.12
-      ctx.font = '10px monospace'
+      ctx.font = '12px monospace'
       ctx.fillStyle = `rgba(220, 180, 180, ${doomAlpha})`
       ctx.textAlign = 'center'
       ctx.fillText(`${85 - (secondsInHour % 85)}s to midnight`, w / 2, h * 0.25)
       // Faint subtitle
-      ctx.font = '8px monospace'
+      ctx.font = '11px monospace'
       ctx.fillStyle = `rgba(220, 180, 180, ${doomAlpha * 0.5})`
       ctx.fillText('doomsday clock: 85 seconds', w / 2, h * 0.27)
     }
@@ -1057,7 +1057,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     drawRipples(ctx)
 
     // Vividness meter
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = `rgba(200, 190, 220, ${vividness * 0.1})`
     ctx.textAlign = 'center'
     const meterChars = '\u2591\u2592\u2593\u2588'
@@ -1080,7 +1080,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
       for (let i = 0; i < pMeterLen; i++) {
         pMeter += i / pMeterLen < presenceMeter ? '\u2588' : '\u00B7'
       }
-      ctx.font = '8px monospace'
+      ctx.font = '11px monospace'
       ctx.fillStyle = `rgba(180, 180, 220, ${0.15})`
       ctx.fillText(`illuminate: ${pMeter}`, w / 2, h * 0.65)
     }
@@ -1088,7 +1088,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     // --- Time-until events (subtle) ---
     const events = getNextEvents(twilightData, now)
     const eventY = h * 0.68
-    ctx.font = '8px monospace'
+    ctx.font = '11px monospace'
     ctx.textAlign = 'center'
     for (let i = 0; i < events.length; i++) {
       const ev = events[i]
@@ -1098,7 +1098,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     }
 
     // Twilight phase hint
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 220, ${vividness * 0.06})`
     ctx.textAlign = 'center'
     if (twilightData) {
@@ -1115,13 +1115,13 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
     }
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 220, ${vividness * 0.08})`
     ctx.textAlign = 'center'
     ctx.fillText('the midnight', w / 2, 30)
 
     // Hour context
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 220, ${vividness * 0.05})`
     ctx.fillText(
       `this room is ${Math.floor(vividness * 100)}% materialized at ${hourStr}`,
@@ -1241,7 +1241,7 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
         ctx.fillRect(cx - 60, topY - 30, 120, towerHeight + 40)
 
         // Label above the tower
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(200, 190, 220, ${0.25 * vividness + 0.08})`
         ctx.textAlign = 'center'
         ctx.fillText('the clock tower', cx, topY - 12)

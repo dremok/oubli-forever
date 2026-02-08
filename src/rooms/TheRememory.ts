@@ -487,29 +487,29 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
     c.fillRect(colW * 2, 45, colW, colGlowHeight)
 
     // Column headers
-    c.font = '11px "Cormorant Garamond", serif'
+    c.font = '13px "Cormorant Garamond", serif'
     c.textAlign = 'center'
 
     // Document column
     c.fillStyle = `rgba(240, 235, 225, ${0.12 + Math.sin(time * 0.5) * 0.03})`
     c.fillText('DOCUMENT', colW * 0.5, 55)
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.fillStyle = 'rgba(240, 235, 225, 0.06)'
     c.fillText(`${docCount}`, colW * 0.5, 68)
 
     // Trace column
-    c.font = '11px "Cormorant Garamond", serif'
+    c.font = '13px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(220, 190, 130, ${0.12 + Math.sin(time * 0.5 + 1) * 0.03})`
     c.fillText('TRACE', colW * 1.5, 55)
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.fillStyle = 'rgba(220, 190, 130, 0.06)'
     c.fillText(`${traceCount}`, colW * 1.5, 68)
 
     // Ghost column
-    c.font = '11px "Cormorant Garamond", serif'
+    c.font = '13px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(180, 160, 220, ${0.12 + Math.sin(time * 0.5 + 2) * 0.03})`
     c.fillText('GHOST', colW * 2.5, 55)
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.fillStyle = 'rgba(180, 160, 220, 0.06)'
     c.fillText(`${ghostCount}`, colW * 2.5, 68)
 
@@ -561,7 +561,7 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
 
       if (node.state === 'document') {
         // Document: crisp, white, factual
-        c.font = '10px monospace'
+        c.font = '12px monospace'
         c.fillStyle = `rgba(240, 235, 225, ${0.3 + hoverPulse})`
         c.textAlign = 'left'
         c.fillText(shortText, drawX, drawY)
@@ -588,7 +588,7 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
 
       } else if (node.state === 'trace') {
         // Trace: amber, blurred, smudged
-        c.font = '10px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = `rgba(220, 190, 130, ${0.2 + hoverPulse})`
         c.textAlign = 'left'
 
@@ -609,7 +609,7 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
 
       } else {
         // Ghost: violet, transparent, drifting
-        c.font = '10px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         const ghostAlpha = 0.08 + Math.sin(time * 1.5 + node.phase) * 0.03 + hoverPulse
         c.fillStyle = `rgba(180, 160, 220, ${ghostAlpha})`
         c.textAlign = 'left'
@@ -652,7 +652,7 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
       c.fillStyle = 'rgba(200, 180, 160, 0.1)'
       c.textAlign = 'center'
       c.fillText('nothing to rememory', w / 2, h / 2)
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 160, 0.06)'
       c.fillText('type something into the void to begin', w / 2, h / 2 + 20)
     }
@@ -674,18 +674,18 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 160, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the rememory', w / 2, 25)
 
     // Attribution
-    c.font = '8px "Cormorant Garamond", serif'
+    c.font = '11px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 160, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.fillText('after Toni Morrison — Sydney Biennale 2026', w / 2, 40)
 
     // Bottom
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 160, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText('a rememory is a memory that lives outside the person who has it', w / 2, h - 4)
   }

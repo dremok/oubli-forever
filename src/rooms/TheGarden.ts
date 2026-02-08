@@ -668,7 +668,7 @@ export function createGardenRoom(deps: GardenDeps): Room {
 
       // Label on hover
       if (hover) {
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.textAlign = 'center'
         ctx.fillStyle = `rgba(200, 180, 140, 0.5)`
         const labelY = portal.corner.startsWith('top') ? 28 : -22
@@ -902,7 +902,7 @@ export function createGardenRoom(deps: GardenDeps): Room {
     }
 
     // Labels — memory fragments below plants
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.textAlign = 'center'
     for (const plant of plants) {
       const label = plant.memory.currentText.slice(0, 20)
@@ -967,11 +967,11 @@ export function createGardenRoom(deps: GardenDeps): Room {
         const label = mem.currentText.slice(0, 40) || '(empty)'
         ctx.fillText(`"${label}"`, t.x, t.y - 20)
 
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(200, 180, 140, ${t.alpha * 0.3})`
         ctx.fillText(`${health}% alive · ${age} days old`, t.x, t.y)
 
-        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(200, 180, 140, ${t.alpha * 0.15})`
         ctx.fillText('click water to nurture · click soil to descend', t.x, t.y + 16)
       }
@@ -979,7 +979,7 @@ export function createGardenRoom(deps: GardenDeps): Room {
 
     // Descent hint — click ground to go to roots
     if (deps.onDescend && plants.length > 0) {
-      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(120, 90, 50, ${0.06 + Math.sin(time * 0.3) * 0.02})`
       ctx.textAlign = 'center'
       ctx.fillText('▼ click the soil to see the roots', w / 2, groundY + 40)
@@ -990,7 +990,7 @@ export function createGardenRoom(deps: GardenDeps): Room {
     const avgHealth = plants.length > 0
       ? plants.reduce((s, p) => s + (1 - p.memory.degradation), 0) / plants.length
       : 0
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.12)'
     ctx.textAlign = 'left'
     ctx.fillText(`${memCount} memories growing · ${Math.floor(avgHealth * 100)}% average vitality`, 16, h - 16)

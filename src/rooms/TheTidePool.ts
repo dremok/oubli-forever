@@ -608,7 +608,7 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
     // Label on hover
     if (p.hovered && ctx) {
       ctx.save()
-      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.textAlign = 'center'
       ctx.fillStyle = 'rgba(200, 210, 220, 0.35)'
       ctx.fillText(p.label, p.x, p.y - 22)
@@ -917,14 +917,14 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
     }
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(${colors.textColor}, 0.1)`
     ctx.textAlign = 'center'
     ctx.fillText('the tide pool', w / 2, 30)
 
     // Tide indicator — now based on real tidal simulation
     const tideWord = getTideWord()
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(${colors.textColor}, 0.08)`
     ctx.textAlign = 'right'
     ctx.fillText(tideWord, w - 16, 30)
@@ -943,7 +943,7 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
       else if (tod === 'afternoon') timeLabel = 'afternoon'
 
       if (timeLabel) {
-        ctx.font = '8px "Cormorant Garamond", serif'
+        ctx.font = '11px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(${colors.textColor}, 0.06)`
         ctx.textAlign = 'left'
         ctx.fillText(timeLabel, 16, 30)
@@ -964,7 +964,7 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
       ctx.lineTo(16 + 60 * progress, 38)
       ctx.stroke()
     } else if (sunDataLoading) {
-      ctx.font = '8px "Cormorant Garamond", serif'
+      ctx.font = '11px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(${colors.textColor}, 0.04)`
       ctx.textAlign = 'left'
       ctx.fillText('reading the sky...', 16, 30)
@@ -973,7 +973,7 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
     // Stats
     const onWater = flotsam.filter(f => !f.onBeach).length
     const onShore = flotsam.filter(f => f.onBeach).length
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(${colors.textColor}, 0.08)`
     ctx.textAlign = 'left'
     ctx.fillText(`${onWater} adrift \u00b7 ${onShore} ashore`, 16, h - 16)

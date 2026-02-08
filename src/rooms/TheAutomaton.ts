@@ -692,13 +692,13 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     }
 
     // UI overlay
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(180, 160, 200, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the automaton', w / 2, 25)
 
     // Stats
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(180, 160, 200, 0.08)'
     ctx.textAlign = 'left'
     ctx.fillText(`gen ${generation}`, 12, h - 30)
@@ -709,7 +709,7 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     ctx.fillText(paused ? 'paused' : 'running', w - 12, h - 18)
 
     // Hints
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 160, 200, 0.05)'
     ctx.textAlign = 'center'
     ctx.fillText('click to seed life · scroll to change speed · space to pause · r to reset', w / 2, h - 8)
@@ -757,7 +757,7 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
           ? Math.min(0.45, pz.stableTime * 0.005) + (isHovered ? 0.35 : 0)
           : (isHovered ? 0.1 : 0)
         if (labelAlpha > 0.01) {
-          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.font = '12px "Cormorant Garamond", serif'
           ctx.fillStyle = pz.glowColor + labelAlpha.toFixed(3) + ')'
           ctx.textAlign = 'center'
           // Place label below the pattern

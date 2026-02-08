@@ -615,7 +615,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       ctx.fillStyle = `rgba(10, 10, 15, ${fogAlpha})`
       ctx.fillRect(frameX + 10, frameY + 10, frameW - 20, frameH - 20)
 
-      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(120, 120, 160, ${0.1 + Math.sin(time) * 0.03})`
       ctx.fillText('the mirror is forgetting your face.', w / 2, h * 0.9)
 
@@ -675,7 +675,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     const totalVisits = [...roomVisits.values()].reduce((s, v) => s + v, 0)
     const wordCount = Object.keys(mirrorData.wordFrequencies).length
 
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(120, 120, 160, 0.06)'
     ctx.textAlign = 'center'
     ctx.fillText(
@@ -684,7 +684,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     )
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(120, 120, 160, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the mirror', w / 2, 30)

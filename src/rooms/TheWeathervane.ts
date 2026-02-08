@@ -480,7 +480,7 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     }
 
     // Cardinal labels
-    c.font = '10px monospace'
+    c.font = '12px monospace'
     c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha * 0.8})`
     c.textAlign = 'center'
     c.textBaseline = 'middle'
@@ -586,13 +586,13 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
 
     // Label on hover
     if (p.hovered) {
-      c.font = '11px "Cormorant Garamond", serif'
+      c.font = '13px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`
       c.textAlign = 'center'
       c.fillText(p.label, 0, r + 18)
 
       // Room name in smaller text
-      c.font = '8px monospace'
+      c.font = '11px monospace'
       c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.35)`
       c.fillText(`\u2192 the ${p.name}`, 0, r + 30)
     }
@@ -846,7 +846,7 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
       c.fillText(weatherCodeToText(weather.weatherCode), w / 2, h * 0.73)
 
       // Data readout — bottom left
-      c.font = '10px monospace'
+      c.font = '12px monospace'
       c.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.09)`
       c.textAlign = 'left'
       c.textBaseline = 'alphabetic'
@@ -890,14 +890,14 @@ export function createWeathervaneRoom(deps: WeathervaneDeps = {}): Room {
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 160, 200, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.textBaseline = 'alphabetic'
     c.fillText('the weathervane', w / 2, 25)
 
     // Hint
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = 'rgba(140, 160, 200, 0.04)'
     c.textAlign = 'center'
     c.fillText('move to stir the wind', w / 2, 40)

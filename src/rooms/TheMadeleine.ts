@@ -689,7 +689,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
 
       // Title
       if (art.title) {
-        c.font = '11px "Cormorant Garamond", serif'
+        c.font = '13px "Cormorant Garamond", serif'
         c.fillStyle = `rgba(200, 180, 140, ${textAlpha})`
         c.textAlign = 'center'
 
@@ -715,7 +715,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
 
       // Artist
       if (art.artist) {
-        c.font = '9px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         // Truncate long artist strings
         let artistText = art.artist
         if (artistText.length > 60) {
@@ -877,7 +877,7 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
         const alpha = Math.min(1, sm.alpha)
 
         // Trigger text (what caused the memory)
-        c.font = '9px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = `rgba(200, 180, 140, ${alpha * 0.15})`
         c.textAlign = 'center'
         c.fillText(`triggered by: ${sm.trigger}`, w / 2, sm.y - 30)
@@ -927,14 +927,14 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the madeleine', w / 2, 25)
 
     // Hint
     if (!surfacedMemory && triggers.length > 0) {
-      c.font = '9px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(200, 180, 140, ${0.04 + Math.sin(time * 1.5) * 0.02})`
       c.textAlign = 'center'
       c.fillText('click a trigger to surface a memory', w / 2, h - 8)
@@ -946,19 +946,19 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       c.fillStyle = 'rgba(200, 180, 140, 0.1)'
       c.textAlign = 'center'
       c.fillText('no memories to surface', w / 2, h / 2)
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.06)'
       c.fillText('the triggers drift past, finding nothing', w / 2, h / 2 + 20)
     }
 
     // Attribution
-    c.font = '8px "Cormorant Garamond", serif'
+    c.font = '11px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
     c.fillText('after Proust \u2014 involuntary memory', w / 2, 40)
 
     // Stats
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(200, 180, 140, 0.06)'
     c.textAlign = 'left'
     c.fillText(`${triggers.length} triggers drifting`, 12, h - 18)

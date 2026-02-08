@@ -454,7 +454,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
     const lineH = 14
     const alpha = 0.06
 
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.textAlign = 'left'
 
     const items = [
@@ -531,7 +531,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
     let ty = py + 16
 
     // Room name
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(255, 215, 0, ${textAlpha})`
     c.textAlign = 'left'
     c.fillText(node.label, tx, ty)
@@ -540,7 +540,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
     // Times visited
     const visits = deps.getRoomVisits()
     const visitCount = visits.get(node.name) || 0
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.fillStyle = `rgba(200, 190, 180, ${textAlpha * 0.7})`
     c.fillText(`visited: ${visitCount} time${visitCount !== 1 ? 's' : ''}`, tx, ty)
     ty += 12
@@ -745,21 +745,21 @@ export function createCartographerRoom(deps: MapDeps): Room {
     // Path hop count near hovered node
     if (hoveredNode && highlightedPath.length > 1) {
       const hops = highlightedPath.length - 1
-      ctx.font = '8px monospace'
+      ctx.font = '11px monospace'
       ctx.fillStyle = 'rgba(255, 215, 0, 0.25)'
       ctx.textAlign = 'left'
       ctx.fillText(`${hops} hop${hops !== 1 ? 's' : ''}`, hoveredNode.x + 14, hoveredNode.y - 8)
     }
 
     // Section labels
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(120, 100, 140, 0.06)'
     ctx.textAlign = 'center'
     ctx.fillText('— surface rooms —', w / 2, 50)
     ctx.fillText('— hidden rooms —', w / 2, h * 0.58)
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 180, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the cartographer', w / 2, 25)
@@ -771,14 +771,14 @@ export function createCartographerRoom(deps: MapDeps): Room {
     const hiddenFound = ROOM_GRAPH.filter(r => r.hidden && (visits.get(r.name) || 0) > 0).length
     const hiddenTotal = ROOM_GRAPH.filter(r => r.hidden).length
 
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(200, 190, 180, 0.06)'
     ctx.textAlign = 'left'
     ctx.fillText(`${visitedCount}/${totalRooms} rooms visited`, 12, h - 30)
     ctx.fillText(`${hiddenFound}/${hiddenTotal} secrets found`, 12, h - 18)
 
     // Hint
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(200, 190, 180, 0.04)'
     ctx.textAlign = 'center'
     ctx.fillText('click a room to go there', w / 2, h - 8)

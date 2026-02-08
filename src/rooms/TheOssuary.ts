@@ -214,7 +214,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
 
     // Room label inside the archway glow
     const labelAlpha = hovered ? 0.3 : 0.08
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = isLeft
       ? `rgba(140, 100, 50, ${labelAlpha})`
       : `rgba(200, 190, 170, ${labelAlpha})`
@@ -544,7 +544,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
     if (!ctx) return
     const a = inscriptionAlpha * 0.06 // the faintest possible
     if (a < 0.001) return
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(220, 210, 190, ${a})`
     ctx.textAlign = 'center'
     ctx.fillText(INSCRIPTIONS[inscriptionIdx], w / 2, h - 22)
@@ -667,7 +667,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       ctx.fillStyle = 'rgba(220, 210, 190, 0.15)'
       ctx.textAlign = 'center'
       ctx.fillText('the ossuary is empty', w / 2, h / 2 - 10)
-      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.font = '13px "Cormorant Garamond", serif'
       ctx.fillStyle = 'rgba(220, 210, 190, 0.08)'
       ctx.fillText('no memories have degraded enough to rest here', w / 2, h / 2 + 14)
     } else {
@@ -733,7 +733,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
 
         // Memory text fragment below glyph
         if (mem.degradation < 0.9) {
-          ctx.font = '8px "Cormorant Garamond", serif'
+          ctx.font = '11px "Cormorant Garamond", serif'
           ctx.fillStyle = `rgba(220, 210, 190, ${alpha * 0.4})`
           ctx.textAlign = 'center'
           ctx.fillText(mem.currentText.slice(0, 20), gh.x, gh.y + gh.size * 0.6 + 8)
@@ -744,7 +744,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       if (hoveredGlyphIdx >= 0) {
         const gh = glyphHits[hoveredGlyphIdx]
         const snippet = gh.originalText.slice(0, 30) + (gh.originalText.length > 30 ? '...' : '')
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         const tw = ctx.measureText(snippet).width
         const tx = Math.min(Math.max(mouseX + 12, tw / 2 + 8), w - tw / 2 - 8)
         const ty = mouseY - 10
@@ -758,7 +758,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
       }
 
       // Count
-      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = 'rgba(220, 210, 190, 0.08)'
       ctx.textAlign = 'center'
       ctx.fillText(`${dead.length} memories at rest`, w / 2, h - 50)
@@ -772,7 +772,7 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
     renderInscription(w, h)
 
     // Title
-    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.font = '13px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(220, 210, 190, 0.12)'
     ctx.textAlign = 'center'
     ctx.letterSpacing = '3px'

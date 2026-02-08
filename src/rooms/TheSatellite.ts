@@ -1014,7 +1014,7 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
         let line = ''
         let lineY = h * 0.88
 
-        c.font = '8px monospace'
+        c.font = '11px monospace'
         c.fillStyle = `rgba(255, 215, 0, ${receivedMessage.alpha * 0.2})`
         c.fillText('▼ signal received', w / 2, lineY - 18)
 
@@ -1036,7 +1036,7 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     }
 
     // ISS data
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(255, 215, 0, 0.12)'
     c.textAlign = 'left'
     c.fillText(`iss: ${issLat.toFixed(2)}°N ${issLon.toFixed(2)}°E`, 12, h - 42)
@@ -1044,13 +1044,13 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     c.fillText(`${beacons.filter(b => !b.received).length} signals awaiting reception`, 12, h - 18)
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(255, 215, 0, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the satellite', w / 2, 25)
 
     // Stats
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(255, 215, 0, 0.08)'
     c.textAlign = 'right'
     c.fillText(`${totalReceived} transmissions received`, w - 12, h - 18)
@@ -1061,7 +1061,7 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       c.fillStyle = 'rgba(255, 215, 0, 0.1)'
       c.textAlign = 'center'
       c.fillText('no signals to receive', w / 2, h * 0.88)
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(255, 215, 0, 0.06)'
       c.fillText('type something into the void to create a beacon', w / 2, h * 0.88 + 20)
     }
@@ -1136,7 +1136,7 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     updateAndDrawCursorEffects(c, w, h)
 
     // Context
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(255, 215, 0, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
     c.fillText('artemis waits. the station orbits. your signals persist.', w / 2, h - 4)

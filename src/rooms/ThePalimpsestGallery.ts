@@ -415,7 +415,7 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     c.fillRect(0, 0, w, h)
 
     if (loading) {
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(200, 180, 140, ${0.1 + Math.sin(time * 2) * 0.05})`
       c.textAlign = 'center'
       c.fillText('finding a painting...', w / 2, h / 2)
@@ -578,46 +578,46 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
       // Artwork info — below the painting
       if (currentArtwork) {
-        c.font = '10px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = 'rgba(200, 180, 140, 0.15)'
         c.textAlign = 'center'
         c.fillText(currentArtwork.title, w / 2, drawY + drawH + 25)
 
-        c.font = '9px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = 'rgba(200, 180, 140, 0.1)'
         c.fillText(
           `${currentArtwork.artist}${currentArtwork.date ? `, ${currentArtwork.date}` : ''}`,
           w / 2, drawY + drawH + 40,
         )
 
-        c.font = '8px monospace'
+        c.font = '11px monospace'
         c.fillStyle = 'rgba(200, 180, 140, 0.05)'
         c.fillText('The Metropolitan Museum of Art, Open Access', w / 2, drawY + drawH + 55)
       }
     } else if (!loading) {
-      c.font = '11px "Cormorant Garamond", serif'
+      c.font = '13px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.1)'
       c.textAlign = 'center'
       c.fillText(failureMessage || 'the gallery is empty tonight', w / 2, h / 2)
-      c.font = '9px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.06)'
       c.fillText('click to try again', w / 2, h / 2 + 20)
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the palimpsest gallery', w / 2, 25)
 
     // Hint
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.04 + Math.sin(time * 1.5) * 0.02})`
     c.textAlign = 'center'
     c.fillText('click for a new pairing', w / 2, h - 8)
 
     // Stats
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(200, 180, 140, 0.06)'
     c.textAlign = 'left'
     c.fillText(`${pairingsViewed} pairings`, 12, h - 18)

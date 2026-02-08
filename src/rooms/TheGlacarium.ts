@@ -521,7 +521,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
         c.fill()
 
         if (p.hovered) {
-          c.font = '9px "Cormorant Garamond", serif'
+          c.font = '12px "Cormorant Garamond", serif'
           c.fillStyle = `rgba(${p.color}, 0.5)`
           c.textAlign = 'center'
           c.fillText(p.label, p.x, p.y + pillarH * 0.3 + 18)
@@ -564,7 +564,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
         c.restore()
 
         if (p.hovered) {
-          c.font = '9px "Cormorant Garamond", serif'
+          c.font = '12px "Cormorant Garamond", serif'
           c.fillStyle = `rgba(${p.color}, 0.5)`
           c.textAlign = 'center'
           c.fillText(p.label, p.x, p.y + shardH * 0.4 + 18)
@@ -626,7 +626,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
         c.restore()
 
         if (p.hovered) {
-          c.font = '9px "Cormorant Garamond", serif'
+          c.font = '12px "Cormorant Garamond", serif'
           c.fillStyle = `rgba(${p.color}, 0.5)`
           c.textAlign = 'center'
           c.fillText(p.label, p.x, p.y + 15)
@@ -665,7 +665,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
         }
 
         if (p.hovered) {
-          c.font = '9px "Cormorant Garamond", serif'
+          c.font = '12px "Cormorant Garamond", serif'
           c.fillStyle = `rgba(${p.color}, 0.5)`
           c.textAlign = 'center'
           c.fillText(p.label, p.x, p.y + poolRy + 18)
@@ -967,7 +967,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
       }
 
       // Memory text on crystal surface
-      c.font = '9px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.textAlign = 'center'
       const textAlpha = intact * 0.4
       c.fillStyle = `rgba(220, 240, 255, ${textAlpha})`
@@ -1009,7 +1009,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
         c.strokeRect(px, py, panelW, panelH)
 
         if (ep > 0.5) {
-          c.font = '11px "Cormorant Garamond", serif'
+          c.font = '13px "Cormorant Garamond", serif'
           c.fillStyle = `rgba(220, 240, 255, ${0.7 * ep})`
           c.textAlign = 'left'
 
@@ -1031,7 +1031,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
           if (ln && ly <= py + panelH - 10) c.fillText(ln, px + 10, ly)
 
           // Degradation indicator
-          c.font = '8px monospace'
+          c.font = '11px monospace'
           c.fillStyle = `rgba(255, ${Math.floor(200 * (1 - crystal.memory.degradation))}, ${Math.floor(200 * (1 - crystal.memory.degradation))}, ${0.3 * ep})`
           c.fillText(`${(crystal.memory.degradation * 100).toFixed(0)}% melted`, px + 10, py + panelH - 8)
         }
@@ -1054,7 +1054,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
     })
 
     // Sea ice extent data (bottom-left)
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(150, 200, 255, 0.12)'
     c.textAlign = 'left'
     c.fillText(`arctic sea ice: ${seaIceExtent.toFixed(1)} million km\u00B2`, 12, h - 54)
@@ -1076,13 +1076,13 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(180, 220, 255, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the glacarium', w / 2, 25)
 
     // Interaction hint
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = 'rgba(180, 220, 255, 0.04)'
     c.textAlign = 'center'
     c.fillText('your warmth melts the ice \u00B7 click a crystal to read', w / 2, 40)
@@ -1093,13 +1093,13 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
       c.fillStyle = 'rgba(180, 220, 255, 0.1)'
       c.textAlign = 'center'
       c.fillText('no memories to freeze', w / 2, h / 2 - 20)
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(180, 220, 255, 0.06)'
       c.fillText('type something into the void first', w / 2, h / 2 + 5)
     }
 
     // Context quote
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(180, 220, 255, ${0.04 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
     c.fillText('february 2026 \u2014 arctic sea ice reaches record low', w / 2, h - 8)

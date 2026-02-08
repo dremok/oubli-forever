@@ -318,12 +318,12 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
       c.fillStyle = 'rgba(200, 180, 140, 0.1)'
       c.textAlign = 'center'
       c.fillText('no tapes to play', w / 2, h / 2)
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.06)'
       c.fillText('the machine waits for memories', w / 2, h / 2 + 20)
 
       // Title
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
       c.textAlign = 'center'
       c.fillText('the disintegration loops', w / 2, 25)
@@ -463,7 +463,7 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
 
       if (p.alpha <= 0) return false
 
-      c.font = '10px monospace'
+      c.font = '12px monospace'
       c.fillStyle = `rgba(160, 130, 90, ${p.alpha})`
       c.textAlign = 'center'
       c.fillText(p.char, p.x, p.y)
@@ -498,7 +498,7 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     }
 
     // Info
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(160, 130, 90, 0.12)'
     c.textAlign = 'left'
     c.fillText(`loop ${(activeLoop % loops.length) + 1}/${loops.length}`, 12, h - 42)
@@ -506,7 +506,7 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     c.fillText(`${totalPasses} total passes`, 12, h - 18)
 
     // Memory source text (original, very faint)
-    c.font = '8px "Cormorant Garamond", serif'
+    c.font = '11px "Cormorant Garamond", serif'
     c.fillStyle = 'rgba(160, 130, 90, 0.04)'
     c.textAlign = 'center'
     const origText = loop.memory.originalText
@@ -514,19 +514,19 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     c.fillText(`original: ${shortOrig}`, w / 2, h * 0.78)
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the disintegration loops', w / 2, 25)
 
     // Attribution
-    c.font = '8px "Cormorant Garamond", serif'
+    c.font = '11px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(160, 130, 90, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.textAlign = 'center'
     c.fillText('after William Basinski, 2001', w / 2, 40)
 
     // Bottom context
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(160, 130, 90, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText('each pass through the machine costs something', w / 2, h - 4)
 

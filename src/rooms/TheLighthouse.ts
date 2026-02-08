@@ -952,7 +952,7 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
 
         // Label — only visible when illuminated
         if (il > 0.2) {
-          ctx.font = '10px "Cormorant Garamond", serif'
+          ctx.font = '12px "Cormorant Garamond", serif'
           ctx.fillStyle = `rgba(255, 240, 180, ${il * 0.6})`
           ctx.textAlign = 'center'
           ctx.fillText(lm.label, lx, ly - 55)
@@ -978,13 +978,13 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
     }
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(255, 250, 200, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the lighthouse', w / 2, 25)
 
     // Stats
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(255, 250, 200, 0.06)'
     ctx.textAlign = 'left'
     ctx.fillText(lightOn ? '\u25A0 transmitting' : '\u25A1 silence', 12, h - 18)

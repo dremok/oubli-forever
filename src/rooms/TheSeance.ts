@@ -547,7 +547,7 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         const labelAlpha = isHovered ? 0.7 : Math.min(0.7, wisp.labelReveal / wisp.label.length)
 
         wispCtx.save()
-        wispCtx.font = '11px "Cormorant Garamond", serif'
+        wispCtx.font = '13px "Cormorant Garamond", serif'
         wispCtx.fillStyle = `rgba(${wisp.r}, ${wisp.g}, ${wisp.b}, ${labelAlpha})`
         wispCtx.textAlign = 'center'
         wispCtx.fillText(partial, pos.x, pos.y + baseRadius + 18)

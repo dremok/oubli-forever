@@ -342,7 +342,7 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       // Label on hover
       if (band.hoverGlow > 0.05) {
         const labelAlpha = band.hoverGlow * 0.7
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.textAlign = 'center'
         ctx.fillStyle = `hsla(${band.hue}, 50%, 75%, ${labelAlpha})`
         ctx.fillText(band.label, x0 + bw / 2, h - bandBarH - 6)

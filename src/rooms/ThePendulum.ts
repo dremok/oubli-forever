@@ -443,7 +443,7 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       // Label (visible when swinging wide or triggered)
       if (bob.showLabel) {
         const labelAlpha = Math.min(0.5, glowIntensity * 0.5 + (bob.triggered ? 0.4 : 0))
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `hsla(${bob.hue}, 30%, 70%, ${labelAlpha})`
         ctx.textAlign = 'center'
         const labelOffY = bob.edge === 'S' ? 20 : bob.edge === 'N' ? -16 : 0
@@ -597,14 +597,14 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     }
 
     // Pendulum info (very subtle)
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(180, 160, 200, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the pendulum', w / 2, 25)
 
     // Frequency ratio display
     if (pendulums.length >= 4) {
-      ctx.font = '9px monospace'
+      ctx.font = '12px monospace'
       ctx.fillStyle = 'rgba(180, 160, 200, 0.06)'
       ctx.textAlign = 'left'
       const r1 = pendulums[0].freq.toFixed(2)
@@ -638,7 +638,7 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     }
 
     // Hint
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 160, 200, 0.04)'
     ctx.textAlign = 'center'
     ctx.fillText('each pattern is temporary. you cannot save them.', w / 2, h - 8)

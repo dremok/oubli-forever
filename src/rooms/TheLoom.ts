@@ -520,7 +520,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
       ctx.fillStyle = 'rgba(180, 140, 100, 0.2)'
       ctx.textAlign = 'center'
       ctx.fillText('the loom awaits thread', w / 2, h / 2)
-      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.font = '13px "Cormorant Garamond", serif'
       ctx.fillStyle = 'rgba(180, 140, 100, 0.1)'
       ctx.fillText('memories become fibers. type into the void first.', w / 2, h / 2 + 24)
       return
@@ -651,7 +651,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
       // Memory label at left
       if (t < 20) {
-        ctx.font = '8px "Cormorant Garamond", serif'
+        ctx.font = '11px "Cormorant Garamond", serif'
         ctx.fillStyle = colorToString(color)
         ctx.textAlign = 'right'
         ctx.globalAlpha = isSelected ? 0.8 : 0.5
@@ -703,7 +703,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
     drawTensionMeter(ctx, meterX, meterY, meterH, tension)
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 140, 100, 0.15)'
     ctx.textAlign = 'center'
     ctx.fillText('the loom', w / 2, margin - 30)
@@ -712,7 +712,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
     const intact = memories.filter(m => m.degradation < 0.3).length
     const fraying = memories.filter(m => m.degradation >= 0.3 && m.degradation < 0.7).length
     const broken = memories.filter(m => m.degradation >= 0.7).length
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(180, 140, 100, 0.1)'
     ctx.textAlign = 'left'
     ctx.fillText(
@@ -722,7 +722,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
     // Weaving complete indicator
     if (visibleCols >= maxCols) {
-      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = 'rgba(180, 140, 100, 0.12)'
       ctx.textAlign = 'center'
       ctx.fillText('the textile is complete', w / 2, h - margin / 2 + 10)
@@ -831,7 +831,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
         // Label at the loose end
         const labelAlpha = isHovered || isPulling ? 0.6 : 0.12
-        ctx.font = '8px "Cormorant Garamond", serif'
+        ctx.font = '11px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${labelAlpha})`
         ctx.textAlign = 'center'
         ctx.fillText(nt.label, looseEndX, looseEndY + 16)

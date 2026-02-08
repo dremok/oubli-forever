@@ -595,7 +595,7 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
         const whisperAlpha = hoverGlow * 0.15 * flicker
         ctx.save()
         ctx.globalAlpha = whisperAlpha
-        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(${dr}, ${dg}, ${db}, 1)`
         ctx.textAlign = 'center'
         // Slight horizontal drift
@@ -635,13 +635,13 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     ctx.fillRect(w - fogWidth, 0, fogWidth, h)
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 170, ${flicker * 0.08})`
     ctx.textAlign = 'center'
     ctx.fillText('the between', w / 2, h * 0.12)
 
     // Hint
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 190, 170, ${flicker * 0.05})`
     ctx.fillText('click a door to enter \u00b7 scroll to walk', w / 2, h * 0.92)
   }

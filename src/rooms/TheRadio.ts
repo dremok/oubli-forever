@@ -348,7 +348,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
     // Signal strength meter
     const meterX = panelX + panelW - 80
     const meterY = panelY + 15
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(100, 255, 100, 0.2)'
     ctx.textAlign = 'left'
     ctx.fillText('SIGNAL', meterX, meterY)
@@ -383,7 +383,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       ctx.lineTo(x, bandY + bandH)
       ctx.stroke()
 
-      ctx.font = '8px monospace'
+      ctx.font = '11px monospace'
       ctx.fillStyle = 'rgba(100, 255, 100, 0.2)'
       ctx.textAlign = 'center'
       ctx.fillText(String(f), x, bandY + bandH + 12)
@@ -493,7 +493,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       const clarity = signalStrength * health
 
       // Station label
-      ctx.font = '10px monospace'
+      ctx.font = '12px monospace'
       ctx.fillStyle = `rgba(100, 255, 100, ${clarity * 0.3})`
       ctx.textAlign = 'center'
       ctx.fillText(
@@ -533,7 +533,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
 
       // Time info
       const age = Math.floor((Date.now() - mem.timestamp) / (1000 * 60 * 60 * 24))
-      ctx.font = '9px monospace'
+      ctx.font = '12px monospace'
       ctx.fillStyle = `rgba(100, 255, 100, ${clarity * 0.15})`
       ctx.textAlign = 'center'
       ctx.fillText(
@@ -542,7 +542,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       )
     } else {
       // No signal — show noise text
-      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.font = '13px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(100, 255, 100, ${0.08 + Math.sin(time * 2) * 0.03})`
       ctx.textAlign = 'center'
 
@@ -617,7 +617,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       }
 
       // LOCK label above the bar
-      ctx.font = '8px monospace'
+      ctx.font = '11px monospace'
       ctx.textAlign = 'left'
       ctx.fillStyle = `rgba(100, 255, 100, ${0.15 + lockProgress * 0.3})`
       ctx.fillText('LOCK', barX, lockY - 5)
@@ -647,7 +647,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
         ctx.fillText(lockedSignal.label, lockCenterX, labelY)
       } else if (lockProgress >= 0.3) {
         // "signal detected..."
-        ctx.font = '10px monospace'
+        ctx.font = '12px monospace'
         const detectAlpha = (lockProgress - 0.3) / 0.3 * 0.25
         ctx.fillStyle = `rgba(100, 255, 100, ${detectAlpha})`
         const dots = '.'.repeat(1 + Math.floor(time * 3) % 3)
@@ -656,13 +656,13 @@ export function createRadioRoom(deps: RadioDeps): Room {
     }
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(100, 255, 100, ${0.1 + Math.sin(time * 0.3) * 0.03})`
     ctx.textAlign = 'center'
     ctx.fillText('the radio', w / 2, 30)
 
     // Hint
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(100, 255, 100, 0.06)'
     ctx.fillText('drag the dial to tune · hold steady on hidden frequencies to lock on', w / 2, h - 20)
 

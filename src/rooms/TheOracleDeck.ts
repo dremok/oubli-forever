@@ -704,12 +704,12 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
         ctx.fillText(drawnCard.name, w / 2, cardY + cardH * 0.6)
 
         // Suit
-        ctx.font = '9px monospace'
+        ctx.font = '12px monospace'
         ctx.fillStyle = `hsla(${drawnCard.hue}, 20%, 50%, 0.2)`
         ctx.fillText(drawnCard.suit.toLowerCase(), w / 2, cardY + cardH * 0.65)
 
         // Reading — sequential word fade-in
-        ctx.font = '11px "Cormorant Garamond", serif'
+        ctx.font = '13px "Cormorant Garamond", serif'
         const words = drawnCard.reading.split(' ')
         const maxWidth = cardW - 40
         const timeSinceReveal = readingRevealed ? time - readingRevealTime : 0
@@ -801,7 +801,7 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     }
 
     // Deck indicator
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(140, 120, 160, 0.1)'
     ctx.textAlign = 'center'
     ctx.fillText(`${78 - deckIndex} cards remaining`, w / 2, h * 0.92)
@@ -937,7 +937,7 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
           ctx.strokeRect(x0 + 2, y0 + 2, cardW - 4, cardH - 4)
 
           // Destination label
-          ctx.font = '9px "Cormorant Garamond", serif'
+          ctx.font = '12px "Cormorant Garamond", serif'
           ctx.fillStyle = `hsla(${pc.hue}, 30%, 65%, 0.7)`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
@@ -965,13 +965,13 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     }
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 180, 220, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the oracle deck', w / 2, 25)
 
     // Stats
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(140, 120, 160, 0.06)'
     ctx.textAlign = 'left'
     ctx.fillText(`${totalDraws} readings`, 12, h - 18)

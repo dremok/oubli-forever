@@ -1087,7 +1087,7 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
       const daysVisited = record.visitDays.length
       const attendance = daysSinceFirst > 0 ? (daysVisited / daysSinceFirst * 100).toFixed(0) : '100'
 
-      c.font = '9px monospace'
+      c.font = '12px monospace'
       c.fillStyle = 'rgba(200, 190, 170, 0.08)'
       c.textAlign = 'left'
       c.fillText(`first visit: ${record.firstVisit}`, 12, h - 42)
@@ -1096,19 +1096,19 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
     }
 
     // Painting count
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(200, 190, 170, 0.08)'
     c.textAlign = 'right'
     c.fillText(`${dates.length} paintings`, w - 12, h - 18)
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 190, 170, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the date paintings', w / 2, 25)
 
     // Attribution
-    c.font = '8px "Cormorant Garamond", serif'
+    c.font = '11px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 190, 170, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.fillText('after On Kawara (1932–2014)', w / 2, 40)
 
@@ -1216,7 +1216,7 @@ export function createDatePaintingsRoom(deps: DatePaintingsDeps): Room {
     }
 
     // Bottom
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 190, 170, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.textAlign = 'center'
     c.fillText('I am still alive', w / 2, h - 4)

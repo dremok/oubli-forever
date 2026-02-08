@@ -674,26 +674,26 @@ export function createWellRoom(deps: WellDeps): Room {
     drawRimObjects()
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(120, 160, 220, ${0.1 + Math.sin(time * 0.3) * 0.03})`
     ctx.textAlign = 'center'
     ctx.fillText('the well', w / 2, 30)
 
     // Depth indicator
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(120, 160, 220, 0.08)'
     ctx.textAlign = 'right'
     ctx.fillText(`depth: ${Math.floor(waterLevel * 100)}%`, w - 20, h - 20)
 
     // Hint
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(120, 160, 220, 0.06)'
     ctx.textAlign = 'center'
     ctx.fillText('drop a memory. wait for the echo.', w / 2, h - 20)
 
     // Voice hint — appears after a few seconds
     if (speech?.supported) {
-      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.font = '13px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(120, 160, 220, ${Math.min(0.25, time * 0.05)})`
       ctx.textAlign = 'center'
       ctx.fillText('hold space to speak into the well', w / 2, h - 8)
@@ -714,7 +714,7 @@ export function createWellRoom(deps: WellDeps): Room {
         ctx.stroke()
 
         // "the well listens" text
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `rgba(120, 160, 220, ${0.2 * pulse})`
         ctx.textAlign = 'center'
         ctx.fillText('speak into the darkness...', wellCenterX, voiceY - 60)
@@ -970,7 +970,7 @@ export function createWellRoom(deps: WellDeps): Room {
 
       // Hover label
       if (isHovered) {
-        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = 'rgba(180, 200, 220, 0.5)'
         ctx.textAlign = 'center'
         ctx.fillText(obj.label, pos.x, pos.y - 22)

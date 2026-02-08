@@ -844,7 +844,7 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       drawSprocketHoles(c, w, h)
 
       // Title
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
       c.textAlign = 'center'
       c.fillText('the projection room', w / 2, 25)
@@ -860,7 +860,7 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       c.fillStyle = 'rgba(200, 180, 140, 0.1)'
       c.textAlign = 'center'
       c.fillText('no reels to project', w / 2, h / 2)
-      c.font = '10px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.06)'
       c.fillText('the projector hums in the dark', w / 2, h / 2 + 20)
 
@@ -991,7 +991,7 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     c.setTransform(1, 0, 0, 1, 0, 0)
 
     // Frame counter (bottom, like timecode)
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.fillStyle = 'rgba(200, 180, 140, 0.08)'
     c.textAlign = 'left'
     const fakeTimecode = `${String(Math.floor(time / 60)).padStart(2, '0')}:${String(Math.floor(time) % 60).padStart(2, '0')}:${String(Math.floor((time * 24) % 24)).padStart(2, '0')}`
@@ -1002,7 +1002,7 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
     c.fillText(`condition: ${degradation < 0.2 ? 'good' : degradation < 0.5 ? 'worn' : degradation < 0.8 ? 'deteriorating' : 'critical'}`, 32, h - 42)
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the projection room', w / 2, 25)
@@ -1017,7 +1017,7 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       'new to us but 55 years old — the liminal state of recovered film',
     ]
     const quoteIdx = Math.floor(time * 0.03) % quotes.length
-    c.font = '8px "Cormorant Garamond", serif'
+    c.font = '11px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.fillText(quotes[quoteIdx], w / 2, h - 4)
 

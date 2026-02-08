@@ -553,7 +553,7 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     }
 
     // Layer 4: Text fragments scattered
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.textAlign = 'center'
     for (let i = 0; i < Math.min(words.length, 6); i++) {
       const alpha = 0.04 + rng() * 0.1

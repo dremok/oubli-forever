@@ -382,13 +382,13 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       const breathe = Math.sin(time * 0.8 + fl.x * 0.01) * 0.03
 
       if (fl.isTitle) {
-        c.font = '11px "Cormorant Garamond", serif'
+        c.font = '13px "Cormorant Garamond", serif'
         c.fillStyle = `rgba(220, 200, 160, ${Math.max(0, fl.alpha + breathe)})`
       } else if (fl.isAuthor) {
-        c.font = '9px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = `rgba(180, 160, 130, ${Math.max(0, fl.alpha * 0.8 + breathe)})`
       } else {
-        c.font = '10px "Cormorant Garamond", serif'
+        c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = `rgba(200, 185, 150, ${Math.max(0, fl.alpha + breathe)})`
       }
 
@@ -610,7 +610,7 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       c.strokeRect(b.x, b.y, b.w, b.h)
 
       // Spine text (title)
-      c.font = hovered ? '8px "Cormorant Garamond", serif' : '7px "Cormorant Garamond", serif'
+      c.font = hovered ? '11px "Cormorant Garamond", serif' : '7px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(255, 240, 200, ${hovered ? 0.55 : 0.15})`
       c.textAlign = 'center'
       c.fillText(portal.label, b.x + b.w / 2, b.y + b.h / 2 + 3)
@@ -1288,20 +1288,20 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
 
     // Location code
     const locStr = `hex:${String(location.hexagon).padStart(6, '0')} wall:${location.wall} shelf:${location.shelf} vol:${location.volume} p:${location.page}`
-    c.font = '8px monospace'
+    c.font = '11px monospace'
     c.fillStyle = 'rgba(140, 120, 90, 0.15)'
     c.textAlign = 'center'
     c.fillText(locStr, w / 2, pageY + pageH + 18)
 
     // Navigation hints
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 120, 90, ${0.06 + Math.sin(time * 1) * 0.02})`
     c.fillText('\u2190 prev page \u00b7 next page \u2192 \u00b7 r for random', w / 2, pageY + pageH + 35)
 
     // Memory locations sidebar
     const memories = deps.getMemories()
     if (memories.length > 0) {
-      c.font = '8px monospace'
+      c.font = '11px monospace'
       c.fillStyle = 'rgba(255, 215, 0, 0.08)'
       c.textAlign = 'left'
       c.fillText('your memories in the library:', 12, 60)
@@ -1322,7 +1322,7 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
 
     // --- Current poem info (bottom-left, subtle) ---
     if (currentPoem) {
-      c.font = '8px "Cormorant Garamond", serif'
+      c.font = '11px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
       c.textAlign = 'left'
       const poemInfo = `a volume found open: "${currentPoem.title}" \u2014 ${currentPoem.author}`
@@ -1330,18 +1330,18 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the library', w / 2, 25)
 
     // Attribution
-    c.font = '8px "Cormorant Garamond", serif'
+    c.font = '11px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 120, 90, ${0.03 + Math.sin(time * 0.2) * 0.01})`
     c.fillText('after Borges \u2014 "The Library of Babel" (1941)', w / 2, 40)
 
     // Stats
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(140, 120, 90, 0.06)'
     c.textAlign = 'left'
     c.fillText(`${pagesViewed} pages consulted`, 12, h - 18)
@@ -1353,7 +1353,7 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     c.fillText(`${fragCount} fragment${fragCount !== 1 ? 's' : ''} of you on this page`, w - 12, h - 18)
 
     // Bottom quote
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(140, 120, 90, ${0.03 + Math.sin(time * 0.15) * 0.01})`
     c.textAlign = 'center'
     c.fillText('the library is unlimited and periodic', w / 2, h - 4)

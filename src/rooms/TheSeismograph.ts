@@ -555,7 +555,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     ctx.stroke()
 
     // Label
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(40, 255, 80, 0.15)'
     ctx.textAlign = 'left'
     ctx.fillText('seismograph trace — last 24h magnitudes', traceX + 6, traceY + 12)
@@ -712,7 +712,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     // Selected quake info
     if (selectedQuake) {
       const sq = selectedQuake
-      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.font = '13px "Cormorant Garamond", serif'
       ctx.fillStyle = 'rgba(40, 255, 80, 0.4)'
       ctx.textAlign = 'center'
 
@@ -727,7 +727,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     const totalQuakes = quakes.length
     const maxMag = quakes.reduce((max, q) => Math.max(max, q.mag), 0)
 
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(40, 255, 80, 0.12)'
     ctx.textAlign = 'left'
     ctx.fillText(`${totalQuakes} earthquakes · real-time USGS data`, 12, h - 30)
@@ -739,7 +739,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     ctx.fillText('usgs.gov', w - 12, h - 18)
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(40, 255, 80, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the seismograph', w / 2, 25)
@@ -844,7 +844,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
 
         // Room label on hover
         if (hovered) {
-          ctx.font = '10px monospace'
+          ctx.font = '12px monospace'
           ctx.fillStyle = `rgba(40, 255, 80, 0.6)`
           ctx.textAlign = 'center'
           ctx.fillText(stn.label, sx, sy - 18)
@@ -858,7 +858,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     }
 
     // Depth legend
-    ctx.font = '8px monospace'
+    ctx.font = '11px monospace'
     ctx.textAlign = 'right'
     const legendX = w - 12
     const legendY = h * 0.08

@@ -373,7 +373,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
   }
 
   function drawScrollingCode(c: CanvasRenderingContext2D, w: number, h: number) {
-    c.font = '10px monospace'
+    c.font = '12px monospace'
     c.textAlign = 'center'
     const charH = 14
     for (const col of codeColumns) {
@@ -412,7 +412,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     c.stroke()
 
     // Letters on outer ring
-    c.font = '11px monospace'
+    c.font = '13px monospace'
     c.fillStyle = 'rgba(200, 180, 140, 1)'
     c.textAlign = 'center'
     c.textBaseline = 'middle'
@@ -533,13 +533,13 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     const charsRevealed = Math.floor(inkElapsed * 40) // ~40 chars/sec fade-in
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 180, 140, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the cipher', w / 2, 25)
 
     // Progress
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.1)'
     ctx.fillText(`${currentPuzzle + 1} / ${PUZZLES.length}`, w / 2, 42)
 
@@ -599,7 +599,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     }
 
     // Shift indicator
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.15)'
     ctx.textAlign = 'center'
     ctx.fillText(`shift: ${currentShift}`, w / 2, alphaY + 56)
@@ -657,7 +657,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     }
 
     // Hint
-    ctx.font = '11px "Cormorant Garamond", serif'
+    ctx.font = '13px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(200, 180, 140, ${0.06 + Math.sin(time * 0.5) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText(`hint: ${puzzle.hint}`, w / 2, h * 0.78)
@@ -688,7 +688,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
         // Encrypt the label with a slowly shifting cipher for visual effect
         const ghostShift = Math.floor(time * 0.3) % 26
         const encryptedGhost = encrypt(gl.text, ghostShift)
-        ctx.font = '9px monospace'
+        ctx.font = '12px monospace'
         ctx.fillStyle = 'rgba(200, 180, 140, 0.02)'
         ctx.textAlign = gl.xFrac < 0.5 ? 'left' : 'right'
         ctx.fillText(encryptedGhost, 0, 0)
@@ -723,7 +723,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
 
     // Solved room name flash — briefly show connected rooms after solving a cipher
     if (solvedRoomFlash > 0.01 && solvedRoomNames.length > 0) {
-      ctx.font = '10px monospace'
+      ctx.font = '12px monospace'
       ctx.textAlign = 'center'
       const spacing = w / (solvedRoomNames.length + 1)
       for (let ri = 0; ri < solvedRoomNames.length; ri++) {
@@ -740,20 +740,20 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     const hintCycle = navHintTimer % 12 // 12-second cycle
     if (hintCycle > 8 && hintCycle < 11 && navBuffer.length === 0 && !navMatchFound) {
       const hintAlpha = Math.sin((hintCycle - 8) / 3 * Math.PI) * 0.06
-      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(200, 180, 140, ${hintAlpha})`
       ctx.textAlign = 'center'
       ctx.fillText('type a destination...', w / 2, h - 22)
     }
 
     // Controls hint
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.04)'
     ctx.textAlign = 'center'
     ctx.fillText('\u2190 \u2192 or click arrows to shift \u00b7 each cipher hides a fragment of the creation myth', w / 2, h - 8)
 
     // Stats
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.06)'
     ctx.textAlign = 'left'
     ctx.fillText(`${solvedCount} decoded`, 12, h - 18)

@@ -742,13 +742,13 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     }
 
     // Title
-    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(120, 160, 120, ${0.08 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the terrarium', w / 2, 30)
 
     // Stats
-    ctx.font = '9px monospace'
+    ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(120, 160, 120, 0.1)'
     ctx.textAlign = 'left'
     ctx.fillText(`population: ${creatures.length}`, 25, h - 35)
@@ -833,7 +833,7 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
         // Hint text when active
         if (isActive) {
           ctx.save()
-          ctx.font = '9px "Cormorant Garamond", serif'
+          ctx.font = '12px "Cormorant Garamond", serif'
           const hintAlpha = intensity * 0.2 * (0.7 + 0.3 * Math.sin(time * 1.5 + i))
           if (i === 0) {
             ctx.fillStyle = `rgba(80, 200, 100, ${hintAlpha})`
@@ -880,7 +880,7 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     }
 
     // Hint
-    ctx.font = '9px "Cormorant Garamond", serif'
+    ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(120, 160, 120, 0.04)'
     ctx.textAlign = 'center'
     ctx.fillText('click to add food · watch them live and die', w / 2, h - 8)

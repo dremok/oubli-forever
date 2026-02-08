@@ -554,21 +554,21 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     }
 
     // Title
-    c.font = '10px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(180, 160, 200, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     c.textAlign = 'center'
     c.fillText('the sketchpad', w / 2, 25)
 
     // Symmetry indicator
     if (symmetryMode) {
-      c.font = '9px "Cormorant Garamond", serif'
+      c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(180, 160, 200, ${0.12 + Math.sin(time * 0.5) * 0.03})`
       c.textAlign = 'center'
       c.fillText('\u25C7 symmetric', w / 2, 40)
     }
 
     // Stats (very faint)
-    c.font = '9px monospace'
+    c.font = '12px monospace'
     c.fillStyle = 'rgba(180, 160, 200, 0.06)'
     c.textAlign = 'left'
     c.fillText(`strokes: ${totalStrokes}`, 12, h - 30)
@@ -622,7 +622,7 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
         }
 
         // Room label beneath sigil
-        c.font = '8px "Cormorant Garamond", serif'
+        c.font = '11px "Cormorant Garamond", serif'
         c.fillStyle = `rgba(180, 160, 200, ${0.04 + sigil.glow * 0.12 + sigil.flash * 0.4})`
         c.textAlign = 'center'
         c.fillText(sigil.label, pos.cx, pos.cy + SIGIL_SIZE / 2 + 14)
@@ -645,7 +645,7 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     }
 
     // Hint
-    c.font = '9px "Cormorant Garamond", serif'
+    c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = 'rgba(180, 160, 200, 0.04)'
     c.textAlign = 'center'
     c.fillText('draw with light \u00B7 scroll to change color \u00B7 shift+scroll for width \u00B7 S for symmetry \u00B7 double-click to clear', w / 2, h - 8)
