@@ -162,6 +162,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let nearbyPortal: { room: string; label: string; color: [number, number, number] } | null = null
 
   // Audio
+  let audioInitialized = false
   let audioCtx: AudioContext | null = null
   let ambienceGain: GainNode | null = null
   let ambOsc: OscillatorNode | null = null
@@ -453,7 +454,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   }
 
   async function initAudio() {
-    if (audioCtx) return
+    if (audioInitialized) return
+    audioInitialized = true
     try {
       audioCtx = await getAudioContext()
       const dest = getAudioDestination()
@@ -531,8 +533,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       const firstDrip = 2000 + Math.random() * 4000
       dripTimeout = setTimeout(scheduleDrip, firstDrip)
+
+      // Load scare sounds now that audioCtx is ready
+      loadScareAssets()
     } catch {
       // Audio not available
+      audioInitialized = false
     }
   }
 
@@ -2369,7 +2375,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       fetchIntervalSec = 8 + Math.random() * 10
 
       initAudio()
-      loadScareAssets()
       render()
     },
 
@@ -2400,6 +2405,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         dripTimeout = null
       }
       audioCtx = null
+      audioInitialized = false
       overlay?.remove()
     },
   }
