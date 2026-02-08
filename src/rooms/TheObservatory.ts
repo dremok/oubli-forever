@@ -30,6 +30,7 @@ interface ObservatoryDeps {
   getMemoryById: (id: string) => StoredMemory | null
   getCamera: () => THREE.PerspectiveCamera
   getCanvas: () => HTMLCanvasElement
+  getScene: () => THREE.Scene
   pauseCamera: () => void
   resumeCamera: () => void
   switchTo?: (name: string) => void
@@ -65,6 +66,405 @@ async function fetchAPOD(): Promise<APODData | null> {
   }
 }
 
+// --- Nebula particle system ---
+const NEBULA_COUNT = 6000
+
+function createNebulaSystem(): THREE.Points {
+  const positions = new Float32Array(NEBULA_COUNT * 3)
+  const colors = new Float32Array(NEBULA_COUNT * 3)
+  const sizes = new Float32Array(NEBULA_COUNT)
+  const phases = new Float32Array(NEBULA_COUNT) // for orbital drift
+
+  // Color palette: deep purples, blues, golds, warm magentas
+  const palette = [
+    [0.35, 0.15, 0.65], // purple
+    [0.20, 0.25, 0.70], // deep blue
+    [0.50, 0.18, 0.55], // magenta-purple
+    [0.75, 0.60, 0.20], // gold
+    [0.15, 0.35, 0.70], // cerulean
+    [0.60, 0.25, 0.50], // warm magenta
+    [0.25, 0.40, 0.65], // slate blue
+    [0.80, 0.70, 0.30], // bright gold
+  ]
+
+  for (let i = 0; i < NEBULA_COUNT; i++) {
+    // Distribute in a large sphere with clusters
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos(2 * Math.random() - 1)
+    const r = 300 + Math.random() * 600 + Math.pow(Math.random(), 3) * 400
+
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
+    positions[i * 3 + 2] = r * Math.cos(phi)
+
+    // Pick a color from palette with slight randomness
+    const col = palette[Math.floor(Math.random() * palette.length)]
+    const variation = 0.15
+    colors[i * 3] = Math.max(0, Math.min(1, col[0] + (Math.random() - 0.5) * variation))
+    colors[i * 3 + 1] = Math.max(0, Math.min(1, col[1] + (Math.random() - 0.5) * variation))
+    colors[i * 3 + 2] = Math.max(0, Math.min(1, col[2] + (Math.random() - 0.5) * variation))
+
+    sizes[i] = 1.0 + Math.random() * 3.0
+    phases[i] = Math.random() * Math.PI * 2
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+
+  // Store phases as userData for animation
+  ;(geometry as THREE.BufferGeometry & { userData: { phases: Float32Array } }).userData = { phases }
+
+  const material = new THREE.PointsMaterial({
+    size: 2.5,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.4,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  })
+
+  const points = new THREE.Points(geometry, material)
+  points.name = 'observatory-nebula'
+  return points
+}
+
+function animateNebula(nebula: THREE.Points, t: number) {
+  const positions = nebula.geometry.getAttribute('position') as THREE.BufferAttribute
+  const geoData = (nebula.geometry as THREE.BufferGeometry & { userData: { phases: Float32Array } }).userData
+  const phases = geoData.phases
+  if (!positions || !phases) return
+
+  const arr = positions.array as Float32Array
+  for (let i = 0; i < NEBULA_COUNT; i++) {
+    const phase = phases[i]
+    const ix = i * 3
+    const x = arr[ix]
+    const y = arr[ix + 1]
+    const z = arr[ix + 2]
+
+    // Slow orbital drift — rotate around Y axis with slight vertical undulation
+    const speed = 0.0003 + (phase / (Math.PI * 2)) * 0.0004
+    const angle = speed * t
+    const cosA = Math.cos(angle)
+    const sinA = Math.sin(angle)
+
+    // Rotate XZ around origin
+    const nx = x * cosA - z * sinA
+    const nz = x * sinA + z * cosA
+    // Gentle vertical drift
+    const ny = y + Math.sin(t * 0.0005 + phase) * 0.15
+
+    arr[ix] = nx
+    arr[ix + 1] = ny
+    arr[ix + 2] = nz
+  }
+  positions.needsUpdate = true
+}
+
+// --- Star twinkle data ---
+interface TwinkleData {
+  phase: number
+  frequency: number
+  baseScale: number
+  isDegraded: boolean
+}
+
+function buildTwinkleData(sprites: THREE.Sprite[], memories: StoredMemory[], getMemoryById: (id: string) => StoredMemory | null): TwinkleData[] {
+  return sprites.map(sprite => {
+    const memoryId = sprite.userData.memoryId as string | undefined
+    const memory = memoryId ? getMemoryById(memoryId) : null
+    const isDegraded = memory ? memory.degradation > 0.3 : false
+    return {
+      phase: Math.random() * Math.PI * 2,
+      frequency: isDegraded
+        ? 1.5 + Math.random() * 3.0   // erratic fast twinkle for degraded
+        : 0.3 + Math.random() * 0.8,  // calm slow twinkle for healthy
+      baseScale: sprite.scale.x,
+      isDegraded,
+    }
+  })
+}
+
+function animateTwinkle(sprites: THREE.Sprite[], twinkleData: TwinkleData[], t: number) {
+  for (let i = 0; i < sprites.length && i < twinkleData.length; i++) {
+    const sprite = sprites[i]
+    const td = twinkleData[i]
+
+    let flicker: number
+    if (td.isDegraded) {
+      // Erratic twinkle — sum of two sine waves at different frequencies
+      flicker = 0.5 + 0.3 * Math.sin(t * td.frequency + td.phase)
+        + 0.2 * Math.sin(t * td.frequency * 1.7 + td.phase * 0.6)
+    } else {
+      // Smooth gentle twinkle
+      flicker = 0.75 + 0.25 * Math.sin(t * td.frequency + td.phase)
+    }
+
+    // Apply to scale and opacity
+    const s = td.baseScale * (0.8 + flicker * 0.4)
+    sprite.scale.set(s, s, 1)
+
+    const mat = sprite.material as THREE.SpriteMaterial
+    if (mat.opacity !== undefined) {
+      mat.opacity = Math.max(0.15, Math.min(1.0, flicker))
+    }
+  }
+}
+
+// --- Constellation connection lines ---
+interface ConnectionLine {
+  line: THREE.Line
+  strength: number // 0-1 based on shared word count
+}
+
+function findConnections(
+  memory: StoredMemory,
+  allMemories: StoredMemory[],
+  sprites: THREE.Sprite[],
+  sourceSprite: THREE.Sprite
+): ConnectionLine[] {
+  const words = new Set(
+    memory.currentText.toLowerCase().split(/\W+/).filter(w => w.length > 3)
+  )
+  const lines: ConnectionLine[] = []
+
+  for (const other of allMemories) {
+    if (other.id === memory.id) continue
+    const otherWords = other.currentText.toLowerCase().split(/\W+/).filter(w => w.length > 3)
+    const shared = otherWords.filter(w => words.has(w)).length
+    if (shared === 0) continue
+
+    // Find the sprite for this memory
+    const targetSprite = sprites.find(s => s.userData.memoryId === other.id)
+    if (!targetSprite) continue
+
+    const strength = Math.min(1, shared / 5) // normalize: 5+ shared words = full strength
+
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      sourceSprite.position.clone(),
+      targetSprite.position.clone(),
+    ])
+
+    const material = new THREE.LineBasicMaterial({
+      color: new THREE.Color().setHSL(memory.hue, 0.5, 0.6),
+      transparent: true,
+      opacity: 0.08 + strength * 0.18,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+
+    const line = new THREE.Line(geometry, material)
+    line.name = 'observatory-connection'
+    lines.push({ line, strength })
+  }
+
+  return lines
+}
+
+// --- Ambient deep space audio ---
+interface SpaceAudio {
+  droneOsc1: OscillatorNode | null
+  droneOsc2: OscillatorNode | null
+  droneGain: GainNode | null
+  lfoOsc: OscillatorNode | null
+  lfoGain: GainNode | null
+  pulsarInterval: ReturnType<typeof setInterval> | null
+  started: boolean
+}
+
+async function startSpaceAudio(sprites: THREE.Sprite[], camera: THREE.PerspectiveCamera): Promise<SpaceAudio> {
+  const audio: SpaceAudio = {
+    droneOsc1: null,
+    droneOsc2: null,
+    droneGain: null,
+    lfoOsc: null,
+    lfoGain: null,
+    pulsarInterval: null,
+    started: false,
+  }
+
+  try {
+    const ctx = await getAudioContext()
+    const dest = getAudioDestination()
+
+    // Deep space drone — very low frequency, slowly modulating
+    const droneGain = ctx.createGain()
+    droneGain.gain.setValueAtTime(0, ctx.currentTime)
+    droneGain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 4) // slow fade in
+
+    // LFO to modulate drone frequency
+    const lfoOsc = ctx.createOscillator()
+    lfoOsc.type = 'sine'
+    lfoOsc.frequency.setValueAtTime(0.05, ctx.currentTime) // very slow modulation
+    const lfoGain = ctx.createGain()
+    lfoGain.gain.setValueAtTime(5, ctx.currentTime) // modulate by +/- 5Hz
+
+    // Main drone oscillator — sub-bass
+    const droneOsc1 = ctx.createOscillator()
+    droneOsc1.type = 'sine'
+    droneOsc1.frequency.setValueAtTime(38, ctx.currentTime) // ~38Hz
+
+    // Second drone — slightly detuned for richness
+    const droneOsc2 = ctx.createOscillator()
+    droneOsc2.type = 'sine'
+    droneOsc2.frequency.setValueAtTime(42, ctx.currentTime) // ~42Hz, creates slow beating
+
+    // LFO -> frequency modulation
+    lfoOsc.connect(lfoGain)
+    lfoGain.connect(droneOsc1.frequency)
+
+    // Drone -> gain -> convolver (reverb simulation via delay feedback) -> dest
+    // Simple reverb via delay feedback
+    const preDelay = ctx.createDelay(1.0)
+    preDelay.delayTime.setValueAtTime(0.3, ctx.currentTime)
+    const feedbackGain = ctx.createGain()
+    feedbackGain.gain.setValueAtTime(0.4, ctx.currentTime)
+    const reverbFilter = ctx.createBiquadFilter()
+    reverbFilter.type = 'lowpass'
+    reverbFilter.frequency.setValueAtTime(800, ctx.currentTime)
+
+    droneOsc1.connect(droneGain)
+    droneOsc2.connect(droneGain)
+
+    // Dry path
+    droneGain.connect(dest)
+
+    // Wet path (simple reverb)
+    droneGain.connect(preDelay)
+    preDelay.connect(reverbFilter)
+    reverbFilter.connect(feedbackGain)
+    feedbackGain.connect(preDelay) // feedback loop
+    feedbackGain.connect(dest)
+
+    droneOsc1.start(ctx.currentTime)
+    droneOsc2.start(ctx.currentTime)
+    lfoOsc.start(ctx.currentTime)
+
+    audio.droneOsc1 = droneOsc1
+    audio.droneOsc2 = droneOsc2
+    audio.droneGain = droneGain
+    audio.lfoOsc = lfoOsc
+    audio.lfoGain = lfoGain
+    audio.started = true
+
+    // Pulsar pings — occasional short high-frequency tones
+    // from random star positions using PannerNode
+    audio.pulsarInterval = setInterval(() => {
+      if (sprites.length === 0) return
+
+      try {
+        const sprite = sprites[Math.floor(Math.random() * sprites.length)]
+
+        const panner = ctx.createPanner()
+        panner.panningModel = 'HRTF'
+        panner.distanceModel = 'inverse'
+        panner.refDistance = 2
+        panner.maxDistance = 20
+        panner.rolloffFactor = 1.5
+
+        const s = 0.01
+        panner.positionX.setValueAtTime(sprite.position.x * s, ctx.currentTime)
+        panner.positionY.setValueAtTime(sprite.position.y * s, ctx.currentTime)
+        panner.positionZ.setValueAtTime(sprite.position.z * s, ctx.currentTime)
+
+        // Update listener
+        ctx.listener.positionX.setValueAtTime(camera.position.x * s, ctx.currentTime)
+        ctx.listener.positionY.setValueAtTime(camera.position.y * s, ctx.currentTime)
+        ctx.listener.positionZ.setValueAtTime(camera.position.z * s, ctx.currentTime)
+
+        // Short high-frequency ping
+        const pingOsc = ctx.createOscillator()
+        pingOsc.type = 'sine'
+        const freq = 1200 + Math.random() * 2400 // 1200-3600Hz
+        pingOsc.frequency.setValueAtTime(freq, ctx.currentTime)
+        pingOsc.frequency.exponentialRampToValueAtTime(freq * 0.5, ctx.currentTime + 0.3)
+
+        const pingGain = ctx.createGain()
+        pingGain.gain.setValueAtTime(0, ctx.currentTime)
+        pingGain.gain.linearRampToValueAtTime(0.03 + Math.random() * 0.02, ctx.currentTime + 0.005)
+        pingGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
+
+        pingOsc.connect(pingGain)
+        pingGain.connect(panner)
+        panner.connect(dest)
+
+        pingOsc.start(ctx.currentTime)
+        pingOsc.stop(ctx.currentTime + 0.5)
+      } catch {
+        // Audio context might be in a bad state
+      }
+    }, 3000 + Math.random() * 5000) // every 3-8 seconds
+
+    return audio
+  } catch {
+    return audio
+  }
+}
+
+function stopSpaceAudio(audio: SpaceAudio) {
+  if (!audio.started) return
+  try {
+    const fadeTime = 2
+    if (audio.droneGain) {
+      const ctx = audio.droneGain.context
+      audio.droneGain.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeTime)
+      // Stop oscillators after fade
+      setTimeout(() => {
+        try {
+          audio.droneOsc1?.stop()
+          audio.droneOsc2?.stop()
+          audio.lfoOsc?.stop()
+        } catch { /* already stopped */ }
+      }, fadeTime * 1000 + 100)
+    }
+  } catch { /* ignore */ }
+  if (audio.pulsarInterval) {
+    clearInterval(audio.pulsarInterval)
+    audio.pulsarInterval = null
+  }
+  audio.started = false
+}
+
+// --- Telescope zoom animation ---
+interface ZoomState {
+  active: boolean
+  startPos: THREE.Vector3
+  startTarget: THREE.Vector3
+  endPos: THREE.Vector3
+  endTarget: THREE.Vector3
+  startTime: number
+  duration: number
+}
+
+function animateZoom(
+  zoomState: ZoomState,
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  t: number
+): boolean {
+  if (!zoomState.active) return false
+
+  const elapsed = t - zoomState.startTime
+  const progress = Math.min(1, elapsed / zoomState.duration)
+  // Smooth ease-in-out
+  const ease = progress < 0.5
+    ? 2 * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 2) / 2
+
+  camera.position.lerpVectors(zoomState.startPos, zoomState.endPos, ease)
+  controls.target.lerpVectors(zoomState.startTarget, zoomState.endTarget, ease)
+
+  if (progress >= 1) {
+    zoomState.active = false
+    return false
+  }
+  return true
+}
+
+
 export function createObservatoryRoom(deps: ObservatoryDeps): Room {
   let overlay: HTMLElement | null = null
   let controls: OrbitControls | null = null
@@ -78,13 +478,111 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
   let apodTextEl: HTMLElement | null = null
   let apodFadeTimer: ReturnType<typeof setTimeout> | null = null
 
+  // Nebula
+  let nebulaSystem: THREE.Points | null = null
+
+  // Twinkle
+  let twinkleData: TwinkleData[] = []
+
+  // Constellation lines
+  let activeConnectionLines: ConnectionLine[] = []
+  let hoveredSpriteId: string | null = null
+
+  // Telescope zoom
+  let zoomState: ZoomState = {
+    active: false,
+    startPos: new THREE.Vector3(),
+    startTarget: new THREE.Vector3(),
+    endPos: new THREE.Vector3(),
+    endTarget: new THREE.Vector3(),
+    startTime: 0,
+    duration: 1.5,
+  }
+  let savedCameraPos: THREE.Vector3 | null = null
+  let savedTarget: THREE.Vector3 | null = null
+  let isZoomedIn = false
+
+  // Ambient audio
+  let spaceAudio: SpaceAudio | null = null
+
   const raycaster = new THREE.Raycaster()
   const mouse = new THREE.Vector2()
 
   // Event handler references for cleanup
   let clickHandler: ((e: MouseEvent) => void) | null = null
+  let dblClickHandler: ((e: MouseEvent) => void) | null = null
+  let contextMenuHandler: ((e: MouseEvent) => void) | null = null
   let moveHandler: ((e: MouseEvent) => void) | null = null
   let escHandler: ((e: KeyboardEvent) => void) | null = null
+
+  function clearConnectionLines() {
+    const scene = deps.getScene()
+    for (const cl of activeConnectionLines) {
+      scene.remove(cl.line)
+      cl.line.geometry.dispose()
+      ;(cl.line.material as THREE.Material).dispose()
+    }
+    activeConnectionLines = []
+    hoveredSpriteId = null
+  }
+
+  function showConnectionLines(memory: StoredMemory, sprite: THREE.Sprite) {
+    // Don't rebuild if already showing this memory's connections
+    if (hoveredSpriteId === memory.id) return
+    clearConnectionLines()
+
+    const allMemories = deps.getMemories()
+    const sprites = deps.getConstellationSprites()
+    const scene = deps.getScene()
+
+    const connections = findConnections(memory, allMemories, sprites, sprite)
+    for (const conn of connections) {
+      scene.add(conn.line)
+    }
+    activeConnectionLines = connections
+    hoveredSpriteId = memory.id
+  }
+
+  function startZoomTo(target: THREE.Vector3, camera: THREE.PerspectiveCamera) {
+    if (!controls) return
+
+    // Save current position for reset
+    if (!isZoomedIn) {
+      savedCameraPos = camera.position.clone()
+      savedTarget = controls.target.clone()
+    }
+
+    // Zoom toward target — stop at a distance proportional to current distance
+    const direction = new THREE.Vector3().subVectors(target, camera.position).normalize()
+    const currentDist = camera.position.distanceTo(target)
+    const zoomDist = Math.max(30, currentDist * 0.3) // zoom to 30% of current distance, min 30
+
+    zoomState = {
+      active: true,
+      startPos: camera.position.clone(),
+      startTarget: controls.target.clone(),
+      endPos: new THREE.Vector3().addVectors(target, direction.multiplyScalar(-zoomDist)),
+      endTarget: target.clone(),
+      startTime: performance.now() * 0.001,
+      duration: 1.5,
+    }
+    isZoomedIn = true
+  }
+
+  function resetZoom(camera: THREE.PerspectiveCamera) {
+    if (!isZoomedIn || !savedCameraPos || !savedTarget || !controls) return
+
+    zoomState = {
+      active: true,
+      startPos: camera.position.clone(),
+      startTarget: controls.target.clone(),
+      endPos: savedCameraPos.clone(),
+      endTarget: savedTarget.clone(),
+      startTime: performance.now() * 0.001,
+      duration: 1.2,
+    }
+    isZoomedIn = false
+  }
 
   function createFocusPanel(): HTMLElement {
     const panel = document.createElement('div')
@@ -256,7 +754,7 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
         text-align: center;
         transition: opacity 3s ease;
       `
-      hint.textContent = 'drag to orbit \u00b7 scroll to zoom \u00b7 click a star'
+      hint.textContent = 'drag to orbit \u00b7 scroll to zoom \u00b7 click a star \u00b7 double-click to telescope'
       overlay.appendChild(hint)
 
       // Fade hint after 8 seconds
@@ -553,6 +1051,21 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
     activate() {
       const camera = deps.getCamera()
       const canvas = deps.getCanvas()
+      const scene = deps.getScene()
+
+      // --- Add nebula particle system ---
+      nebulaSystem = createNebulaSystem()
+      scene.add(nebulaSystem)
+
+      // --- Build twinkle data for existing sprites ---
+      const sprites = deps.getConstellationSprites()
+      const memories = deps.getMemories()
+      twinkleData = buildTwinkleData(sprites, memories, deps.getMemoryById)
+
+      // --- Start ambient space audio ---
+      startSpaceAudio(sprites, camera).then(audio => {
+        spaceAudio = audio
+      })
 
       // --- APOD: fetch and display today's astronomy picture ---
       fetchAPOD().then(apod => {
@@ -693,17 +1206,36 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       controls.enablePan = true
       controls.panSpeed = 0.5
 
-      // Update controls + compass canvases each frame
+      // Update controls + compass canvases + nebula + twinkle each frame
       const updateLoop = () => {
         if (!controls) return
         controls.update()
         const t = performance.now() * 0.001
         for (const cc of compassCanvases) cc.draw(t)
+
+        // Animate nebula
+        if (nebulaSystem) animateNebula(nebulaSystem, t)
+
+        // Animate star twinkle
+        const currentSprites = deps.getConstellationSprites()
+        if (currentSprites.length > 0) {
+          // Rebuild twinkle data if sprite count changed
+          if (twinkleData.length !== currentSprites.length) {
+            twinkleData = buildTwinkleData(currentSprites, deps.getMemories(), deps.getMemoryById)
+          }
+          animateTwinkle(currentSprites, twinkleData, t)
+        }
+
+        // Animate telescope zoom
+        if (zoomState.active && controls) {
+          animateZoom(zoomState, camera, controls, t)
+        }
+
         controlsRAF = requestAnimationFrame(updateLoop)
       }
       controlsRAF = requestAnimationFrame(updateLoop)
 
-      // Click → raycast against constellation sprites
+      // Click -> raycast against constellation sprites + zoom to star
       clickHandler = (e: MouseEvent) => {
         const rect = canvas.getBoundingClientRect()
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
@@ -711,8 +1243,8 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
 
         raycaster.setFromCamera(mouse, camera)
 
-        const sprites = deps.getConstellationSprites()
-        const intersects = raycaster.intersectObjects(sprites)
+        const currentSprites = deps.getConstellationSprites()
+        const intersects = raycaster.intersectObjects(currentSprites)
 
         if (intersects.length > 0) {
           const sprite = intersects[0].object as THREE.Sprite
@@ -722,6 +1254,8 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
             if (memory) {
               showFocusPanel(memory)
               playMemoryTone(memory, sprite.position)
+              // Zoom to the clicked star
+              startZoomTo(sprite.position, camera)
             }
           }
         } else {
@@ -730,28 +1264,81 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       }
       canvas.addEventListener('click', clickHandler)
 
-      // Hover cursor
+      // Double-click on empty space -> telescope zoom toward that direction
+      dblClickHandler = (e: MouseEvent) => {
+        const rect = canvas.getBoundingClientRect()
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+        raycaster.setFromCamera(mouse, camera)
+
+        const currentSprites = deps.getConstellationSprites()
+        const intersects = raycaster.intersectObjects(currentSprites)
+
+        // Only zoom into empty space on double-click (star clicks handled by single-click)
+        if (intersects.length === 0) {
+          // Project a point 200 units along the ray direction
+          const targetPoint = new THREE.Vector3()
+          raycaster.ray.at(200, targetPoint)
+          startZoomTo(targetPoint, camera)
+        }
+      }
+      canvas.addEventListener('dblclick', dblClickHandler)
+
+      // Right-click -> reset zoom
+      contextMenuHandler = (e: MouseEvent) => {
+        if (isZoomedIn) {
+          e.preventDefault()
+          resetZoom(camera)
+        }
+      }
+      canvas.addEventListener('contextmenu', contextMenuHandler)
+
+      // Hover cursor + constellation lines
       moveHandler = (e: MouseEvent) => {
         const rect = canvas.getBoundingClientRect()
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
         mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
         raycaster.setFromCamera(mouse, camera)
-        const sprites = deps.getConstellationSprites()
-        const intersects = raycaster.intersectObjects(sprites)
-        canvas.style.cursor = intersects.length > 0 ? 'pointer' : 'grab'
+        const currentSprites = deps.getConstellationSprites()
+        const intersects = raycaster.intersectObjects(currentSprites)
+
+        if (intersects.length > 0) {
+          canvas.style.cursor = 'pointer'
+          const sprite = intersects[0].object as THREE.Sprite
+          const memoryId = sprite.userData.memoryId as string | undefined
+          if (memoryId) {
+            const memory = deps.getMemoryById(memoryId)
+            if (memory) {
+              showConnectionLines(memory, sprite)
+            }
+          }
+        } else {
+          canvas.style.cursor = 'grab'
+          // Clear connection lines when not hovering a star
+          if (hoveredSpriteId !== null) {
+            clearConnectionLines()
+          }
+        }
       }
       canvas.addEventListener('mousemove', moveHandler)
 
-      // Escape unfocuses
+      // Escape unfocuses + resets zoom
       escHandler = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') hideFocusPanel()
+        if (e.key === 'Escape') {
+          hideFocusPanel()
+          if (isZoomedIn) {
+            resetZoom(camera)
+          }
+        }
       }
       window.addEventListener('keydown', escHandler)
     },
 
     deactivate() {
       const canvas = deps.getCanvas()
+      const scene = deps.getScene()
 
       // Cleanup controls
       if (controls) {
@@ -760,6 +1347,40 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       }
       cancelAnimationFrame(controlsRAF)
 
+      // Remove nebula
+      if (nebulaSystem) {
+        scene.remove(nebulaSystem)
+        nebulaSystem.geometry.dispose()
+        ;(nebulaSystem.material as THREE.Material).dispose()
+        nebulaSystem = null
+      }
+
+      // Clear constellation lines
+      clearConnectionLines()
+
+      // Stop space audio
+      if (spaceAudio) {
+        stopSpaceAudio(spaceAudio)
+        spaceAudio = null
+      }
+
+      // Reset twinkle — restore original sprite opacities
+      const sprites = deps.getConstellationSprites()
+      for (let i = 0; i < sprites.length; i++) {
+        const mat = sprites[i].material as THREE.SpriteMaterial
+        mat.opacity = 1.0
+        if (twinkleData[i]) {
+          sprites[i].scale.setScalar(twinkleData[i].baseScale)
+        }
+      }
+      twinkleData = []
+
+      // Reset zoom state
+      zoomState.active = false
+      isZoomedIn = false
+      savedCameraPos = null
+      savedTarget = null
+
       // Resume void camera
       deps.resumeCamera()
 
@@ -767,6 +1388,14 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       if (clickHandler) {
         canvas.removeEventListener('click', clickHandler)
         clickHandler = null
+      }
+      if (dblClickHandler) {
+        canvas.removeEventListener('dblclick', dblClickHandler)
+        dblClickHandler = null
+      }
+      if (contextMenuHandler) {
+        canvas.removeEventListener('contextmenu', contextMenuHandler)
+        contextMenuHandler = null
       }
       if (moveHandler) {
         canvas.removeEventListener('mousemove', moveHandler)
@@ -793,6 +1422,25 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       }
       cancelAnimationFrame(controlsRAF)
       compassCanvases = []
+
+      // Cleanup nebula if still present
+      if (nebulaSystem) {
+        const scene = deps.getScene()
+        scene.remove(nebulaSystem)
+        nebulaSystem.geometry.dispose()
+        ;(nebulaSystem.material as THREE.Material).dispose()
+        nebulaSystem = null
+      }
+
+      // Clear constellation lines
+      clearConnectionLines()
+
+      // Stop space audio
+      if (spaceAudio) {
+        stopSpaceAudio(spaceAudio)
+        spaceAudio = null
+      }
+
       if (apodFadeTimer) { clearTimeout(apodFadeTimer); apodFadeTimer = null }
       apodContainer?.remove()
       apodTextEl?.remove()

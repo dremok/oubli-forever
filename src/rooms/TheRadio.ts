@@ -24,7 +24,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
-import { getAudioContext } from '../sound/AudioBus'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface RadioDeps {
   getMemories: () => StoredMemory[]
@@ -56,6 +56,36 @@ export function createRadioRoom(deps: RadioDeps): Room {
   let audioInitialized = false
   let staticLines: { y: number; speed: number; alpha: number }[] = []
   let lastFrameTime = 0
+
+  // AM/FM band toggle
+  let bandMode: 'FM' | 'AM' = 'FM'
+  // FM: 88.0–108.0 MHz, AM: 530–1700 kHz (mapped to same 0–1 internal range)
+  // Internal frequency always stored as FM range 88–108 for station logic
+  let keyHandler: ((e: KeyboardEvent) => void) | null = null
+
+  // Number station easter egg
+  let numberStationFrame = 0
+  let numberStationActive = false
+  let numberStationText = ''
+  let numberStationAlpha = 0
+  let numberStationOscs: OscillatorNode[] = []
+  let numberStationGainNode: GainNode | null = null
+  let numberStationSequence: number[] = []
+  let numberStationStep = 0
+  let numberStationStepTime = 0
+
+  // Scanner line
+  let scannerX = 0 // 0–1 normalized position
+
+  // Shortwave ambience audio
+  let shortwaveNoiseNode: AudioBufferSourceNode | null = null
+  let shortwaveFilter1: BiquadFilterNode | null = null
+  let shortwaveFilter2: BiquadFilterNode | null = null
+  let shortwaveGain: GainNode | null = null
+  let formantFilter1: BiquadFilterNode | null = null
+  let formantFilter2: BiquadFilterNode | null = null
+  let formantGain: GainNode | null = null
+  let formantNoiseNode: AudioBufferSourceNode | null = null
 
   // Hidden signal frequencies — navigation via lock-on tuning
   const hiddenSignals = [
@@ -114,6 +144,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
     try {
       const audioCtx = await getAudioContext()
       if (!audioCtx) return
+      const dest = getAudioDestination()
 
       // Create white noise buffer
       const bufferSize = audioCtx.sampleRate * 2
@@ -138,7 +169,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
 
       noiseNode.connect(filter)
       filter.connect(noiseGain)
-      noiseGain.connect(audioCtx.destination)
+      noiseGain.connect(dest)
       noiseNode.start()
 
       // Tone oscillator for station signal
@@ -148,8 +179,77 @@ export function createRadioRoom(deps: RadioDeps): Room {
       toneGain = audioCtx.createGain()
       toneGain.gain.value = 0
       toneOsc.connect(toneGain)
-      toneGain.connect(audioCtx.destination)
+      toneGain.connect(dest)
       toneOsc.start()
+
+      // --- Shortwave ambience: filtered noise that varies with frequency ---
+      const swBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+      const swData = swBuffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        // Slightly colored noise — emphasize low mids
+        swData[i] = (Math.random() * 2 - 1) * 0.15
+      }
+      shortwaveNoiseNode = audioCtx.createBufferSource()
+      shortwaveNoiseNode.buffer = swBuffer
+      shortwaveNoiseNode.loop = true
+
+      shortwaveFilter1 = audioCtx.createBiquadFilter()
+      shortwaveFilter1.type = 'bandpass'
+      shortwaveFilter1.frequency.value = 800
+      shortwaveFilter1.Q.value = 2.0
+
+      shortwaveFilter2 = audioCtx.createBiquadFilter()
+      shortwaveFilter2.type = 'lowpass'
+      shortwaveFilter2.frequency.value = 3000
+      shortwaveFilter2.Q.value = 0.7
+
+      shortwaveGain = audioCtx.createGain()
+      shortwaveGain.gain.value = 0.008
+
+      shortwaveNoiseNode.connect(shortwaveFilter1)
+      shortwaveFilter1.connect(shortwaveFilter2)
+      shortwaveFilter2.connect(shortwaveGain)
+      shortwaveGain.connect(dest)
+      shortwaveNoiseNode.start()
+
+      // --- Formant voice-like modulations: bandpass-shaped noise ---
+      const fmtBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+      const fmtData = fmtBuffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        fmtData[i] = (Math.random() * 2 - 1) * 0.1
+      }
+      formantNoiseNode = audioCtx.createBufferSource()
+      formantNoiseNode.buffer = fmtBuffer
+      formantNoiseNode.loop = true
+
+      formantFilter1 = audioCtx.createBiquadFilter()
+      formantFilter1.type = 'bandpass'
+      formantFilter1.frequency.value = 700 // vowel-like formant ~"ah"
+      formantFilter1.Q.value = 8.0
+
+      formantFilter2 = audioCtx.createBiquadFilter()
+      formantFilter2.type = 'bandpass'
+      formantFilter2.frequency.value = 1200 // second formant
+      formantFilter2.Q.value = 6.0
+
+      formantGain = audioCtx.createGain()
+      formantGain.gain.value = 0
+
+      // Parallel formant chain
+      const formantMerge = audioCtx.createGain()
+      formantMerge.gain.value = 0.5
+      formantNoiseNode.connect(formantFilter1)
+      formantNoiseNode.connect(formantFilter2)
+      formantFilter1.connect(formantMerge)
+      formantFilter2.connect(formantMerge)
+      formantMerge.connect(formantGain)
+      formantGain.connect(dest)
+      formantNoiseNode.start()
+
+      // Number station gain node (shared for the digit oscillators)
+      numberStationGainNode = audioCtx.createGain()
+      numberStationGainNode.gain.value = 0
+      numberStationGainNode.connect(dest)
 
       audioInitialized = true
     } catch {
@@ -209,6 +309,212 @@ export function createRadioRoom(deps: RadioDeps): Room {
     }
   }
 
+  function updateShortwaveAmbience() {
+    if (!audioInitialized) return
+    // Vary the shortwave filter center frequency based on dial position
+    const normalizedFreq = (frequency - 88) / 20 // 0–1
+    if (shortwaveFilter1) {
+      shortwaveFilter1.frequency.value = 400 + normalizedFreq * 1200
+    }
+    if (shortwaveFilter2) {
+      shortwaveFilter2.frequency.value = 1500 + normalizedFreq * 3000
+    }
+    // Shortwave is louder between stations (no signal)
+    if (shortwaveGain) {
+      const noSignalFactor = 1 - signalStrength
+      shortwaveGain.gain.value = 0.005 + noSignalFactor * 0.012
+    }
+    // Formant voice-like modulation — occasional, ghostly
+    if (formantGain && formantFilter1 && formantFilter2) {
+      // Slow modulation cycle — creates the illusion of distant voices
+      const voiceCycle = Math.sin(time * 0.15) * Math.sin(time * 0.37)
+      const voiceActive = voiceCycle > 0.6 // only active ~15% of the time
+      if (voiceActive) {
+        // Shift formant frequencies slowly — like someone speaking far away
+        formantFilter1.frequency.value = 500 + Math.sin(time * 1.2) * 200
+        formantFilter2.frequency.value = 1000 + Math.sin(time * 0.8) * 400
+        formantGain.gain.value = (voiceCycle - 0.6) * 0.04 * (1 - signalStrength)
+      } else {
+        formantGain.gain.value = 0
+      }
+    }
+  }
+
+  // --- NUMBER STATION EASTER EGG ---
+  function triggerNumberStation(deltaTime: number) {
+    numberStationFrame++
+    // Trigger randomly — roughly every ~300 frames (at 60fps, about every 5 seconds)
+    // but only ~10% chance each window, so effectively quite rare
+    if (!numberStationActive && numberStationFrame > 300) {
+      numberStationFrame = 0
+      if (Math.random() < 0.08 && signalStrength < 0.3) {
+        startNumberSequence()
+      }
+    }
+    if (numberStationActive) {
+      updateNumberSequence(deltaTime)
+    }
+    // Fade out text
+    if (numberStationAlpha > 0 && !numberStationActive) {
+      numberStationAlpha -= deltaTime * 0.5
+      if (numberStationAlpha < 0) numberStationAlpha = 0
+    }
+  }
+
+  async function startNumberSequence() {
+    numberStationActive = true
+    numberStationStep = 0
+    numberStationStepTime = 0
+    // Generate 4–6 random digits
+    const len = 4 + Math.floor(Math.random() * 3)
+    numberStationSequence = []
+    for (let i = 0; i < len; i++) {
+      numberStationSequence.push(Math.floor(Math.random() * 10))
+    }
+    numberStationText = numberStationSequence.join(' ')
+    numberStationAlpha = 0.7
+
+    // Create oscillators for digit tones
+    try {
+      const audioCtx = await getAudioContext()
+      if (!audioCtx || !numberStationGainNode) return
+      numberStationGainNode.gain.value = 0.015
+
+      // Stop any old oscillators
+      for (const osc of numberStationOscs) {
+        try { osc.stop() } catch { /* ok */ }
+      }
+      numberStationOscs = []
+    } catch { /* ok */ }
+  }
+
+  async function updateNumberSequence(deltaTime: number) {
+    numberStationStepTime += deltaTime
+    const stepDuration = 0.35 // seconds per digit tone
+
+    if (numberStationStepTime >= stepDuration) {
+      numberStationStepTime -= stepDuration
+      numberStationStep++
+
+      if (numberStationStep > numberStationSequence.length) {
+        // Sequence complete
+        numberStationActive = false
+        if (numberStationGainNode) numberStationGainNode.gain.value = 0
+        // Clean up oscillators
+        for (const osc of numberStationOscs) {
+          try { osc.stop() } catch { /* ok */ }
+        }
+        numberStationOscs = []
+        return
+      }
+
+      // Play tone for current digit
+      try {
+        const audioCtx = await getAudioContext()
+        if (!audioCtx || !numberStationGainNode) return
+
+        const digit = numberStationSequence[numberStationStep - 1]
+        // Map digits 0–9 to frequencies (DTMF-inspired but not exact)
+        const freqMap = [900, 300, 350, 400, 450, 500, 550, 600, 700, 800]
+        const osc = audioCtx.createOscillator()
+        osc.type = 'square'
+        osc.frequency.value = freqMap[digit]
+        osc.connect(numberStationGainNode)
+        osc.start()
+        osc.stop(audioCtx.currentTime + stepDuration * 0.8)
+        numberStationOscs.push(osc)
+      } catch { /* ok */ }
+    }
+  }
+
+  // --- INTERFERENCE PATTERNS (Lissajous / moire between stations) ---
+  function renderInterference(ctx: CanvasRenderingContext2D, w: number, h: number, centerX: number, centerY: number, radius: number) {
+    if (signalStrength > 0.5) return // No interference when signal is strong
+
+    const intensity = (1 - signalStrength) * 0.6
+    const freqNorm = (frequency - 88) / 20
+
+    ctx.save()
+    ctx.globalAlpha = intensity * 0.25
+
+    // Lissajous curve parameters driven by frequency
+    const a = 2 + Math.floor(freqNorm * 5)
+    const b = 3 + Math.floor((1 - freqNorm) * 4)
+    const delta = time * 0.5 + freqNorm * Math.PI
+
+    const isAM = bandMode === 'AM'
+    const r = isAM ? 200 : 100
+    const g = isAM ? 170 : 255
+    const bVal = isAM ? 80 : 100
+
+    ctx.strokeStyle = `rgba(${r}, ${g}, ${bVal}, ${intensity * 0.3})`
+    ctx.lineWidth = 0.8
+    ctx.beginPath()
+
+    const steps = 300
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * Math.PI * 2
+      const x = centerX + Math.sin(a * t + delta) * radius
+      const y = centerY + Math.sin(b * t) * radius
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    // Second, offset Lissajous for moire effect
+    ctx.strokeStyle = `rgba(${r}, ${g}, ${bVal}, ${intensity * 0.15})`
+    ctx.lineWidth = 0.5
+    ctx.beginPath()
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * Math.PI * 2
+      const x = centerX + Math.sin((a + 1) * t + delta + 0.3) * radius * 0.9
+      const y = centerY + Math.sin((b + 1) * t + 0.7) * radius * 0.9
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    ctx.restore()
+  }
+
+  // --- SCANNER LINE ---
+  function renderScannerLine(ctx: CanvasRenderingContext2D, panelX: number, bandY: number, bandH: number, panelW: number) {
+    // Scanner sweeps and tracks the current frequency position
+    const targetX = (frequency - 88) / 20
+    // Smooth movement toward target
+    scannerX += (targetX - scannerX) * 0.04
+
+    const sx = panelX + scannerX * panelW
+    const isAM = bandMode === 'AM'
+    const r = isAM ? 200 : 50
+    const g = isAM ? 170 : 255
+    const bVal = isAM ? 50 : 50
+
+    // Main scanner line
+    ctx.save()
+    ctx.strokeStyle = `rgba(${r}, ${g}, ${bVal}, 0.4)`
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(sx, bandY - 2)
+    ctx.lineTo(sx, bandY + bandH + 2)
+    ctx.stroke()
+
+    // Glow/fade trail behind the scanner
+    const gradient = ctx.createLinearGradient(sx - 30, 0, sx, 0)
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${bVal}, 0)`)
+    gradient.addColorStop(1, `rgba(${r}, ${g}, ${bVal}, 0.1)`)
+    ctx.fillStyle = gradient
+    ctx.fillRect(sx - 30, bandY, 30, bandH)
+
+    // Bright tip dot
+    ctx.beginPath()
+    ctx.arc(sx, bandY + bandH / 2, 2, 0, Math.PI * 2)
+    ctx.fillStyle = `rgba(${r}, ${g}, ${bVal}, 0.6)`
+    ctx.fill()
+
+    ctx.restore()
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -227,6 +533,8 @@ export function createRadioRoom(deps: RadioDeps): Room {
     currentStation = signal.station
 
     updateAudio()
+    updateShortwaveAmbience()
+    triggerNumberStation(deltaTime)
 
     // --- LOCK-ON MECHANIC ---
     if (navigatingTo) {
@@ -284,8 +592,10 @@ export function createRadioRoom(deps: RadioDeps): Room {
 
     ctx.clearRect(0, 0, w, h)
 
-    // Background — dark with CRT-like vignette
-    ctx.fillStyle = 'rgba(5, 8, 5, 1)'
+    const isAM = bandMode === 'AM'
+
+    // Background — dark, tinted by band mode
+    ctx.fillStyle = isAM ? 'rgba(8, 6, 3, 1)' : 'rgba(5, 8, 5, 1)'
     ctx.fillRect(0, 0, w, h)
 
     // CRT scanlines
@@ -313,7 +623,9 @@ export function createRadioRoom(deps: RadioDeps): Room {
           staticLines.splice(i, 1)
           continue
         }
-        ctx.fillStyle = `rgba(200, 200, 180, ${line.alpha})`
+        ctx.fillStyle = isAM
+          ? `rgba(200, 180, 130, ${line.alpha})`
+          : `rgba(200, 200, 180, ${line.alpha})`
         ctx.fillRect(0, line.y, w, 1)
       }
       if (staticLines.length > 30) staticLines.splice(0, 10)
@@ -323,7 +635,9 @@ export function createRadioRoom(deps: RadioDeps): Room {
         const nx = Math.random() * w
         const ny = Math.random() * h
         const ns = 1 + Math.random() * 2
-        ctx.fillStyle = `rgba(${150 + Math.random() * 100}, ${150 + Math.random() * 80}, ${130 + Math.random() * 60}, ${staticIntensity * 0.08})`
+        ctx.fillStyle = isAM
+          ? `rgba(${180 + Math.random() * 75}, ${150 + Math.random() * 60}, ${80 + Math.random() * 40}, ${staticIntensity * 0.08})`
+          : `rgba(${150 + Math.random() * 100}, ${150 + Math.random() * 80}, ${130 + Math.random() * 60}, ${staticIntensity * 0.08})`
         ctx.fillRect(nx, ny, ns, ns)
       }
     }
@@ -333,23 +647,39 @@ export function createRadioRoom(deps: RadioDeps): Room {
     const panelW = w * 0.7
     const panelY = h * 0.15
 
-    // Frequency display
+    // Band-mode color palette
+    const bandColor = isAM ? '220, 180, 80' : '100, 255, 100'
+    const bandGlow = isAM ? 'rgba(220, 180, 80, 0.3)' : 'rgba(100, 255, 100, 0.3)'
+
+    // Frequency display — show AM kHz or FM MHz
+    const displayFreq = isAM
+      ? `${Math.round(530 + ((frequency - 88) / 20) * 1170)} kHz`
+      : `${frequency.toFixed(1)} MHz`
+
     ctx.font = '32px "Courier New", monospace'
-    ctx.fillStyle = `rgba(100, 255, 100, ${0.6 + Math.sin(time * 2) * 0.05})`
+    ctx.fillStyle = `rgba(${bandColor}, ${0.6 + Math.sin(time * 2) * 0.05})`
     ctx.textAlign = 'center'
-    ctx.fillText(`${frequency.toFixed(1)} MHz`, w / 2, panelY + 40)
+    ctx.fillText(displayFreq, w / 2, panelY + 40)
 
     // Glow behind frequency
-    ctx.shadowColor = 'rgba(100, 255, 100, 0.3)'
+    ctx.shadowColor = bandGlow
     ctx.shadowBlur = 20
-    ctx.fillText(`${frequency.toFixed(1)} MHz`, w / 2, panelY + 40)
+    ctx.fillText(displayFreq, w / 2, panelY + 40)
     ctx.shadowBlur = 0
+
+    // Band mode indicator
+    ctx.font = '11px monospace'
+    ctx.fillStyle = `rgba(${bandColor}, 0.25)`
+    ctx.textAlign = 'left'
+    ctx.fillText(`${bandMode} BAND`, panelX + 5, panelY + 15)
+    ctx.fillStyle = `rgba(${bandColor}, 0.1)`
+    ctx.fillText('[M] toggle', panelX + 5, panelY + 28)
 
     // Signal strength meter
     const meterX = panelX + panelW - 80
     const meterY = panelY + 15
     ctx.font = '12px monospace'
-    ctx.fillStyle = 'rgba(100, 255, 100, 0.2)'
+    ctx.fillStyle = `rgba(${bandColor}, 0.2)`
     ctx.textAlign = 'left'
     ctx.fillText('SIGNAL', meterX, meterY)
 
@@ -358,8 +688,8 @@ export function createRadioRoom(deps: RadioDeps): Room {
       const barH = 3 + i * 1.5
       const barFilled = signalStrength > (i + 1) / bars
       ctx.fillStyle = barFilled
-        ? `rgba(100, 255, 100, ${0.4 + i * 0.06})`
-        : 'rgba(100, 255, 100, 0.05)'
+        ? `rgba(${bandColor}, ${0.4 + i * 0.06})`
+        : `rgba(${bandColor}, 0.05)`
       ctx.fillRect(meterX + i * 9, meterY + 6 + (15 - barH), 6, barH)
     }
 
@@ -368,25 +698,41 @@ export function createRadioRoom(deps: RadioDeps): Room {
     const bandH = 60
 
     // Band background
-    ctx.fillStyle = 'rgba(10, 20, 10, 0.5)'
+    ctx.fillStyle = isAM ? 'rgba(15, 12, 5, 0.5)' : 'rgba(10, 20, 10, 0.5)'
     ctx.fillRect(panelX, bandY, panelW, bandH)
-    ctx.strokeStyle = 'rgba(100, 255, 100, 0.1)'
+    ctx.strokeStyle = `rgba(${bandColor}, 0.1)`
     ctx.lineWidth = 0.5
     ctx.strokeRect(panelX, bandY, panelW, bandH)
 
-    // Frequency ticks
-    for (let f = 88; f <= 108; f += 2) {
-      const x = panelX + ((f - 88) / 20) * panelW
-      ctx.strokeStyle = 'rgba(100, 255, 100, 0.15)'
-      ctx.beginPath()
-      ctx.moveTo(x, bandY)
-      ctx.lineTo(x, bandY + bandH)
-      ctx.stroke()
+    // Frequency ticks — different labels for AM vs FM
+    if (isAM) {
+      for (let f = 600; f <= 1600; f += 200) {
+        const x = panelX + ((f - 530) / 1170) * panelW
+        ctx.strokeStyle = `rgba(${bandColor}, 0.15)`
+        ctx.beginPath()
+        ctx.moveTo(x, bandY)
+        ctx.lineTo(x, bandY + bandH)
+        ctx.stroke()
 
-      ctx.font = '11px monospace'
-      ctx.fillStyle = 'rgba(100, 255, 100, 0.2)'
-      ctx.textAlign = 'center'
-      ctx.fillText(String(f), x, bandY + bandH + 12)
+        ctx.font = '11px monospace'
+        ctx.fillStyle = `rgba(${bandColor}, 0.2)`
+        ctx.textAlign = 'center'
+        ctx.fillText(String(f), x, bandY + bandH + 12)
+      }
+    } else {
+      for (let f = 88; f <= 108; f += 2) {
+        const x = panelX + ((f - 88) / 20) * panelW
+        ctx.strokeStyle = `rgba(${bandColor}, 0.15)`
+        ctx.beginPath()
+        ctx.moveTo(x, bandY)
+        ctx.lineTo(x, bandY + bandH)
+        ctx.stroke()
+
+        ctx.font = '11px monospace'
+        ctx.fillStyle = `rgba(${bandColor}, 0.2)`
+        ctx.textAlign = 'center'
+        ctx.fillText(String(f), x, bandY + bandH + 12)
+      }
     }
 
     // Station markers on the band
@@ -396,13 +742,13 @@ export function createRadioRoom(deps: RadioDeps): Room {
       const barHeight = health * bandH * 0.8
 
       // Station signal bar
-      ctx.fillStyle = `rgba(100, 255, 100, ${0.05 + health * 0.15})`
+      ctx.fillStyle = `rgba(${bandColor}, ${0.05 + health * 0.15})`
       ctx.fillRect(x - 1, bandY + bandH - barHeight, 3, barHeight)
 
       // Highlight if near current frequency
       const dist = Math.abs(frequency - s.frequency)
       if (dist < s.bandwidth) {
-        ctx.fillStyle = `rgba(100, 255, 100, ${0.1 * (1 - dist / s.bandwidth)})`
+        ctx.fillStyle = `rgba(${bandColor}, ${0.1 * (1 - dist / s.bandwidth)})`
         const glowW = s.bandwidth / 20 * panelW
         ctx.fillRect(x - glowW / 2, bandY, glowW, bandH)
       }
@@ -416,7 +762,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
 
       // Base blip — barely visible (like a tiny signal spike among noise)
       const baseAlpha = 0.025 + Math.sin(time * 1.5 + sig.freq) * 0.01
-      ctx.fillStyle = `rgba(100, 255, 100, ${baseAlpha})`
+      ctx.fillStyle = `rgba(${bandColor}, ${baseAlpha})`
       ctx.fillRect(sx - 0.5, bandY + bandH * 0.4, 1.5, bandH * 0.2)
 
       // When tuning near, the blip pulses and grows
@@ -424,18 +770,25 @@ export function createRadioRoom(deps: RadioDeps): Room {
         const nearness = 1 - (dist / (LOCK_THRESHOLD * 2))
         const pulse = 0.05 + nearness * 0.15 + Math.sin(time * 5 + sig.freq) * nearness * 0.08
         const blipH = bandH * (0.3 + nearness * 0.5)
-        ctx.fillStyle = `rgba(100, 255, 100, ${pulse})`
+        ctx.fillStyle = `rgba(${bandColor}, ${pulse})`
         ctx.fillRect(sx - 1, bandY + (bandH - blipH) / 2, 2.5, blipH)
 
         // Faint glow around the blip when very close
         if (dist < LOCK_THRESHOLD) {
           const lockGlow = 0.03 + nearness * 0.08
           const glowW = LOCK_THRESHOLD / 20 * panelW
-          ctx.fillStyle = `rgba(100, 255, 100, ${lockGlow})`
+          ctx.fillStyle = `rgba(${bandColor}, ${lockGlow})`
           ctx.fillRect(sx - glowW / 2, bandY, glowW, bandH)
         }
       }
     }
+
+    // --- SCANNER LINE ---
+    renderScannerLine(ctx, panelX, bandY, bandH, panelW)
+
+    // --- INTERFERENCE PATTERNS ---
+    const interferenceY = bandY + bandH + 120
+    renderInterference(ctx, w, h, w / 2, interferenceY, Math.min(w, h) * 0.12)
 
     // Current frequency needle
     const needleX = panelX + ((frequency - 88) / 20) * panelW
@@ -460,9 +813,9 @@ export function createRadioRoom(deps: RadioDeps): Room {
     const dialX = panelX + (panelW - dialW) / 2
 
     // Dial track
-    ctx.fillStyle = 'rgba(30, 40, 30, 0.5)'
+    ctx.fillStyle = isAM ? 'rgba(40, 30, 15, 0.5)' : 'rgba(30, 40, 30, 0.5)'
     ctx.fillRect(dialX, dialY, dialW, 8)
-    ctx.strokeStyle = 'rgba(100, 255, 100, 0.1)'
+    ctx.strokeStyle = `rgba(${bandColor}, 0.1)`
     ctx.lineWidth = 0.5
     ctx.strokeRect(dialX, dialY, dialW, 8)
 
@@ -470,9 +823,9 @@ export function createRadioRoom(deps: RadioDeps): Room {
     const thumbX = dialX + ((frequency - 88) / 20) * dialW
     ctx.beginPath()
     ctx.arc(thumbX, dialY + 4, 10, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(100, 255, 100, 0.3)'
+    ctx.fillStyle = `rgba(${bandColor}, 0.3)`
     ctx.fill()
-    ctx.strokeStyle = 'rgba(100, 255, 100, 0.5)'
+    ctx.strokeStyle = `rgba(${bandColor}, 0.5)`
     ctx.lineWidth = 1
     ctx.stroke()
 
@@ -480,7 +833,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
     ctx.beginPath()
     ctx.moveTo(thumbX, dialY - 2)
     ctx.lineTo(thumbX, dialY + 10)
-    ctx.strokeStyle = 'rgba(100, 255, 100, 0.4)'
+    ctx.strokeStyle = `rgba(${bandColor}, 0.4)`
     ctx.stroke()
 
     // --- MEMORY TEXT DISPLAY ---
@@ -494,12 +847,12 @@ export function createRadioRoom(deps: RadioDeps): Room {
 
       // Station label
       ctx.font = '12px monospace'
-      ctx.fillStyle = `rgba(100, 255, 100, ${clarity * 0.3})`
+      ctx.fillStyle = `rgba(${bandColor}, ${clarity * 0.3})`
       ctx.textAlign = 'center'
-      ctx.fillText(
-        `station ${currentStation.frequency.toFixed(1)} — signal ${Math.floor(signalStrength * 100)}%`,
-        w / 2, textY
-      )
+      const stationLabel = isAM
+        ? `station ${Math.round(530 + ((currentStation.frequency - 88) / 20) * 1170)} — signal ${Math.floor(signalStrength * 100)}%`
+        : `station ${currentStation.frequency.toFixed(1)} — signal ${Math.floor(signalStrength * 100)}%`
+      ctx.fillText(stationLabel, w / 2, textY)
 
       // Memory text — clarity affects visibility
       const text = mem.currentText
@@ -522,7 +875,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
 
           const charX = startX + j * 8
           const jitter = (1 - clarity) * 2
-          ctx.fillStyle = `rgba(100, 255, 100, ${charClarity * 0.7})`
+          ctx.fillStyle = `rgba(${bandColor}, ${charClarity * 0.7})`
           ctx.fillText(
             line[j],
             charX + (Math.random() - 0.5) * jitter,
@@ -534,7 +887,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       // Time info
       const age = Math.floor((Date.now() - mem.timestamp) / (1000 * 60 * 60 * 24))
       ctx.font = '12px monospace'
-      ctx.fillStyle = `rgba(100, 255, 100, ${clarity * 0.15})`
+      ctx.fillStyle = `rgba(${bandColor}, ${clarity * 0.15})`
       ctx.textAlign = 'center'
       ctx.fillText(
         `${age}d old · ${Math.floor(mem.degradation * 100)}% degraded`,
@@ -543,7 +896,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
     } else {
       // No signal — show noise text
       ctx.font = '13px "Cormorant Garamond", serif'
-      ctx.fillStyle = `rgba(100, 255, 100, ${0.08 + Math.sin(time * 2) * 0.03})`
+      ctx.fillStyle = `rgba(${bandColor}, ${0.08 + Math.sin(time * 2) * 0.03})`
       ctx.textAlign = 'center'
 
       if (stations.length === 0) {
@@ -569,7 +922,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       const pulseAlpha = 0.05 + lockProgress * 0.15 + Math.sin(time * 4) * 0.03
       ctx.beginPath()
       ctx.arc(lockCenterX, panelY + 35, pulseRadius, 0, Math.PI * 2)
-      ctx.strokeStyle = `rgba(100, 255, 100, ${pulseAlpha})`
+      ctx.strokeStyle = `rgba(${bandColor}, ${pulseAlpha})`
       ctx.lineWidth = 1 + lockProgress * 2
       ctx.stroke()
 
@@ -578,7 +931,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
         const pulseRadius2 = 90 + Math.sin(time * 6 + 1) * 6
         ctx.beginPath()
         ctx.arc(lockCenterX, panelY + 35, pulseRadius2, 0, Math.PI * 2)
-        ctx.strokeStyle = `rgba(100, 255, 100, ${pulseAlpha * 0.5})`
+        ctx.strokeStyle = `rgba(${bandColor}, ${pulseAlpha * 0.5})`
         ctx.lineWidth = 0.5
         ctx.stroke()
       }
@@ -592,7 +945,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       // Bar background
       ctx.fillStyle = 'rgba(10, 20, 10, 0.4)'
       ctx.fillRect(barX - 2, lockY - 2, barW + 4, barH + 4)
-      ctx.strokeStyle = 'rgba(100, 255, 100, 0.15)'
+      ctx.strokeStyle = `rgba(${bandColor}, 0.15)`
       ctx.lineWidth = 0.5
       ctx.strokeRect(barX - 2, lockY - 2, barW + 4, barH + 4)
 
@@ -611,7 +964,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
           const flicker = 0.6 + Math.sin(time * 10 + i * 0.5) * 0.15
           ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${flicker})`
         } else {
-          ctx.fillStyle = 'rgba(100, 255, 100, 0.03)'
+          ctx.fillStyle = `rgba(${bandColor}, 0.03)`
         }
         ctx.fillRect(segX + 0.5, lockY, segmentW - 1, barH)
       }
@@ -619,7 +972,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
       // LOCK label above the bar
       ctx.font = '11px monospace'
       ctx.textAlign = 'left'
-      ctx.fillStyle = `rgba(100, 255, 100, ${0.15 + lockProgress * 0.3})`
+      ctx.fillStyle = `rgba(${bandColor}, ${0.15 + lockProgress * 0.3})`
       ctx.fillText('LOCK', barX, lockY - 5)
       ctx.textAlign = 'right'
       ctx.fillText(`${Math.floor(lockProgress * 100)}%`, barX + barW, lockY - 5)
@@ -635,7 +988,7 @@ export function createRadioRoom(deps: RadioDeps): Room {
         ctx.fillText('⟫ LOCKED ⟫', lockCenterX, labelY)
 
         // Glow
-        ctx.shadowColor = 'rgba(100, 255, 100, 0.6)'
+        ctx.shadowColor = bandGlow
         ctx.shadowBlur = 15
         ctx.fillText('⟫ LOCKED ⟫', lockCenterX, labelY)
         ctx.shadowBlur = 0
@@ -643,33 +996,53 @@ export function createRadioRoom(deps: RadioDeps): Room {
         // Show room label
         ctx.font = '12px "Cormorant Garamond", serif'
         const labelAlpha = (lockProgress - 0.6) / 0.4 * 0.5
-        ctx.fillStyle = `rgba(100, 255, 100, ${labelAlpha})`
+        ctx.fillStyle = `rgba(${bandColor}, ${labelAlpha})`
         ctx.fillText(lockedSignal.label, lockCenterX, labelY)
       } else if (lockProgress >= 0.3) {
         // "signal detected..."
         ctx.font = '12px monospace'
         const detectAlpha = (lockProgress - 0.3) / 0.3 * 0.25
-        ctx.fillStyle = `rgba(100, 255, 100, ${detectAlpha})`
+        ctx.fillStyle = `rgba(${bandColor}, ${detectAlpha})`
         const dots = '.'.repeat(1 + Math.floor(time * 3) % 3)
         ctx.fillText(`signal detected${dots}`, lockCenterX, labelY)
       }
     }
 
+    // --- NUMBER STATION TEXT (overlaid when active) ---
+    if (numberStationAlpha > 0.01) {
+      ctx.save()
+      ctx.font = '24px "Courier New", monospace'
+      ctx.textAlign = 'center'
+      // Red-tinted encoded text, slightly flickering
+      const nsFlicker = numberStationAlpha * (0.8 + Math.sin(time * 12) * 0.2)
+      ctx.fillStyle = `rgba(255, 80, 60, ${nsFlicker})`
+      ctx.shadowColor = 'rgba(255, 80, 60, 0.4)'
+      ctx.shadowBlur = 10
+      ctx.fillText(numberStationText, w / 2, h * 0.45)
+      ctx.shadowBlur = 0
+
+      // "ENCODED TRANSMISSION" label above
+      ctx.font = '10px monospace'
+      ctx.fillStyle = `rgba(255, 80, 60, ${nsFlicker * 0.5})`
+      ctx.fillText('ENCODED TRANSMISSION', w / 2, h * 0.45 - 20)
+      ctx.restore()
+    }
+
     // Title
     ctx.font = '12px "Cormorant Garamond", serif'
-    ctx.fillStyle = `rgba(100, 255, 100, ${0.1 + Math.sin(time * 0.3) * 0.03})`
+    ctx.fillStyle = `rgba(${bandColor}, ${0.1 + Math.sin(time * 0.3) * 0.03})`
     ctx.textAlign = 'center'
     ctx.fillText('the radio', w / 2, 30)
 
     // Hint
     ctx.font = '12px "Cormorant Garamond", serif'
-    ctx.fillStyle = 'rgba(100, 255, 100, 0.06)'
+    ctx.fillStyle = `rgba(${bandColor}, 0.06)`
     ctx.fillText('drag the dial to tune · hold steady on hidden frequencies to lock on', w / 2, h - 20)
 
     // Navigation flash overlay (rendered last, on top of everything)
     if (navigatingTo && lockFlashTime > 0) {
       const flashAlpha = Math.sin(lockFlashTime * Math.PI / 0.6) * 0.6
-      ctx.fillStyle = `rgba(100, 255, 100, ${Math.max(0, flashAlpha)})`
+      ctx.fillStyle = `rgba(${bandColor}, ${Math.max(0, flashAlpha)})`
       ctx.fillRect(0, 0, w, h)
     }
   }
@@ -764,6 +1137,15 @@ export function createRadioRoom(deps: RadioDeps): Room {
       }
       window.addEventListener('resize', onResize)
 
+      // AM/FM toggle key handler
+      keyHandler = (e: KeyboardEvent) => {
+        if (!active) return
+        if (e.key === 'm' || e.key === 'M') {
+          bandMode = bandMode === 'FM' ? 'AM' : 'FM'
+        }
+      }
+      window.addEventListener('keydown', keyHandler)
+
       return overlay
     },
 
@@ -788,13 +1170,32 @@ export function createRadioRoom(deps: RadioDeps): Room {
       // Fade out audio
       if (noiseGain) noiseGain.gain.value = 0
       if (toneGain) toneGain.gain.value = 0
+      if (shortwaveGain) shortwaveGain.gain.value = 0
+      if (formantGain) formantGain.gain.value = 0
+      if (numberStationGainNode) numberStationGainNode.gain.value = 0
+      // Stop any active number station oscillators
+      for (const osc of numberStationOscs) {
+        try { osc.stop() } catch { /* ok */ }
+      }
+      numberStationOscs = []
+      numberStationActive = false
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
-      if (noiseNode) { try { noiseNode.stop() } catch {} }
-      if (toneOsc) { try { toneOsc.stop() } catch {} }
+      if (noiseNode) { try { noiseNode.stop() } catch { /* ok */ } }
+      if (toneOsc) { try { toneOsc.stop() } catch { /* ok */ } }
+      if (shortwaveNoiseNode) { try { shortwaveNoiseNode.stop() } catch { /* ok */ } }
+      if (formantNoiseNode) { try { formantNoiseNode.stop() } catch { /* ok */ } }
+      for (const osc of numberStationOscs) {
+        try { osc.stop() } catch { /* ok */ }
+      }
+      numberStationOscs = []
+      if (keyHandler) {
+        window.removeEventListener('keydown', keyHandler)
+        keyHandler = null
+      }
       overlay?.remove()
     },
   }

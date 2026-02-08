@@ -98,6 +98,13 @@ const DECAY_MEDITATIONS = [
   'the great meme reset: culture trying to forget itself',
   'AI hallucinations are the internet\'s false memories',
   'model collapse: when AI forgets what was real',
+  '84% of coral reefs are bleaching. even the ocean forgets its colors.',
+  'the dark matter map looks like a neural network. the universe thinks.',
+  'two black holes collided and spacetime rang like a bell for three seconds',
+  'coral grows one centimeter per year and dies in one summer',
+  'marine species flee poleward 10x faster than land creatures. thermal memory.',
+  'the first three-year period above 1.5°C. the ceiling became the floor.',
+  'gravitationally lensed light arrives decades late. memory delayed by spacetime.',
 ]
 
 export class DigitalDecay {
