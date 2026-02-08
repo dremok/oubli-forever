@@ -41,13 +41,15 @@ After context compaction/reset:
 - **Connections between rooms are essential.** Rooms should NOT be isolated islands. Build passages, cross-references, thematic links, shared effects. The house is interconnected.
 - Variety in feature types: real-time data, external APIs, generative systems, pure interaction, games, tools, narratives, live feeds, sensor data, browser APIs — AND memory-based rooms that do new things with memories.
 - Each new room should feel genuinely different, but still part of the same house.
+- **WebGPU compute shaders** are now cross-browser (2026). Million-particle simulations at 60fps. Three.js TSL compiles to both WGSL and GLSL. Use `WebGPURenderer` with automatic WebGL 2 fallback for heavy rooms.
+- **Intentional imperfection is the 2026 aesthetic** — visible process marks, scan artifacts, hand-drawn textures over digital geometry. "Guaranteed human" is a premium. Oubli should feel made, not generated.
+- **The Temporal API** is now in browsers — timezone-aware, immutable date/time. Use for precise decay calculations, duration tracking, cross-timezone synchronization.
 
 ## Cultural Grounding — CRITICAL
 - **Every new feature must be inspired by something real** — current events, cultural trends, scientific discoveries, art movements, technological shifts, social phenomena happening NOW (2025-2026).
 - Do NOT build generic rooms. Build rooms that could only exist in this specific moment in time.
 - **Web search BEFORE building.** Find what's happening in the world — new research, cultural moments, emerging technologies, viral phenomena, political shifts, environmental events — and let those inspire features.
 - **Use external data innovatively.** Don't just fetch and display data — transform it, let it drive aesthetics, make it emotional, combine it with the memory system, use it as a metaphor.
-- Examples of what "culturally grounded" means: a room that visualizes real-time CO2 levels as rising water, a room that pulls headlines and lets them decay, a room that uses the ISS position to affect lighting, a room where AI-generated art responds to current news sentiment.
 - The goal: someone visiting Oubli should feel they are experiencing THIS moment in time, not a timeless generic art piece.
 
 ## Navigation — GRAPH + IN-ROOM PORTALS (Restructured)
@@ -77,7 +79,6 @@ After context compaction/reset:
 - Generated assets can be **downloaded and committed to the repo** — they don't need runtime API calls
 - The client does NOT need API keys — assets are static files served with the app
 - Use this for: background textures, ambient sounds, voice lines, visual elements
-- Think: generate a set of whisper audio files, generate background textures for rooms, generate ambient soundscapes
 
 ## Workflow
 - Commit and push after every major feature

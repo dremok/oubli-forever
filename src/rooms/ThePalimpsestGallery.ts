@@ -63,7 +63,22 @@ interface InkDrip {
   trail: number[] // y-positions of permanent trail marks
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'palimpsest: a manuscript scraped clean and rewritten. every surface hides an earlier text.',
+  'tracey emin\'s "my bed": confession as found object. the mattress remembers what you did.',
+  'anti-AI movement 2026: 45% of creative directors reject AI images. the hand is proof.',
+  'cy twombly scrawled over classical beauty. vandalism or love letter? both.',
+  'the dead sea scrolls: text surviving 2000 years by accident. meaning persists in fragments.',
+  'intentional imperfection (2026 trend): scan artifacts, tape marks. proof of human making.',
+  'borges\' "library of babel": every possible book already exists. meaning drowns in completeness.',
+  'the met has 1.5 million artworks. most are in storage. the gallery is always a palimpsest of omissions.',
+  'CRISPR memory reversal: genes that forgot how to remember. the text resurfaces.',
+  'gerhard richter paints photographs then scrapes them. the squeegee as editing tool.',
+]
+
 export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1008,6 +1023,30 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     c.fillStyle = 'rgba(200, 180, 140, 0.06)'
     c.textAlign = 'left'
     c.fillText(`${pairingsViewed} pairings`, 12, h - 18)
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 23) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(200, 180, 140, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
   }
 
   return {

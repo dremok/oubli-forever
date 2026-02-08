@@ -99,7 +99,22 @@ interface CuttingRoomFragment {
   cycleTime: number     // current time within cycle
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'fennell\'s wuthering heights (feb 2026): gothic-erotic adaptation. cinema as séance.',
+  'charli XCX "the moment" (a24, 2026): trying to capture what can\'t be captured on film.',
+  'the lumière brothers showed a train and the audience screamed. projection creates reality.',
+  'tarkovsky\'s "stalker": a room that grants your deepest wish. cinema as memory architecture.',
+  'celluloid nitrate: early film stock that self-ignited. memory as fire hazard.',
+  'chris marker\'s "la jetée": one still photograph that moves. memory projected as cinema.',
+  'the cutting room floor: what the editor removes defines the film more than what remains.',
+  'defiantly analog: milan 2026 olympics opening used no digital screens. pure projection.',
+  'nam june paik stacked TVs into sculptures. the projector as object, not window.',
+  'the last blockbuster in bend, oregon. a temple to physical media in a streaming world.',
+]
+
 export function createProjectionRoom(deps: ProjectionDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1379,6 +1394,30 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
 
     // Nav leader overlay (countdown before navigating)
     if (navLeaderActive) drawNavLeader(c, w, h)
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(180, 160, 140, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
   }
 
   return {

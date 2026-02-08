@@ -132,7 +132,22 @@ const MORRISON_QUOTES = [
   'Freeing yourself was one thing; claiming ownership of that freed self was another.',
 ]
 
+const CULTURAL_INSCRIPTIONS = [
+  'toni morrison\'s beloved: "rememory" — the past is a place you can walk into.',
+  'episodic and semantic memory share the same brain networks (2026). remembering is reimagining.',
+  'CRISPR memory reversal (virginia tech 2026): silenced genes reactivated. the ghost remembers.',
+  'iGluSnFR4: molecular sensor eavesdrops on synaptic whispers. catching memories mid-transmission.',
+  'proust\'s madeleine: involuntary memory triggered by taste. the body remembers what the mind forgets.',
+  'sydney biennale 2026 "rememory": art as collective remembering in a forgetting world.',
+  'shape-shifting molecular devices (CeNSE 2026): matter that remembers its former shape.',
+  'w.g. sebald walked through ruins with a camera. documentation as memorial practice.',
+  'the hippocampus replays experiences during sleep. dreaming is memory rehearsal.',
+  'hosnedlova echo (white cube 2026): living fungal art that mutates. memory as organism.',
+]
+
 export function createRememoryRoom(deps: RememoryDeps): Room {
+  let inscriptionTimer = 0
+  let inscriptionIdx = 0
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -1321,6 +1336,30 @@ export function createRememoryRoom(deps: RememoryDeps): Room {
     c.font = '10px monospace'
     c.fillStyle = `rgba(160, 150, 140, ${0.025 + Math.sin(time * 0.12) * 0.008})`
     c.fillText('epigenetic memory: what the cell remembers without remembering how', w / 2, h - 4)
+
+    // Cultural inscriptions
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const insText = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(160, 150, 170, 0.03)'
+    const insMaxW = w * 0.75
+    const insWords = insText.split(' ')
+    const insLines: string[] = []
+    let insLine = ''
+    for (const word of insWords) {
+      const test = insLine ? insLine + ' ' + word : word
+      if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+      else insLine = test
+    }
+    if (insLine) insLines.push(insLine)
+    for (let li = 0; li < insLines.length; li++) {
+      c.fillText(insLines[li], w / 2, h - 50 + li * 14)
+    }
   }
 
   return {
