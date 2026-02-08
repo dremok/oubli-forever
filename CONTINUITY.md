@@ -1462,6 +1462,14 @@ New global visual effect: every 35-75 seconds in the void, paired "quantum twin"
 ### 139. Eclipse Ring of Fire in the Glacarium
 The Glacarium sky now shows a ring of fire as the Feb 17 annular eclipse approaches. Intensity grows quadratically over 14 days, peaks on eclipse day, fades 3 days after. Countdown label reads "eclipse in N days" then "ring of fire — antarctica" on the day. Plus 2 new cultural inscriptions.
 
+### 140. TheLabyrinth Complete Rewrite — Infinite Procedural Maze
+Complete rewrite of the labyrinth from a fixed 25x25 grid to an infinite hash-based procedural maze. Three major changes:
+1. **Keyboard-only movement** — WASD to move, arrow keys to turn. Mouse removed entirely.
+2. **Infinite generative maze with forgetting** — Hash functions determine maze topology. World divided into 12x12 regions with salts. Regions you leave are "forgotten" (salt increments), changing topology if you return. Only nearby regions stay stable. The maze literally forgets its own corridors.
+3. **Jump scares** — 5 FAL-generated scare images + 4 ElevenLabs scare sounds (committed as static assets in `public/assets/labyrinth/`). Tension builds when trapped in dead ends. Scares trigger at high tension with 90-second cooldown.
+
+Also: DDA raycasting for performance, Wikipedia fragments on walls, minimap with ghost cells for forgotten regions, portal rooms to connected spaces (cipher, cartographer, library). Inspired by Borges' "Garden of Forking Paths", grey matter erosion research, Shiota's thread installations.
+
 ---
-*Last updated: Era 9, Feature 139 — Vacuum fluctuations + eclipse ring + cultural research round 8*
-*"the void is not empty. it seethes with particles that exist for a fraction of a second."*
+*Last updated: Era 9, Feature 140 — Infinite labyrinth with forgetting + jump scares*
+*"the labyrinth forgets its own corridors. the way back has changed."*
