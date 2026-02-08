@@ -1421,6 +1421,29 @@ Added cycling cultural inscription text (10 per room, ~22-25s cycle) to rooms th
 - Each room's inscriptions themed to its subject (fire/ocean/music/etc.) + Feb 2026 research
 - 40 new whisper fragments + 8 new DigitalDecay meditations from round 6 research
 
+### 132. Cultural Inscriptions — 12 More Rooms
+Extended cultural inscriptions to: TheAquifer, TheAutomaton, TheBetween, TheDisintegrationLoops, TheLoom, ThePendulum, TheRoots, TheSketchpad, TheWell, ThePalimpsestGallery, TheProjectionRoom, TheRememory. Total rooms with inscriptions now ~30. Each themed to room subject + Feb 2026 research findings.
+
+### 133. Self-Evolving CLAUDE.md
+Groundbreaking meta-feature: the project's instructions (CLAUDE.md) now undergo the same forgetting/growth dynamics as the rooms. After each compaction:
+- Agent researches tech/programming trends alongside cultural research
+- Adds 2-4 new lines to CLAUDE.md inspired by findings
+- Randomly removes 2-3 stale lines
+- SessionStart hook (`.claude/settings.json`) reminds agent to mutate
+- First mutation: added WebGPU/TSL, intentional imperfection, Temporal API knowledge. Forgot stale examples.
+
+### 134. Oubli Origins
+Added "Origins" section to CLAUDE.md: oubli is both French for "forgetting" AND a sweet golden West African fruit. Loss that feeds, decay that sweetens, memory that ripens and falls. This duality is the project's soul.
+
+### 135. Cultural Research Round 7 — Tech/Programming Trends
+- **WebGPU cross-browser**: All major browsers ship WebGPU (2026). Million-particle simulations feasible.
+- **Three.js TSL**: New shading language compiles to both WGSL and GLSL. Write once, run anywhere.
+- **Temporal API**: Now in Chrome 144+/Firefox 139+. Immutable, timezone-aware dates.
+- **GENUARY 2026**: Quine, recursive grids, organic geometry, intentional imperfection.
+- **"Guaranteed human" premium**: Anti-AI-perfection movement dominant in 2026 creative industry.
+- **WASI 0.3**: Native async support for WebAssembly. Wasm usage rising.
+- **p5.js 2.2**: WebGPU rendering mode in creative coding.
+
 ---
-*Last updated: Era 9, Feature 131 — Cultural inscriptions across 14 rooms + cultural round 6*
-*"the alerce trees have lived 3,600 years. this february, they burn."*
+*Last updated: Era 9, Feature 135 — Self-evolving instructions + cultural inscriptions across 30 rooms*
+*"oubli: forgetting in french. a sweet golden fruit in west africa. both."*
