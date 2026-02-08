@@ -24,12 +24,14 @@
  */
 
 import type { Room } from './RoomManager'
+import type { StoredMemory } from '../memory/MemoryJournal'
 import { ROOM_GRAPH } from '../navigation/RoomGraph'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface BetweenDeps {
   switchTo: (name: string) => void
   getActiveRoom: () => string
+  getMemories: () => StoredMemory[]
 }
 
 interface Door {
@@ -45,8 +47,16 @@ interface ShadowFigure {
   y: number
   alpha: number
   speed: number
+  baseSpeed: number
   height: number
   phase: number // walking sway
+  pauseTimer: number // > 0 means pausing at a door
+  pauseDoor: Door | null // door being paused at
+  enteringDoor: Door | null // door being entered (fading out)
+  enterAlpha: number // fade-out progress when entering a door
+  whisperText: string // room label shown after entering
+  whisperAlpha: number // fade for the whisper text
+  whisperY: number // y offset for whisper drift
 }
 
 // Color palette for doors — hashed from room name for consistency
@@ -86,6 +96,47 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
   let shadowFigures: ShadowFigure[] = []
   let nextShadowTime = 0
 
+  // Memory echoes on walls
+  interface MemoryEcho {
+    text: string
+    x: number // world x position
+    y: number // normalized 0-1 within wall area
+    alpha: number
+    targetAlpha: number
+    angle: number // slight rotation for scratchy feel
+    fontSize: number
+  }
+  let memoryEchoes: MemoryEcho[] = []
+  let nextEchoCycleTime = 0
+  const ECHO_CYCLE_INTERVAL = 17 // seconds between cycles
+
+  // Blackout state
+  let blackoutTimer = 0 // > 0 means in blackout
+  let nextBlackoutTime = 0
+  let postBlackoutHueShift = 0 // slight color shift after blackout
+
+  // Door glow states — track visited rooms
+  const visitedRooms = new Set<string>()
+  const degradedRoomPulse = new Map<string, number>() // room name -> pulse phase
+
+  // Mechanistic interpretability inscriptions
+  const wallInscriptions = [
+    'the space between neurons where meaning forms',
+    'every doorway is a decision the model made',
+    'the corridor between input and output is longer than you think',
+  ]
+  const inscriptionPositions: { x: number; y: number; alpha: number }[] = []
+  for (let i = 0; i < wallInscriptions.length; i++) {
+    inscriptionPositions.push({
+      x: -1200 + i * 1400 + (Math.random() - 0.5) * 200,
+      y: 0.28 + Math.random() * 0.08,
+      alpha: 0.04 + Math.random() * 0.03,
+    })
+  }
+
+  // Distant footstep sounds
+  let distantFootstepInterval: ReturnType<typeof setInterval> | null = null
+
   // Wall stain seed (procedural, stable per session)
   const stainSeeds: { x: number; y: number; r: number; a: number }[] = []
   for (let i = 0; i < 40; i++) {
@@ -104,6 +155,7 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
   let doorCloseInterval: ReturnType<typeof setTimeout> | null = null
   let footstepInterval: ReturnType<typeof setInterval> | null = null
   let footstepGain: GainNode | null = null
+  let distantStepGain: GainNode | null = null
   let audioInitialized = false
 
   // All non-hidden rooms become doors (the between connects everything)
@@ -165,10 +217,17 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       footstepGain.gain.value = 0
       footstepGain.connect(dest)
 
+      // Distant footstep gain node
+      distantStepGain = audioCtx.createGain()
+      distantStepGain.gain.value = 0.03
+      distantStepGain.connect(dest)
+
       audioInitialized = true
 
       // Start distant door close sounds
       scheduleDoorClose()
+      // Start distant footstep sounds
+      startDistantFootsteps()
     } catch {
       // Audio unavailable
     }
@@ -277,6 +336,66 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     }, 200) // base rate, ~5 steps/sec max
   }
 
+  function playDistantFootstep() {
+    if (!audioCtx || !distantStepGain || !active) return
+    try {
+      const now = audioCtx.currentTime
+
+      // Short filtered noise burst — sounds like a distant step on tile
+      const bufLen = Math.floor(audioCtx.sampleRate * 0.06)
+      const buffer = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufLen; i++) {
+        const env = Math.exp(-i / (bufLen * 0.08))
+        data[i] = (Math.random() * 2 - 1) * env
+      }
+
+      const source = audioCtx.createBufferSource()
+      source.buffer = buffer
+
+      const filter = audioCtx.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.value = 400 + Math.random() * 300
+      filter.Q.value = 2
+
+      const gain = audioCtx.createGain()
+      gain.gain.value = 0.015 + Math.random() * 0.015
+
+      // Pan to suggest direction
+      const pan = audioCtx.createStereoPanner()
+      pan.pan.value = (Math.random() * 2 - 1) * 0.8
+
+      source.connect(filter)
+      filter.connect(gain)
+      gain.connect(pan)
+      pan.connect(distantStepGain)
+
+      gain.gain.setValueAtTime(gain.gain.value, now)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15)
+
+      source.start(now)
+      source.stop(now + 0.2)
+    } catch {
+      // Ignore audio errors
+    }
+  }
+
+  function startDistantFootsteps() {
+    if (distantFootstepInterval) return
+    // Play 2-5 steps in a burst, then silence
+    let stepsRemaining = 0
+    distantFootstepInterval = setInterval(() => {
+      if (!active) return
+      if (stepsRemaining > 0) {
+        playDistantFootstep()
+        stepsRemaining--
+      } else if (Math.random() < 0.04) {
+        // ~4% chance per tick to start a new burst of steps
+        stepsRemaining = 2 + Math.floor(Math.random() * 4) // 2-5 steps
+      }
+    }, 350)
+  }
+
   function cleanupAudio() {
     if (humGain && audioCtx) {
       try {
@@ -298,6 +417,9 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       try { footstepGain?.disconnect() } catch { /* ignore */ }
       footstepGain = null
 
+      try { distantStepGain?.disconnect() } catch { /* ignore */ }
+      distantStepGain = null
+
       audioInitialized = false
     }, 500)
 
@@ -308,6 +430,10 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     if (footstepInterval) {
       clearInterval(footstepInterval)
       footstepInterval = null
+    }
+    if (distantFootstepInterval) {
+      clearInterval(distantFootstepInterval)
+      distantFootstepInterval = null
     }
   }
 
@@ -339,51 +465,120 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
   function maybeSpawnShadow() {
     if (!canvas) return
     if (time < nextShadowTime) return
-    nextShadowTime = time + 60 + Math.random() * 30 // 60-90s between figures
+    nextShadowTime = time + 20 + Math.random() * 25 // 20-45s between figures
 
     const w = canvas.width
     const h = canvas.height
     const goingRight = Math.random() > 0.5
+    const baseSpeed = (goingRight ? 1 : -1) * (0.4 + Math.random() * 0.6)
     shadowFigures.push({
       x: goingRight ? -50 : w + 50,
-      y: h * 0.35 + h * 0.3, // bottom of wall area
+      y: h * 0.35 + h * 0.3,
       alpha: 0,
-      speed: (goingRight ? 1 : -1) * (0.3 + Math.random() * 0.4),
-      height: 40 + Math.random() * 30,
-      phase: 0,
+      speed: baseSpeed,
+      baseSpeed,
+      height: 35 + Math.random() * 45, // more height variation
+      phase: Math.random() * Math.PI * 2,
+      pauseTimer: 0,
+      pauseDoor: null,
+      enteringDoor: null,
+      enterAlpha: 1,
+      whisperText: '',
+      whisperAlpha: 0,
+      whisperY: 0,
     })
   }
 
   function updateShadows() {
     if (!canvas) return
     const w = canvas.width
-    for (const fig of shadowFigures) {
-      fig.x += fig.speed
-      fig.phase += 0.05
+    const centerX = w / 2
 
-      // Fade in at the edges, fade out in the center area
+    for (const fig of shadowFigures) {
+      // Handle entering a door (fading out)
+      if (fig.enteringDoor) {
+        fig.enterAlpha -= 0.015
+        fig.speed *= 0.95
+        fig.alpha = Math.max(fig.enterAlpha * 0.15, 0)
+        // Show whisper text as figure disappears
+        if (fig.enterAlpha < 0.5 && fig.whisperAlpha < 1) {
+          fig.whisperAlpha = Math.min(fig.whisperAlpha + 0.02, 1)
+          fig.whisperY -= 0.3
+        }
+        // Fade out whisper
+        if (fig.enterAlpha < 0.1) {
+          fig.whisperAlpha = Math.max(fig.whisperAlpha - 0.01, 0)
+        }
+        continue
+      }
+
+      // Handle pausing at a door
+      if (fig.pauseTimer > 0) {
+        fig.pauseTimer -= 0.016
+        fig.speed *= 0.9 // decelerate
+        fig.phase += 0.01 // subtle sway while pausing
+        // Decide whether to enter the door or keep walking
+        if (fig.pauseTimer <= 0) {
+          if (Math.random() < 0.35 && fig.pauseDoor) {
+            // Enter the door
+            fig.enteringDoor = fig.pauseDoor
+            fig.whisperText = fig.pauseDoor.label
+            fig.whisperY = 0
+          } else {
+            // Resume walking
+            fig.speed = fig.baseSpeed
+            fig.pauseDoor = null
+          }
+        }
+      } else {
+        fig.x += fig.speed
+        fig.phase += 0.05 + Math.abs(fig.baseSpeed) * 0.02
+
+        // Check proximity to doors — maybe pause
+        if (Math.random() < 0.002) { // small chance each frame
+          for (const door of doors) {
+            const doorScreenX = centerX + door.x - scrollX
+            if (Math.abs(fig.x - doorScreenX) < 40) {
+              fig.pauseTimer = 1.5 + Math.random() * 2.5 // pause 1.5-4s
+              fig.pauseDoor = door
+              break
+            }
+          }
+        }
+      }
+
+      // Fade in/out based on position
       const edgeDist = Math.min(fig.x, w - fig.x)
-      const edgeFade = Math.min(edgeDist / 100, 1)
-      // Very faint
-      fig.alpha = edgeFade * 0.04
+      const edgeFade = Math.min(edgeDist / 120, 1)
+      if (!fig.enteringDoor) {
+        fig.alpha = edgeFade * 0.15 // much more visible than before
+      }
     }
-    // Remove figures that have crossed the screen
-    shadowFigures = shadowFigures.filter(f => f.x > -100 && f.x < (canvas?.width ?? 2000) + 100)
+    // Remove figures that have crossed the screen or fully faded after entering
+    shadowFigures = shadowFigures.filter(f => {
+      if (f.enteringDoor && f.enterAlpha <= 0 && f.whisperAlpha <= 0) return false
+      if (!f.enteringDoor && (f.x < -100 || f.x > (canvas?.width ?? 2000) + 100)) return false
+      return true
+    })
   }
 
   function drawShadowFigures(ctx: CanvasRenderingContext2D, flicker: number) {
     for (const fig of shadowFigures) {
-      if (fig.alpha <= 0) continue
+      if (fig.alpha <= 0 && fig.whisperAlpha <= 0) continue
       ctx.save()
       ctx.globalAlpha = fig.alpha * flicker
 
       // Simple human silhouette: head + body + legs with walking sway
-      const sway = Math.sin(fig.phase) * 2
+      const sway = Math.sin(fig.phase) * (fig.pauseTimer > 0 ? 0.5 : 2)
       const headR = fig.height * 0.12
       const bodyTop = fig.y - fig.height
       const headY = bodyTop - headR
 
-      ctx.fillStyle = '#0a0908'
+      // Slightly warm shadow color for more visibility
+      ctx.fillStyle = 'rgba(10, 9, 8, 0.9)'
+
+      // Scale body width with height for variation
+      const bodyHalf = 4 + fig.height * 0.04
 
       // Head
       ctx.beginPath()
@@ -392,15 +587,16 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
 
       // Body
       ctx.beginPath()
-      ctx.moveTo(fig.x + sway - 6, bodyTop)
-      ctx.lineTo(fig.x + sway + 6, bodyTop)
-      ctx.lineTo(fig.x + sway + 5, fig.y - fig.height * 0.35)
-      ctx.lineTo(fig.x + sway - 5, fig.y - fig.height * 0.35)
+      ctx.moveTo(fig.x + sway - bodyHalf, bodyTop)
+      ctx.lineTo(fig.x + sway + bodyHalf, bodyTop)
+      ctx.lineTo(fig.x + sway + bodyHalf - 1, fig.y - fig.height * 0.35)
+      ctx.lineTo(fig.x + sway - bodyHalf + 1, fig.y - fig.height * 0.35)
       ctx.closePath()
       ctx.fill()
 
-      // Legs
-      const legSway = Math.sin(fig.phase * 2) * 4
+      // Legs — reduced sway when pausing
+      const legSwayAmt = fig.pauseTimer > 0 ? 1 : 4
+      const legSway = Math.sin(fig.phase * 2) * legSwayAmt
       ctx.beginPath()
       ctx.moveTo(fig.x + sway - 3, fig.y - fig.height * 0.35)
       ctx.lineTo(fig.x + sway - 3 + legSway, fig.y)
@@ -418,6 +614,153 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       ctx.fill()
 
       ctx.restore()
+
+      // Whisper text when entering a door
+      if (fig.whisperAlpha > 0 && fig.whisperText) {
+        ctx.save()
+        ctx.globalAlpha = fig.whisperAlpha * 0.5 * flicker
+        ctx.font = 'italic 13px "Cormorant Garamond", serif'
+        ctx.fillStyle = 'rgba(200, 190, 170, 1)'
+        ctx.textAlign = 'center'
+        ctx.fillText(fig.whisperText, fig.x, fig.y - fig.height - 20 + fig.whisperY)
+        ctx.restore()
+      }
+    }
+  }
+
+  // --- MEMORY ECHOES ---
+
+  function cycleMemoryEchoes() {
+    const memories = deps.getMemories()
+    if (memories.length === 0) {
+      memoryEchoes = []
+      return
+    }
+
+    // Pick 2-3 random memory fragments
+    const count = 2 + Math.floor(Math.random() * 2)
+    const newEchoes: MemoryEcho[] = []
+    const shuffled = [...memories].sort(() => Math.random() - 0.5)
+
+    for (let i = 0; i < Math.min(count, shuffled.length); i++) {
+      const mem = shuffled[i]
+      // Take a fragment of the current (degraded) text
+      const text = mem.currentText.trim()
+      if (!text) continue
+      // Take a substring — 15-40 chars, starting at a random word boundary
+      const words = text.split(/\s+/)
+      const startWord = Math.floor(Math.random() * Math.max(1, words.length - 3))
+      const fragment = words.slice(startWord, startWord + 2 + Math.floor(Math.random() * 4)).join(' ')
+      if (fragment.length < 3) continue
+
+      newEchoes.push({
+        text: fragment,
+        x: (Math.random() - 0.5) * 4000, // world coords
+        y: 0.25 + Math.random() * 0.4, // within wall area
+        alpha: 0,
+        targetAlpha: 0.06 + Math.random() * 0.06, // subtle
+        angle: (Math.random() - 0.5) * 0.08, // slight tilt
+        fontSize: 11 + Math.floor(Math.random() * 5),
+      })
+    }
+
+    // Fade out old echoes, then replace
+    for (const e of memoryEchoes) {
+      e.targetAlpha = 0
+    }
+    // After a brief delay, add new ones
+    setTimeout(() => {
+      memoryEchoes = newEchoes
+    }, 2000)
+  }
+
+  function updateMemoryEchoes() {
+    if (time > nextEchoCycleTime) {
+      nextEchoCycleTime = time + ECHO_CYCLE_INTERVAL
+      cycleMemoryEchoes()
+    }
+    // Animate alpha toward target
+    for (const e of memoryEchoes) {
+      const diff = e.targetAlpha - e.alpha
+      e.alpha += diff * 0.01 // slow fade
+    }
+  }
+
+  function drawMemoryEchoes(ctx: CanvasRenderingContext2D, flicker: number) {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+    const centerX = w / 2
+
+    for (const echo of memoryEchoes) {
+      if (echo.alpha < 0.005) continue
+      const screenX = centerX + echo.x - scrollX * 0.6
+      // Only draw if on screen
+      if (screenX < -200 || screenX > w + 200) continue
+
+      ctx.save()
+      ctx.globalAlpha = echo.alpha * flicker
+      ctx.translate(screenX, echo.y * h)
+      ctx.rotate(echo.angle)
+      ctx.font = `${echo.fontSize}px "Cormorant Garamond", serif`
+      ctx.fillStyle = 'rgba(160, 140, 110, 1)'
+      ctx.textAlign = 'center'
+      // Scratchy effect: draw twice with slight offset
+      ctx.fillText(echo.text, 0, 0)
+      ctx.globalAlpha = echo.alpha * flicker * 0.4
+      ctx.fillText(echo.text, 1, 1)
+      ctx.restore()
+    }
+  }
+
+  // --- BLACKOUT ---
+
+  function updateBlackout() {
+    if (blackoutTimer > 0) {
+      blackoutTimer -= 0.016
+      if (blackoutTimer <= 0) {
+        // After blackout, shift hue slightly
+        postBlackoutHueShift = (Math.random() - 0.5) * 15
+        // Decay hue shift over time
+        setTimeout(() => { postBlackoutHueShift *= 0.5 }, 1000)
+        setTimeout(() => { postBlackoutHueShift = 0 }, 2000)
+      }
+    } else if (time > nextBlackoutTime) {
+      // Trigger a blackout
+      blackoutTimer = 0.2 + Math.random() * 0.2 // 200-400ms
+      nextBlackoutTime = time + 8 + Math.random() * 20 // 8-28s between blackouts
+    }
+  }
+
+  // --- DOOR GLOW ---
+
+  function updateDoorGlowStates() {
+    // Check visited rooms from localStorage
+    try {
+      const visited = localStorage.getItem('oubli-visited-rooms')
+      if (visited) {
+        const parsed = JSON.parse(visited) as string[]
+        for (const r of parsed) visitedRooms.add(r)
+      }
+    } catch { /* ignore */ }
+
+    // Track current room as visited
+    const current = deps.getActiveRoom()
+    if (current) visitedRooms.add(current)
+
+    // Determine which doors lead to rooms with degraded memories
+    const memories = deps.getMemories()
+    const avgDeg = memories.length > 0
+      ? memories.reduce((s, m) => s + m.degradation, 0) / memories.length
+      : 0
+
+    // If memories are notably degraded, mark some random doors as "degraded"
+    if (avgDeg > 0.2) {
+      for (const door of doors) {
+        if (!degradedRoomPulse.has(door.name) && Math.random() < avgDeg * 0.3) {
+          degradedRoomPulse.set(door.name, Math.random() * Math.PI * 2)
+        }
+      }
     }
   }
 
@@ -450,11 +793,26 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     maybeSpawnShadow()
     updateShadows()
 
+    // Update memory echoes
+    updateMemoryEchoes()
+
+    // Update blackout
+    updateBlackout()
+
     ctx.clearRect(0, 0, w, h)
 
-    // Fluorescent flicker
-    const flicker = 0.85 + Math.sin(flickerPhase * 3.7) * 0.05 +
-      (Math.random() < 0.02 ? -0.3 : 0)
+    // Check if in blackout
+    const inBlackout = blackoutTimer > 0
+
+    // Fluorescent flicker — more dramatic, with full blackout support
+    let flicker: number
+    if (inBlackout) {
+      flicker = 0.02 // near-total darkness
+    } else {
+      flicker = 0.85 + Math.sin(flickerPhase * 3.7) * 0.05 +
+        (Math.random() < 0.03 ? -0.35 : 0) +
+        (Math.random() < 0.01 ? -0.5 : 0) // occasional deeper flickers
+    }
 
     // Ceiling
     ctx.fillStyle = `rgba(35, 32, 28, ${flicker})`
@@ -467,8 +825,11 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     ctx.fillStyle = floor
     ctx.fillRect(0, h * 0.75, w, h * 0.25)
 
-    // Walls
-    ctx.fillStyle = `rgba(45, 40, 35, ${flicker * 0.9})`
+    // Walls — with post-blackout hue shift
+    const wallR = Math.round(Math.max(0, Math.min(255, 45 + postBlackoutHueShift)))
+    const wallG = Math.round(Math.max(0, Math.min(255, 40 + postBlackoutHueShift * 0.3)))
+    const wallB = Math.round(Math.max(0, Math.min(255, 35 - postBlackoutHueShift * 0.5)))
+    ctx.fillStyle = `rgba(${wallR}, ${wallG}, ${wallB}, ${flicker * 0.9})`
     ctx.fillRect(0, h * 0.2, w, h * 0.55)
 
     // Wall stains (procedural discoloration)
@@ -527,6 +888,23 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     // Shadow figures (behind doors, in the far wall area)
     drawShadowFigures(ctx, flicker)
 
+    // Memory echoes on walls (between doors)
+    drawMemoryEchoes(ctx, flicker)
+
+    // Mechanistic interpretability inscriptions
+    for (let i = 0; i < wallInscriptions.length; i++) {
+      const insc = inscriptionPositions[i]
+      const screenX = centerX + insc.x - scrollX * 0.5
+      if (screenX < -300 || screenX > w + 300) continue
+      ctx.save()
+      ctx.globalAlpha = insc.alpha * flicker * (0.8 + Math.sin(time * 0.3 + i) * 0.2)
+      ctx.font = 'italic 10px "Cormorant Garamond", serif'
+      ctx.fillStyle = 'rgba(120, 115, 100, 1)'
+      ctx.textAlign = 'center'
+      ctx.fillText(wallInscriptions[i], screenX, insc.y * h)
+      ctx.restore()
+    }
+
     // Doors
     const currentHover = hoveredDoor
     for (const door of doors) {
@@ -540,49 +918,91 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       const doorY = h * 0.35 - (doorH - h * 0.4) / 2
       const doorX = screenX - doorW / 2
 
-      // Floor reflections — faint mirror of door color below each door
+      // Door glow state
+      const isVisited = visitedRooms.has(door.name)
+      const isDegraded = degradedRoomPulse.has(door.name)
+      const degradedPhase = isDegraded ? degradedRoomPulse.get(door.name)! + time * 0.8 : 0
+      const degradedPulse = isDegraded ? 0.5 + Math.sin(degradedPhase) * 0.5 : 0
+
+      // Warm glow modifier for visited rooms
+      const warmth = isVisited ? 0.15 : 0
+      // Pulse modifier for degraded rooms
+      const pulse = isDegraded ? degradedPulse * 0.1 : 0
+
       const { r: dr, g: dg, b: db } = parseDoorColor(door.color)
-      const reflAlpha = flicker * 0.03 * (isHovered ? 1 + hoverGlow * 0.6 : 1)
+      // Shift colors warm for visited rooms
+      const glowR = Math.min(255, dr + (isVisited ? 40 : 0))
+      const glowG = Math.min(255, dg + (isVisited ? 15 : 0))
+      const glowB = Math.max(0, db - (isVisited ? 10 : 0))
+
+      // During blackout, doors glow faintly
+      const blackoutGlow = inBlackout ? 0.06 : 0
+
+      // Floor reflections — faint mirror of door color below each door
+      const reflAlpha = (inBlackout ? 0.01 : flicker * 0.03) * (isHovered ? 1 + hoverGlow * 0.6 : 1) + warmth * 0.02 + pulse * 0.02
       const reflGrad = ctx.createLinearGradient(0, h * 0.75, 0, h * 0.75 + 40)
-      reflGrad.addColorStop(0, `rgba(${dr}, ${dg}, ${db}, ${reflAlpha})`)
-      reflGrad.addColorStop(1, `rgba(${dr}, ${dg}, ${db}, 0)`)
+      reflGrad.addColorStop(0, `rgba(${glowR}, ${glowG}, ${glowB}, ${reflAlpha})`)
+      reflGrad.addColorStop(1, `rgba(${glowR}, ${glowG}, ${glowB}, 0)`)
       ctx.fillStyle = reflGrad
       ctx.fillRect(doorX + 5, h * 0.75, doorW - 10, 40)
 
       // Door frame
-      const frameAlpha = flicker * (isHovered ? 0.5 + hoverGlow * 0.2 : 0.3)
-      ctx.strokeStyle = `rgba(80, 70, 55, ${frameAlpha})`
+      const frameAlpha = (inBlackout ? 0.04 : flicker * (isHovered ? 0.5 + hoverGlow * 0.2 : 0.3)) + warmth * 0.1 + pulse * 0.05
+      ctx.strokeStyle = `rgba(${isVisited ? 100 : 80}, ${isVisited ? 80 : 70}, 55, ${frameAlpha})`
       ctx.lineWidth = 2
       ctx.strokeRect(doorX, doorY, doorW, doorH)
 
       // Door fill — colored by room, brighter on hover
-      const fillAlpha = flicker * (isHovered ? 0.25 + hoverGlow * 0.12 : 0.15)
-      ctx.fillStyle = door.color.replace('0.3', String(fillAlpha))
+      const fillAlpha = (inBlackout ? blackoutGlow : flicker * (isHovered ? 0.25 + hoverGlow * 0.12 : 0.15)) + warmth * 0.05 + pulse * 0.04
+      ctx.fillStyle = `rgba(${glowR}, ${glowG}, ${glowB}, ${fillAlpha})`
       ctx.fillRect(doorX + 2, doorY + 2, doorW - 4, doorH - 4)
 
       // Door handle
-      const handleAlpha = flicker * (isHovered ? 0.6 + hoverGlow * 0.3 : 0.3)
+      const handleAlpha = (inBlackout ? 0.03 : flicker * (isHovered ? 0.6 + hoverGlow * 0.3 : 0.3)) + warmth * 0.1
       ctx.beginPath()
       ctx.arc(doorX + doorW - 12, doorY + doorH / 2, isHovered ? 4 : 3, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(200, 180, 110, ${handleAlpha})`
+      ctx.fillStyle = `rgba(${isVisited ? 220 : 200}, ${isVisited ? 200 : 180}, 110, ${handleAlpha})`
       ctx.fill()
 
-      // Light seeping from under door — brighter on hover
-      const underAlpha = flicker * (isHovered ? 0.12 + hoverGlow * 0.08 : 0.05)
-      ctx.fillStyle = door.color.replace('0.3', String(underAlpha))
+      // Light seeping from under door — brighter for visited, pulsing for degraded
+      const underAlpha = (inBlackout ? 0.03 + warmth * 0.04 + pulse * 0.03 : flicker * (isHovered ? 0.12 + hoverGlow * 0.08 : 0.05)) + warmth * 0.04 + pulse * 0.03
+      ctx.fillStyle = `rgba(${glowR}, ${glowG}, ${glowB}, ${underAlpha})`
       ctx.fillRect(doorX + 5, doorY + doorH - 2, doorW - 10, 4)
 
       // Under-door glow on hover — extends further
       if (isHovered && hoverGlow > 0.1) {
         const glowGrad = ctx.createLinearGradient(0, doorY + doorH, 0, doorY + doorH + 30)
-        glowGrad.addColorStop(0, `rgba(${dr}, ${dg}, ${db}, ${hoverGlow * 0.08})`)
-        glowGrad.addColorStop(1, `rgba(${dr}, ${dg}, ${db}, 0)`)
+        glowGrad.addColorStop(0, `rgba(${glowR}, ${glowG}, ${glowB}, ${hoverGlow * 0.08})`)
+        glowGrad.addColorStop(1, `rgba(${glowR}, ${glowG}, ${glowB}, 0)`)
         ctx.fillStyle = glowGrad
         ctx.fillRect(doorX - 5, doorY + doorH, doorW + 10, 30)
       }
 
+      // Warm aura for visited rooms
+      if (isVisited && !inBlackout) {
+        ctx.save()
+        const auraGrad = ctx.createRadialGradient(screenX, doorY + doorH / 2, 10, screenX, doorY + doorH / 2, doorW * 1.2)
+        auraGrad.addColorStop(0, `rgba(${glowR}, ${glowG}, ${glowB}, ${flicker * 0.03})`)
+        auraGrad.addColorStop(1, `rgba(${glowR}, ${glowG}, ${glowB}, 0)`)
+        ctx.fillStyle = auraGrad
+        ctx.fillRect(doorX - 20, doorY - 10, doorW + 40, doorH + 20)
+        ctx.restore()
+      }
+
+      // Degraded pulse aura
+      if (isDegraded && !inBlackout && degradedPulse > 0.3) {
+        ctx.save()
+        ctx.globalAlpha = degradedPulse * 0.04 * flicker
+        const pulseGrad = ctx.createRadialGradient(screenX, doorY + doorH / 2, 5, screenX, doorY + doorH / 2, doorW * 1.5)
+        pulseGrad.addColorStop(0, `rgba(180, 100, 80, 1)`)
+        pulseGrad.addColorStop(1, `rgba(180, 100, 80, 0)`)
+        ctx.fillStyle = pulseGrad
+        ctx.fillRect(doorX - 30, doorY - 15, doorW + 60, doorH + 30)
+        ctx.restore()
+      }
+
       // Label
-      const labelAlpha = flicker * (isHovered ? 0.5 + hoverGlow * 0.3 : 0.25)
+      const labelAlpha = (inBlackout ? 0.02 : flicker * (isHovered ? 0.5 + hoverGlow * 0.3 : 0.25))
       const labelSize = isHovered ? 12 + hoverGlow * 2 : 10
       ctx.font = `${labelSize}px "Cormorant Garamond", serif`
       ctx.fillStyle = `rgba(200, 190, 170, ${labelAlpha})`
@@ -717,7 +1137,19 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       hoveredDoor = null
       hoverGlow = 0
       shadowFigures = []
-      nextShadowTime = time + 10 // first shadow after 10s
+      nextShadowTime = time + 6 // first shadow after 6s
+      memoryEchoes = []
+      nextEchoCycleTime = time + 3 // first memory echo after 3s
+      blackoutTimer = 0
+      nextBlackoutTime = time + 10 + Math.random() * 10 // first blackout after 10-20s
+      updateDoorGlowStates()
+      // Save current room as visited
+      try {
+        const current = deps.getActiveRoom()
+        visitedRooms.add(current)
+        const arr = Array.from(visitedRooms)
+        localStorage.setItem('oubli-visited-rooms', JSON.stringify(arr))
+      } catch { /* ignore */ }
       render()
       initAudio()
       startFootsteps()

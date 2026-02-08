@@ -6,22 +6,22 @@
  * the paintings — text layered on images, the way medieval monks
  * scraped old text from parchment to write new text over it.
  *
- * Each visit shows a different painting with a different memory
- * inscribed on it. The memory text fades in slowly, ghostly,
- * as if emerging from beneath the paint. Degraded memories
- * appear more fragmentary and harder to read.
+ * The memory text is HIDDEN beneath the painting. Move your cursor
+ * over the surface to scrape away the paint, revealing confessions
+ * written underneath. Like Tracey Emin's raw, confessional works —
+ * every surface carries the weight of what was written on it.
  *
  * The Met has 470,000+ works in its Open Access program — enough
  * paintings for every memory you'll ever have.
  *
  * Inspired by: palimpsests (reused manuscripts), Cy Twombly's
  * writing-on-painting, Jenny Holzer's projections on buildings,
- * the idea that every surface carries invisible histories,
  * Robert Rauschenberg erasing a de Kooning drawing (1953),
- * Christian Boltanski's archive installations, how museums
- * are repositories of other people's memories
+ * Christian Boltanski's archive installations, Tracey Emin's
+ * confessional practice and "A Second Life" retrospective (2026),
+ * how museums are repositories of other people's memories
  *
- * USES MEMORIES. Art API. Layered meaning.
+ * USES MEMORIES. Art API. Layered meaning. Cursor interaction.
  */
 
 import type { Room } from './RoomManager'
@@ -48,6 +48,21 @@ interface Artwork {
   department: string
 }
 
+interface GallerySlot {
+  artwork: Artwork
+  image: HTMLImageElement
+  memory: Memory | null
+}
+
+interface InkDrip {
+  x: number
+  y: number
+  vy: number      // velocity — accelerates with gravity
+  length: number
+  alpha: number
+  trail: number[] // y-positions of permanent trail marks
+}
+
 export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -56,14 +71,20 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
   let frameId = 0
   let time = 0
 
-  let currentArtwork: Artwork | null = null
-  let artworkImage: HTMLImageElement | null = null
-  let imageLoaded = false
-  let currentMemory: Memory | null = null
-  let textReveal = 0 // 0-1, how much text is visible
+  // Multi-painting gallery state
+  let gallerySlots: GallerySlot[] = []
+  let activeSlotIndex = 0
   let loading = true
   let pairingsViewed = 0
   let failureMessage = ''
+
+  // Reveal mask — offscreen canvas tracking where cursor has scraped
+  let revealMask: HTMLCanvasElement | null = null
+  let revealCtx: CanvasRenderingContext2D | null = null
+  const BRUSH_RADIUS = 50
+  let allTextRevealed = false
+  let confessionFlashTime = 0 // when confession started showing
+  let confessionShown = false
 
   // Audio state
   let audioInitialized = false
@@ -74,14 +95,35 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
   let scratchLfoGain: GainNode | null = null
   let scratchSource: AudioBufferSourceNode | null = null
   let scratchInterval: ReturnType<typeof setInterval> | null = null
-  let prevTextReveal = 0
 
-  // Visual state
+  // Cursor tracking
   let cursorX = 0
   let cursorY = 0
+  let prevCursorX = 0
+  let prevCursorY = 0
+  let cursorSpeed = 0
   let cursorOverPainting = false
-  // Ink drip storage
-  const inkDrips: { x: number; y: number; length: number; alpha: number }[] = []
+  let isScratching = false // cursor is moving over painting
+
+  // Ink drips — now with gravity and trails
+  const inkDrips: InkDrip[] = []
+
+  // Painting draw rect — cached for hit testing
+  let paintDrawX = 0
+  let paintDrawY = 0
+  let paintDrawW = 0
+  let paintDrawH = 0
+
+  // Character position cache for cursor-based reveal
+  interface CharPos {
+    x: number
+    y: number
+    char: string
+    globalIdx: number
+    width: number
+  }
+  let charPositions: CharPos[] = []
+  let charPositionsDirty = true
 
   // Met Museum departments with paintings
   const PAINTING_DEPARTMENTS = [11, 21] // European Paintings, Modern Art
@@ -114,13 +156,11 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     const objectIDs = await ensureObjectIDs()
     if (objectIDs.length === 0) return null
 
-    // Try up to 5 random IDs to find one with an image
     const maxAttempts = 5
     const tried = new Set<number>()
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       let objectId: number
-      // Pick a random ID we haven't tried yet
       do {
         objectId = objectIDs[Math.floor(Math.random() * objectIDs.length)]
       } while (tried.has(objectId) && tried.size < objectIDs.length)
@@ -153,7 +193,6 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     return null
   }
 
-  // Verify an image URL actually loads, returning a loaded HTMLImageElement or null
   function loadImage(url: string): Promise<HTMLImageElement | null> {
     return new Promise((resolve) => {
       const img = new Image()
@@ -164,50 +203,175 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     })
   }
 
-  async function loadNewPairing(retryCount = 0) {
+  async function loadSingleSlot(): Promise<GallerySlot | null> {
     const maxRetries = 3
-    loading = true
-    imageLoaded = false
-    textReveal = 0
-    failureMessage = ''
+    for (let retry = 0; retry < maxRetries; retry++) {
+      const artwork = await fetchRandomArtwork()
+      if (!artwork) continue
+      const img = await loadImage(artwork.imageUrl)
+      if (!img) continue
 
-    const memories = deps.getMemories()
-    if (memories.length > 0) {
-      currentMemory = memories[Math.floor(Math.random() * memories.length)]
-    } else {
-      currentMemory = null
+      const memories = deps.getMemories()
+      const memory = memories.length > 0
+        ? memories[Math.floor(Math.random() * memories.length)]
+        : null
+
+      return { artwork, image: img, memory }
+    }
+    return null
+  }
+
+  async function loadGallery() {
+    loading = true
+    failureMessage = ''
+    gallerySlots = []
+    activeSlotIndex = 0
+
+    // Load 3 paintings in parallel
+    const results = await Promise.all([
+      loadSingleSlot(),
+      loadSingleSlot(),
+      loadSingleSlot(),
+    ])
+
+    for (const r of results) {
+      if (r) gallerySlots.push(r)
     }
 
-    const artwork = await fetchRandomArtwork()
-    if (artwork) {
-      const img = await loadImage(artwork.imageUrl)
-      if (img) {
-        currentArtwork = artwork
-        artworkImage = img
-        imageLoaded = true
-        loading = false
-        pairingsViewed++
-        prevTextReveal = 0
-        inkDrips.length = 0
-        playChime()
-        return
-      }
-
-      // Image failed to load — retry immediately (no delay) with a new artwork
-      if (retryCount < maxRetries) {
-        await loadNewPairing(retryCount + 1)
-        return
-      }
-    } else if (retryCount < maxRetries) {
-      // No artwork found from API — retry
-      await loadNewPairing(retryCount + 1)
+    if (gallerySlots.length === 0) {
+      loading = false
+      failureMessage = 'the museum is closed \u2014 the paintings rest behind locked doors'
+      pairingsViewed++
       return
     }
 
-    // All retries exhausted
     loading = false
-    failureMessage = 'the museum is closed — the paintings rest behind locked doors'
-    pairingsViewed++
+    pairingsViewed += gallerySlots.length
+    resetRevealMask()
+    charPositionsDirty = true
+    allTextRevealed = false
+    confessionShown = false
+    confessionFlashTime = 0
+    inkDrips.length = 0
+    playChime()
+  }
+
+  function selectSlot(index: number) {
+    if (index < 0 || index >= gallerySlots.length || index === activeSlotIndex) return
+    activeSlotIndex = index
+    resetRevealMask()
+    charPositionsDirty = true
+    allTextRevealed = false
+    confessionShown = false
+    confessionFlashTime = 0
+    inkDrips.length = 0
+    playClick()
+  }
+
+  function resetRevealMask() {
+    if (!revealMask) {
+      revealMask = document.createElement('canvas')
+    }
+    revealMask.width = window.innerWidth
+    revealMask.height = window.innerHeight
+    revealCtx = revealMask.getContext('2d')
+    if (revealCtx) {
+      revealCtx.clearRect(0, 0, revealMask.width, revealMask.height)
+    }
+  }
+
+  function stampRevealBrush(x: number, y: number) {
+    if (!revealCtx || !revealMask) return
+    // Paint white circle on the reveal mask — white = revealed
+    const grad = revealCtx.createRadialGradient(x, y, 0, x, y, BRUSH_RADIUS)
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.4)')
+    grad.addColorStop(0.6, 'rgba(255, 255, 255, 0.2)')
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    revealCtx.fillStyle = grad
+    revealCtx.beginPath()
+    revealCtx.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2)
+    revealCtx.fill()
+  }
+
+  function getRevealAmount(x: number, y: number): number {
+    if (!revealCtx || !revealMask) return 0
+    // Sample the reveal mask at this position
+    try {
+      const pixel = revealCtx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data
+      // Use the red channel (0-255) as reveal amount (0-1)
+      return Math.min(1, pixel[0] / 180)
+    } catch {
+      return 0
+    }
+  }
+
+  // Compute character positions for the current memory/painting combo
+  function computeCharPositions(c: CanvasRenderingContext2D, drawX: number, drawY: number, drawW: number, drawH: number) {
+    charPositions = []
+    const slot = gallerySlots[activeSlotIndex]
+    if (!slot || !slot.memory) return
+
+    const text = slot.memory.currentText
+    const fontSize = Math.min(28, drawW * 0.05)
+    c.font = `${fontSize}px "Cormorant Garamond", serif`
+    c.textAlign = 'center'
+
+    const words = text.split(' ')
+    const maxWidth = drawW * 0.7
+    const w = drawX + drawW / 2 // center x in canvas coords
+    let line = ''
+    let lineY = drawY + drawH * 0.3
+    const lineHeight = Math.min(36, drawW * 0.06)
+    let charIndex = 0
+
+    const lines: { text: string; y: number; startIdx: number }[] = []
+
+    for (const word of words) {
+      const test = line + (line ? ' ' : '') + word
+      if (c.measureText(test).width > maxWidth && line) {
+        lines.push({ text: line, y: lineY, startIdx: charIndex })
+        charIndex += line.length + 1
+        line = word
+        lineY += lineHeight
+        if (lineY > drawY + drawH - 30) break
+      } else {
+        line = test
+      }
+    }
+    if (line && lineY <= drawY + drawH - 30) {
+      lines.push({ text: line, y: lineY, startIdx: charIndex })
+    }
+
+    for (const ln of lines) {
+      const chars = ln.text.split('')
+      const totalWidth = c.measureText(ln.text).width
+      let x = w - totalWidth / 2
+
+      for (let i = 0; i < chars.length; i++) {
+        const charWidth = c.measureText(chars[i]).width
+        charPositions.push({
+          x: x + charWidth / 2,
+          y: ln.y,
+          char: chars[i],
+          globalIdx: ln.startIdx + i,
+          width: charWidth,
+        })
+        x += charWidth
+      }
+    }
+
+    charPositionsDirty = false
+  }
+
+  // Check what fraction of all characters are revealed
+  function computeRevealFraction(): number {
+    if (charPositions.length === 0) return 0
+    let revealed = 0
+    for (const cp of charPositions) {
+      if (cp.char === ' ') { revealed++; continue }
+      if (getRevealAmount(cp.x, cp.y) > 0.3) revealed++
+    }
+    return revealed / charPositions.length
   }
 
   // --- Audio functions ---
@@ -246,8 +410,8 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       ambienceGain.connect(audioMaster)
       ambienceSource.start()
 
-      // Scratch/writing sound — highpass filtered noise, pulsing
-      // Stays at gain 0 until text is revealing
+      // Scratch/scraping sound — highpass filtered noise, pulsing
+      // Driven by cursor movement, not auto-reveal
       const scratchBuffer = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate)
       const scratchData = scratchBuffer.getChannelData(0)
       for (let i = 0; i < scratchData.length; i++) {
@@ -267,7 +431,7 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
       // LFO for pulsing at ~10Hz via a gain modulator
       scratchLfoGain = ac.createGain()
-      scratchLfoGain.gain.value = 0 // modulated by the interval
+      scratchLfoGain.gain.value = 0
 
       scratchSource.connect(scratchHipass)
       scratchHipass.connect(scratchGain)
@@ -279,7 +443,7 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       let lfoPhase = 0
       scratchInterval = setInterval(() => {
         if (!scratchLfoGain) return
-        lfoPhase += 0.1 * Math.PI * 2 // ~10Hz at 100ms intervals — but we use shorter interval
+        lfoPhase += 0.1 * Math.PI * 2
         const pulse = (Math.sin(lfoPhase) + 1) * 0.5
         scratchLfoGain.gain.value = pulse
       }, 10)
@@ -301,7 +465,6 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       const ac = audioMaster.context as AudioContext
       const now = ac.currentTime
 
-      // First note: C5 (523Hz)
       const osc1 = ac.createOscillator()
       osc1.type = 'sine'
       osc1.frequency.value = 523
@@ -313,7 +476,6 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       osc1.start(now)
       osc1.stop(now + 0.15)
 
-      // Second note: E5 (659Hz)
       const osc2 = ac.createOscillator()
       osc2.type = 'sine'
       osc2.frequency.value = 659
@@ -348,15 +510,18 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     } catch { /* */ }
   }
 
-  function updateScratchVolume() {
-    if (!scratchGain || !audioMaster) return
-    // Volume proportional to reveal progress, but stop when done
-    if (textReveal < 1 && textReveal > prevTextReveal) {
-      scratchGain.gain.value = 0.02 * textReveal
+  function updateScratchAudio() {
+    if (!scratchGain) return
+    // Volume proportional to cursor speed when scratching over painting
+    if (isScratching && cursorSpeed > 0.5) {
+      // Map speed (0-30) to volume (0-0.04), clamped
+      const vol = Math.min(0.04, cursorSpeed * 0.0015)
+      scratchGain.gain.value = vol
     } else {
-      scratchGain.gain.value = 0
+      // Decay smoothly
+      scratchGain.gain.value *= 0.85
+      if (scratchGain.gain.value < 0.0001) scratchGain.gain.value = 0
     }
-    prevTextReveal = textReveal
   }
 
   function fadeAudioOut() {
@@ -397,8 +562,150 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
   // --- Mouse tracking ---
   function handleMouseMove(e: MouseEvent) {
+    prevCursorX = cursorX
+    prevCursorY = cursorY
     cursorX = e.clientX
     cursorY = e.clientY
+
+    const dx = cursorX - prevCursorX
+    const dy = cursorY - prevCursorY
+    cursorSpeed = Math.sqrt(dx * dx + dy * dy)
+
+    // Check if cursor is over the painting area
+    cursorOverPainting = (
+      cursorX >= paintDrawX && cursorX <= paintDrawX + paintDrawW &&
+      cursorY >= paintDrawY && cursorY <= paintDrawY + paintDrawH
+    )
+
+    // Stamp reveal brush when cursor is over painting
+    if (cursorOverPainting && gallerySlots[activeSlotIndex]?.memory) {
+      isScratching = true
+
+      // Interpolate between prev and current for smooth strokes
+      const steps = Math.max(1, Math.floor(cursorSpeed / 5))
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps
+        const ix = prevCursorX + (cursorX - prevCursorX) * t
+        const iy = prevCursorY + (cursorY - prevCursorY) * t
+        stampRevealBrush(ix, iy)
+      }
+
+      // Spawn ink drips from nearby revealed characters
+      if (cursorSpeed > 2) {
+        for (const cp of charPositions) {
+          if (cp.char === ' ') continue
+          const cdx = cp.x - cursorX
+          const cdy = cp.y - cursorY
+          const dist = Math.sqrt(cdx * cdx + cdy * cdy)
+          if (dist < BRUSH_RADIUS * 0.7 && Math.random() < 0.03) {
+            inkDrips.push({
+              x: cp.x + (Math.random() - 0.5) * 4,
+              y: cp.y + 4,
+              vy: 0.2 + Math.random() * 0.3,
+              length: 2 + Math.random() * 4,
+              alpha: 0.3 + Math.random() * 0.15,
+              trail: [],
+            })
+          }
+        }
+      }
+    } else {
+      isScratching = false
+    }
+  }
+
+  function handleClick(e: MouseEvent) {
+    const x = e.clientX
+    const y = e.clientY
+
+    // Check if click is on a thumbnail
+    if (gallerySlots.length > 1 && canvas) {
+      const thumbY = canvas.height - 90
+      const thumbSize = 60
+      const totalThumbW = gallerySlots.length * (thumbSize + 10) - 10
+      const thumbStartX = (canvas.width - totalThumbW) / 2
+
+      for (let i = 0; i < gallerySlots.length; i++) {
+        const tx = thumbStartX + i * (thumbSize + 10)
+        if (x >= tx && x <= tx + thumbSize && y >= thumbY && y <= thumbY + thumbSize) {
+          selectSlot(i)
+          return
+        }
+      }
+    }
+
+    // Otherwise reload gallery
+    if (!loading) {
+      playClick()
+      loadGallery()
+    }
+  }
+
+  // --- Drawing helpers ---
+
+  function drawPaintingDistortion(
+    c: CanvasRenderingContext2D,
+    img: HTMLImageElement,
+    dx: number, dy: number, dw: number, dh: number,
+    degradation: number,
+    paintingAlpha: number,
+  ) {
+    if (degradation <= 0.5) {
+      // No distortion — draw normally
+      c.globalAlpha = paintingAlpha
+      c.drawImage(img, dx, dy, dw, dh)
+      return
+    }
+
+    // Distortion intensity scales from 0 at deg=0.5 to 1 at deg=1
+    const intensity = (degradation - 0.5) * 2
+
+    // Base image (slightly desaturated)
+    c.globalAlpha = paintingAlpha
+    c.drawImage(img, dx, dy, dw, dh)
+
+    // RGB channel separation — draw red and blue channels offset
+    const offset = intensity * 4 // 0-4px offset
+
+    // Red channel shift
+    c.globalCompositeOperation = 'lighter'
+    c.globalAlpha = intensity * 0.15
+    c.drawImage(img, dx - offset, dy, dw, dh)
+
+    // Blue channel shift
+    c.globalAlpha = intensity * 0.12
+    c.drawImage(img, dx + offset, dy + offset * 0.5, dw, dh)
+
+    c.globalCompositeOperation = 'source-over'
+
+    // Crack lines for heavily degraded memories
+    if (intensity > 0.3) {
+      c.globalAlpha = intensity * 0.2
+      c.strokeStyle = 'rgba(30, 20, 10, 1)'
+      c.lineWidth = 0.5
+
+      // Deterministic cracks based on degradation
+      const seed = degradation * 1000
+      const numCracks = Math.floor(intensity * 8)
+      for (let i = 0; i < numCracks; i++) {
+        const startX = dx + (Math.sin(seed + i * 3.7) * 0.5 + 0.5) * dw
+        const startY = dy + (Math.cos(seed + i * 2.3) * 0.5 + 0.5) * dh
+        c.beginPath()
+        c.moveTo(startX, startY)
+
+        let cx = startX
+        let cy = startY
+        const segments = 3 + Math.floor(intensity * 5)
+        for (let s = 0; s < segments; s++) {
+          cx += (Math.sin(seed + i * 7 + s * 13) * 15) * intensity
+          cy += (Math.cos(seed + i * 11 + s * 17) * 10 + 5) * intensity
+          c.lineTo(cx, cy)
+        }
+        c.stroke()
+      }
+    }
+
+    c.globalAlpha = 1
   }
 
   function render() {
@@ -418,12 +725,19 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = `rgba(200, 180, 140, ${0.1 + Math.sin(time * 2) * 0.05})`
       c.textAlign = 'center'
-      c.fillText('finding a painting...', w / 2, h / 2)
-    } else if (imageLoaded && artworkImage) {
-      // Calculate image display size (fit within canvas with margins)
+      c.fillText('finding paintings...', w / 2, h / 2)
+    } else if (gallerySlots.length > 0) {
+      const slot = gallerySlots[activeSlotIndex]
+      if (!slot) return
+
+      const img = slot.image
+      const mem = slot.memory
+      const degradation = mem ? mem.degradation : 0
+
+      // Calculate image display size — leave room for thumbnails at bottom
       const maxW = w * 0.7
-      const maxH = h * 0.65
-      const imgAspect = artworkImage.width / artworkImage.height
+      const maxH = h * 0.55
+      const imgAspect = img.width / img.height
       let drawW: number, drawH: number
 
       if (imgAspect > maxW / maxH) {
@@ -435,9 +749,14 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       }
 
       const drawX = (w - drawW) / 2
-      const drawY = (h - drawH) / 2 - 20
+      const drawY = (h - drawH) / 2 - 50
 
-      // Draw the painting
+      // Cache paint rect for hit testing
+      paintDrawX = drawX
+      paintDrawY = drawY
+      paintDrawW = drawW
+      paintDrawH = drawH
+
       c.save()
 
       // Subtle frame
@@ -447,19 +766,12 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
       // Breathing painting — subtle opacity oscillation
       const breathAlpha = 0.70 + Math.sin(time * 0.6) * 0.02
-
-      // Cursor brightness boost — if cursor over painting, increase alpha
-      cursorOverPainting = (
-        cursorX >= drawX && cursorX <= drawX + drawW &&
-        cursorY >= drawY && cursorY <= drawY + drawH
-      )
       const paintingAlpha = cursorOverPainting ? Math.min(breathAlpha + 0.08, 0.85) : breathAlpha
 
-      // The painting itself
-      c.globalAlpha = paintingAlpha
-      c.drawImage(artworkImage, drawX, drawY, drawW, drawH)
+      // Draw painting with distortion for degraded memories
+      drawPaintingDistortion(c, img, drawX, drawY, drawW, drawH, degradation, paintingAlpha)
 
-      // Gallery frame shadow — vignette inside the painting
+      // Vignette
       c.globalAlpha = 1
       const vigGrad = c.createRadialGradient(
         drawX + drawW / 2, drawY + drawH / 2, Math.min(drawW, drawH) * 0.3,
@@ -470,123 +782,149 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       c.fillStyle = vigGrad
       c.fillRect(drawX, drawY, drawW, drawH)
 
-      // Overlay memory text as palimpsest
-      let cursorCharX = 0
-      let cursorCharY = 0
-      let showCursor = false
+      // --- Cursor-driven text reveal ---
+      if (mem) {
+        // Recompute char positions if needed
+        if (charPositionsDirty) {
+          computeCharPositions(c, drawX, drawY, drawW, drawH)
+        }
 
-      if (currentMemory) {
-        textReveal = Math.min(1, textReveal + 0.005)
-        updateScratchVolume()
-
-        const text = currentMemory.currentText
-        const degradation = currentMemory.degradation
-
-        // Text style — ghostly, like chalk or scraped writing
-        c.globalAlpha = 1
         const fontSize = Math.min(28, drawW * 0.05)
         c.font = `${fontSize}px "Cormorant Garamond", serif`
-        c.textAlign = 'center'
+        c.textAlign = 'left'
 
-        const words = text.split(' ')
-        const maxWidth = drawW * 0.7
-        let line = ''
-        let lineY = drawY + drawH * 0.3
-        const lineHeight = Math.min(36, drawW * 0.06)
-        let charIndex = 0
-        const totalChars = text.length
-        const revealedChars = Math.floor(totalChars * textReveal)
+        // Draw each character based on reveal mask
+        for (const cp of charPositions) {
+          if (cp.char === ' ') continue
 
-        for (const word of words) {
-          const test = line + (line ? ' ' : '') + word
-          if (c.measureText(test).width > maxWidth && line) {
-            // Draw this line
-            drawTextLine(c, line, w / 2, lineY, charIndex, revealedChars, degradation, drawX, drawW)
-            charIndex += line.length + 1
-            line = word
-            lineY += lineHeight
-            if (lineY > drawY + drawH - 30) break
-          } else {
-            line = test
+          const revealAmt = getRevealAmount(cp.x, cp.y)
+          if (revealAmt < 0.05) continue
+
+          // Degraded characters become glitchy
+          let ch = cp.char
+          if (degradation > 0.3 && Math.random() < (degradation - 0.3) * 0.15) {
+            ch = ' '
+          }
+
+          // Ghostly white text with breathing
+          const breathe = Math.sin(time * 0.8 + cp.globalIdx * 0.3) * 0.05
+          const baseAlpha = 0.5 - degradation * 0.3 + breathe
+          const alpha = baseAlpha * Math.min(1, revealAmt * 2)
+
+          c.fillStyle = `rgba(240, 235, 220, ${Math.max(0, alpha)})`
+
+          // Slight vertical jitter for handwritten feel
+          const jitter = Math.sin(cp.globalIdx * 7.3) * 1.5
+
+          c.fillText(ch, cp.x - cp.width / 2, cp.y + jitter)
+        }
+
+        // Update scratch audio
+        updateScratchAudio()
+
+        // Check if all text revealed
+        if (!allTextRevealed) {
+          const fraction = computeRevealFraction()
+          if (fraction > 0.92) {
+            allTextRevealed = true
+            confessionFlashTime = time
           }
         }
-        if (line && lineY <= drawY + drawH - 30) {
-          drawTextLine(c, line, w / 2, lineY, charIndex, revealedChars, degradation, drawX, drawW)
-        }
 
-        // Writing cursor position — find where the reveal ends
-        if (textReveal < 1) {
-          showCursor = true
-          // Approximate cursor position by replaying the line-breaking
-          let ci = 0
-          let ln = ''
-          let ly = drawY + drawH * 0.3
-          for (const word2 of words) {
-            const test2 = ln + (ln ? ' ' : '') + word2
-            if (c.measureText(test2).width > maxWidth && ln) {
-              if (ci + ln.length >= revealedChars) {
-                const partial = revealedChars - ci
-                const partialText = ln.substring(0, partial)
-                const totalLineW = c.measureText(ln).width
-                cursorCharX = (w / 2 - totalLineW / 2) + c.measureText(partialText).width
-                cursorCharY = ly
-                break
-              }
-              ci += ln.length + 1
-              ln = word2
-              ly += lineHeight
-              if (ly > drawY + drawH - 30) break
+        // Emin confession flash
+        if (allTextRevealed && !confessionShown) {
+          const elapsed = time - confessionFlashTime
+          if (elapsed < 6) {
+            // Fade in over 1s, hold for 3s, fade out over 2s
+            let alpha = 0
+            if (elapsed < 1) {
+              alpha = elapsed * 0.18
+            } else if (elapsed < 4) {
+              alpha = 0.18
             } else {
-              ln = test2
+              alpha = 0.18 * (1 - (elapsed - 4) / 2)
             }
-          }
-          // If we didn't break early, cursor is on the last line
-          if (cursorCharX === 0 && ln) {
-            const partial = Math.max(0, revealedChars - ci)
-            const partialText = ln.substring(0, Math.min(partial, ln.length))
-            const totalLineW = c.measureText(ln).width
-            cursorCharX = (w / 2 - totalLineW / 2) + c.measureText(partialText).width
-            cursorCharY = ly
+
+            c.font = '11px "Cormorant Garamond", serif'
+            c.fillStyle = `rgba(220, 200, 170, ${Math.max(0, alpha)})`
+            c.textAlign = 'center'
+            c.fillText(
+              'every surface carries the weight of confession',
+              w / 2,
+              drawY + drawH + 70,
+            )
+            c.font = '10px "Cormorant Garamond", serif'
+            c.fillStyle = `rgba(220, 200, 170, ${Math.max(0, alpha * 0.6)})`
+            c.fillText(
+              '\u2014 after Emin, 2026',
+              w / 2,
+              drawY + drawH + 84,
+            )
+          } else {
+            confessionShown = true
           }
         }
       }
 
-      // Draw writing cursor (blinking)
-      if (showCursor && cursorCharX > 0) {
-        const blink = Math.sin(time * 4) > 0
-        if (blink) {
-          c.globalAlpha = 0.3
-          c.fillStyle = 'rgba(240, 235, 220, 1)'
-          c.fillRect(cursorCharX, cursorCharY - 12, 1.5, 16)
-        }
+      // Draw cursor brush indicator when over painting
+      if (cursorOverPainting && mem) {
+        c.globalAlpha = 0.06
+        c.strokeStyle = 'rgba(240, 235, 220, 1)'
+        c.lineWidth = 0.5
+        c.beginPath()
+        c.arc(cursorX, cursorY, BRUSH_RADIUS, 0, Math.PI * 2)
+        c.stroke()
+        c.globalAlpha = 1
       }
 
-      // Draw ink drips
+      // Draw ink drips — with gravity acceleration and permanent trails
       for (let di = inkDrips.length - 1; di >= 0; di--) {
         const drip = inkDrips[di]
-        drip.alpha -= 0.003
-        if (drip.alpha <= 0) {
+
+        // Gravity acceleration
+        drip.vy += 0.04
+        drip.y += drip.vy
+        drip.alpha -= 0.002
+
+        // Leave trail mark every few pixels
+        if (drip.trail.length === 0 || drip.y - drip.trail[drip.trail.length - 1] > 3) {
+          drip.trail.push(drip.y)
+        }
+
+        // Remove if off painting or faded
+        if (drip.alpha <= 0 || drip.y > paintDrawY + paintDrawH + 20) {
+          // Keep trails as permanent marks — draw them one last time
           inkDrips.splice(di, 1)
           continue
         }
+
+        // Draw drip head
         c.globalAlpha = drip.alpha
         c.fillStyle = 'rgba(240, 235, 220, 1)'
-        c.fillRect(drip.x, drip.y, 1, drip.length)
+        c.fillRect(drip.x - 0.5, drip.y, 1, drip.length)
+
+        // Draw trail
+        for (let ti = 0; ti < drip.trail.length; ti++) {
+          const trailAlpha = drip.alpha * (0.3 - ti * 0.01)
+          if (trailAlpha <= 0) continue
+          c.globalAlpha = Math.max(0, trailAlpha)
+          c.fillRect(drip.x - 0.3, drip.trail[ti], 0.6, 2)
+        }
       }
 
       c.restore()
 
       // Artwork info — below the painting
-      if (currentArtwork) {
+      if (slot.artwork) {
         c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = 'rgba(200, 180, 140, 0.15)'
         c.textAlign = 'center'
-        c.fillText(currentArtwork.title, w / 2, drawY + drawH + 25)
+        c.fillText(slot.artwork.title, w / 2, drawY + drawH + 25)
 
         c.font = '12px "Cormorant Garamond", serif'
         c.fillStyle = 'rgba(200, 180, 140, 0.1)'
         c.fillText(
-          `${currentArtwork.artist}${currentArtwork.date ? `, ${currentArtwork.date}` : ''}`,
+          `${slot.artwork.artist}${slot.artwork.date ? `, ${slot.artwork.date}` : ''}`,
           w / 2, drawY + drawH + 40,
         )
 
@@ -594,6 +932,52 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
         c.fillStyle = 'rgba(200, 180, 140, 0.05)'
         c.fillText('The Metropolitan Museum of Art, Open Access', w / 2, drawY + drawH + 55)
       }
+
+      // --- Thumbnail gallery at bottom ---
+      if (gallerySlots.length > 1) {
+        const thumbSize = 60
+        const thumbGap = 10
+        const totalThumbW = gallerySlots.length * (thumbSize + thumbGap) - thumbGap
+        const thumbStartX = (w - totalThumbW) / 2
+        const thumbY = h - 90
+
+        for (let i = 0; i < gallerySlots.length; i++) {
+          const tx = thumbStartX + i * (thumbSize + thumbGap)
+          const isActive = i === activeSlotIndex
+          const thumbImg = gallerySlots[i].image
+
+          // Thumbnail border
+          c.strokeStyle = isActive
+            ? 'rgba(240, 235, 220, 0.3)'
+            : 'rgba(80, 60, 40, 0.15)'
+          c.lineWidth = isActive ? 2 : 1
+          c.strokeRect(tx - 1, thumbY - 1, thumbSize + 2, thumbSize + 2)
+
+          // Thumbnail image — fit cover
+          const tAspect = thumbImg.width / thumbImg.height
+          let sx = 0, sy = 0, sw = thumbImg.width, sh = thumbImg.height
+          if (tAspect > 1) {
+            sx = (thumbImg.width - thumbImg.height) / 2
+            sw = thumbImg.height
+          } else {
+            sy = (thumbImg.height - thumbImg.width) / 2
+            sh = thumbImg.width
+          }
+
+          c.globalAlpha = isActive ? 0.7 : 0.3
+          c.drawImage(thumbImg, sx, sy, sw, sh, tx, thumbY, thumbSize, thumbSize)
+          c.globalAlpha = 1
+
+          // Dot indicator for which has memory
+          if (gallerySlots[i].memory) {
+            c.fillStyle = 'rgba(240, 235, 220, 0.2)'
+            c.beginPath()
+            c.arc(tx + thumbSize / 2, thumbY + thumbSize + 6, 2, 0, Math.PI * 2)
+            c.fill()
+          }
+        }
+      }
+
     } else if (!loading) {
       c.font = '13px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.1)'
@@ -610,71 +994,20 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     c.textAlign = 'center'
     c.fillText('the palimpsest gallery', w / 2, 25)
 
-    // Hint
+    // Hint — changes based on state
     c.font = '12px "Cormorant Garamond", serif'
     c.fillStyle = `rgba(200, 180, 140, ${0.04 + Math.sin(time * 1.5) * 0.02})`
     c.textAlign = 'center'
-    c.fillText('click for a new pairing', w / 2, h - 8)
+    const hint = gallerySlots[activeSlotIndex]?.memory && !allTextRevealed
+      ? 'scrape the surface to reveal what is written beneath'
+      : 'click for new paintings'
+    c.fillText(hint, w / 2, h - 8)
 
     // Stats
     c.font = '12px monospace'
     c.fillStyle = 'rgba(200, 180, 140, 0.06)'
     c.textAlign = 'left'
     c.fillText(`${pairingsViewed} pairings`, 12, h - 18)
-  }
-
-  function drawTextLine(
-    c: CanvasRenderingContext2D,
-    line: string,
-    cx: number,
-    cy: number,
-    startIdx: number,
-    revealedChars: number,
-    degradation: number,
-    _paintX: number,
-    _paintW: number,
-  ) {
-    const chars = line.split('')
-    const totalWidth = c.measureText(line).width
-    let x = cx - totalWidth / 2
-
-    for (let i = 0; i < chars.length; i++) {
-      const globalIdx = startIdx + i
-      const revealed = globalIdx < revealedChars
-
-      if (!revealed) continue
-
-      // Degraded characters become glitchy
-      let char = chars[i]
-      if (degradation > 0.3 && Math.random() < (degradation - 0.3) * 0.3) {
-        char = ' '
-      }
-
-      // Ghostly white text with breathing
-      const breathe = Math.sin(time * 0.8 + globalIdx * 0.3) * 0.05
-      const alpha = (0.5 - degradation * 0.3 + breathe)
-
-      // White/cream text — like chalk on a painting
-      c.fillStyle = `rgba(240, 235, 220, ${Math.max(0, alpha)})`
-
-      // Slight vertical jitter for handwritten feel
-      const jitter = Math.sin(globalIdx * 7.3) * 1.5
-
-      c.fillText(char, x, cy + jitter)
-
-      // Ink drip — ~10% chance per newly revealed character
-      if (globalIdx === revealedChars - 1 && Math.random() < 0.10 && char !== ' ') {
-        const dripLen = 5 + Math.random() * 10
-        inkDrips.push({
-          x: x + c.measureText(char).width / 2,
-          y: cy + jitter + 2,
-          length: dripLen,
-          alpha: 0.35,
-        })
-      }
-
-      x += c.measureText(chars[i]).width
-    }
   }
 
   return {
@@ -692,22 +1025,18 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       canvas = document.createElement('canvas')
       canvas.width = window.innerWidth
       canvas.height = window.innerHeight
-      canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
+      canvas.style.cssText = 'width: 100%; height: 100%; cursor: crosshair;'
       ctx = canvas.getContext('2d')
 
-      canvas.addEventListener('click', () => {
-        if (!loading) {
-          playClick()
-          loadNewPairing()
-        }
-      })
-
+      canvas.addEventListener('click', handleClick)
       canvas.addEventListener('mousemove', handleMouseMove)
 
       const onResize = () => {
         if (canvas) {
           canvas.width = window.innerWidth
           canvas.height = window.innerHeight
+          resetRevealMask()
+          charPositionsDirty = true
         }
       }
       window.addEventListener('resize', onResize)
@@ -717,9 +1046,9 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       // Navigation portals — small gallery placard text
       if (deps.switchTo) {
         const portalData = [
-          { name: 'darkroom', label: 'Gallery A — The Darkroom', color: '200, 180, 140', pos: 'bottom: 40px; left: 20px;' },
-          { name: 'loom', label: 'Gallery B — The Loom', color: '180, 170, 160', pos: 'bottom: 40px; left: 50%; transform: translateX(-50%);' },
-          { name: 'archive', label: 'Gallery C — The Archive', color: '160, 160, 180', pos: 'bottom: 40px; right: 20px;' },
+          { name: 'darkroom', label: 'Gallery A \u2014 The Darkroom', color: '200, 180, 140', pos: 'bottom: 40px; left: 20px;' },
+          { name: 'loom', label: 'Gallery B \u2014 The Loom', color: '180, 170, 160', pos: 'bottom: 40px; left: 50%; transform: translateX(-50%);' },
+          { name: 'archive', label: 'Gallery C \u2014 The Archive', color: '160, 160, 180', pos: 'bottom: 40px; right: 20px;' },
         ]
         for (const p of portalData) {
           const el = document.createElement('div')
@@ -759,10 +1088,14 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     activate() {
       active = true
       pairingsViewed = 0
-      prevTextReveal = 0
       inkDrips.length = 0
+      charPositionsDirty = true
+      allTextRevealed = false
+      confessionShown = false
+      confessionFlashTime = 0
+      resetRevealMask()
       initAudio()
-      loadNewPairing()
+      loadGallery()
       render()
     },
 
@@ -781,6 +1114,7 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       cancelAnimationFrame(frameId)
       destroyAudio()
       canvas?.removeEventListener('mousemove', handleMouseMove)
+      canvas?.removeEventListener('click', handleClick)
       overlay?.remove()
     },
   }

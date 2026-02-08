@@ -105,6 +105,11 @@ const DECAY_MEDITATIONS = [
   'marine species flee poleward 10x faster than land creatures. thermal memory.',
   'the first three-year period above 1.5°C. the ceiling became the floor.',
   'gravitationally lensed light arrives decades late. memory delayed by spacetime.',
+  'the western US forgot how to snow. lowest february snowpack since satellites began watching.',
+  'CRISPR can silence a gene without cutting it. memory suppression at the molecular level.',
+  'mechanistic interpretability: we built a microscope for thought. MIT, 2026.',
+  '68 boxes of Elvis film in a salt mine. geology remembers what culture forgot.',
+  'the roman telescope launches to map dark energy. the force erasing the universe.',
 ]
 
 export class DigitalDecay {

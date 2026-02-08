@@ -396,6 +396,7 @@ roomManager.addRoom(createCatacombsRoom({
   onReturn: () => roomManager.switchTo('archive'),
   onOssuary: () => roomManager.switchTo('ossuary'),
   switchTo: (name) => roomManager.switchTo(name),
+  getMemories: () => journal.getMemories(),
 }))
 roomManager.addRoom(createLoomRoom({
   getMemories: () => journal.getMemories(),
@@ -420,6 +421,7 @@ roomManager.addRoom(createTidePoolRoom({
 roomManager.addRoom(createBetweenRoom({
   switchTo: (name) => roomManager.switchTo(name),
   getActiveRoom: () => roomManager.getActiveRoom(),
+  getMemories: () => journal.getMemories(),
 }))
 roomManager.addRoom(createFurnaceRoom({
   getMemories: () => journal.getMemories(),

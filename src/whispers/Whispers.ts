@@ -145,6 +145,42 @@ const fragments: string[] = [
   "you carry traces of every room you've been in",
   "the furnace left embers in your vision. the tide pool left ripples.",
   "rooms bleed into each other like memories bleed into consciousness",
+
+  // Feb 2026 — snow drought (record-low snowpack in western US)
+  "the mountains forgot how to hold snow. february, and the peaks are bare.",
+  "rain fell where snow should have been. the rivers won't know until summer.",
+  "oregon, colorado, utah: record-low snowpack. the west is forgetting winter.",
+  "the lowest february snow cover since satellites began watching.",
+  "warm rain on mountain passes. the aquifers will feel this in july.",
+
+  // Feb 2026 — CRISPR epigenetic editing (genes on/off without cutting)
+  "a gene can be silenced without being destroyed. just add a chemical tag.",
+  "epigenetic memory: the cell remembers what happened without changing its DNA.",
+  "CRISPR no longer cuts. it just... turns things off. or back on.",
+  "methyl groups: tiny anchors that silence genes for decades. now removable.",
+  "your cells remember trauma in their chemical tags. even the body keeps score.",
+
+  // Feb 2026 — mechanistic interpretability (MIT breakthrough technology)
+  "they built a microscope for neural networks. the first thing they saw was meaning.",
+  "inside the model, concepts light up like neurons. features, not weights.",
+  "mechanistic interpretability: reverse-engineering thought itself.",
+  "the space between input and output is longer than anyone imagined.",
+  "sleeper agents in AI models, hiding in the weights. now we can see them.",
+
+  // Feb 2026 — Tracey Emin: A Second Life (Tate Modern, Feb 27)
+  "tracey emin's bed. the most honest object in any museum.",
+  "a second life: 90 confessions spanning 40 years. every surface holds a secret.",
+  "art as evidence. art as testimony. art as the thing you can't unsay.",
+
+  // Feb 2026 — EPiC: lost Elvis footage found in underground vault
+  "68 boxes of film in an underground salt mine. the king, preserved in geology.",
+  "rediscovered footage: memories the vault kept when everyone else forgot.",
+  "salt mines preserve film better than memory preserves experience.",
+
+  // Feb 2026 — Roman Space Telescope (launching fall 2026)
+  "the roman telescope will map dark energy. the force that makes the universe forget itself.",
+  "a billion galaxies surveyed. each one a memory the universe is losing.",
+  "cosmic voids: the places where nothing chose to be. dark energy's fingerprint.",
 ]
 
 export class Whispers {
