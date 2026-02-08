@@ -1070,6 +1070,89 @@ Surface: 36 | Hidden: 7
 - Gallery wall texture: faint vertical stripes, spotlight gradients above paintings, drop shadows, gallery labels in long date format
 - Inspired by: On Kawara "Today" series, Tehching Hsieh, Roman Opalka
 
+### 87. TheOssuary Deepened
+- Click bone glyphs to reveal full memory text + degradation %
+- Ambient audio: deep earth drone (35Hz + 52Hz), occasional bone settling sounds
+- Torch flame animation with flickering light, expanding glow on hover
+- Stone archway portals with inscribed destinations
+
+### 88. TheCartographer Deepened
+- Larger map layout: repulsion 4500, surface ellipse 42%×28%, node radii 5/7/9
+- Labels 11-12px with higher opacity, hit areas 25px, thicker connection lines
+- More readable and navigable at a glance
+
+### 89. TheAquifer Deepened
+- Animated directional chevron arrows for navigation (well↑, tidepool→)
+- Expanded hit regions along entire current streams
+- Hover labels with destination names, brighter glow on hover
+
+### 90. Diverse In-Room Navigation Mechanics (all 43 rooms)
+- **Unique per room** — no two rooms navigate the same way:
+  - ClockTower: click roman numeral hours on clock face
+  - Cipher: type encoded room names
+  - Lighthouse: beam illuminates distant landmarks on horizon
+  - Well: drop objects to reveal destinations in the depths
+  - Choir: voice resonance patterns unlock exits
+  - Radio: lock onto specific frequencies to tune in rooms
+  - Terrarium: creature swarms cluster toward exits
+  - Darkroom: developing trays reveal room names in chemicals
+  - DisintegrationLoops: tape transport buttons (FF, REW, EJECT)
+  - ProjectionRoom: film canister labels on shelf
+  - Automaton: stable cell patterns form room symbols
+  - Satellite: click landmark positions on world map
+  - Seismograph: station code readouts along seismogram edges
+  - Roots: tendrils grow toward exits
+  - Midnight: dawn horizon reveals destinations at edges
+  - Sketchpad: draw specific symbols to navigate
+  - Loom: pull colored threads to different rooms
+  - DatePaintings: click paintings to enter their era
+  - Pendulum: swing compass directions
+  - Mirror: reflections show other rooms
+  - Oracle: card spread reveals room connections
+  - Ossuary: bone fragments point to destinations
+  - Garden: vine gates grow toward connected rooms
+  - Instrument: waveform frequencies correspond to rooms
+  - Observatory: nebula edges lead to connected spaces
+  - Furnace: ember coals glow with room names
+  - Séance: spirit wisps drift toward connected rooms
+
+### 91. Archive Rewritten with Open Library API
+- Replaced Wayback Machine CDX API with Open Library search
+- Search for real books, see covers, publication dates
+- Filing cabinet drawer navigation: CAT/REF/IMG/DATE/RSTR labels
+- RSTR drawer appears after 5+ searches → catacombs
+
+### 92. 12 Live API Integrations
+- Seismograph: USGS real earthquake data (was static)
+- Weathervane: Open-Meteo weather API (was static demo)
+- AsteroidField: NASA NeoWs close approach API
+- TidePool: sunrise-sunset.org for real sunrise/sunset times
+- Observatory: NASA APOD (Astronomy Picture of the Day)
+- Library: PoetryDB random poems appear on library pages
+- DatePaintings: Wikimedia On This Day events
+- Midnight: sunrise-sunset.org for real dawn/dusk transitions
+- Glacarium: NOAA space weather for aurora visibility
+- Labyrinth: Wikipedia random articles as wall inscriptions
+- Madeleine: Art Institute of Chicago collection API
+- Study: Stoic Quotes API for writing prompts
+
+### 93. Voice Input System
+- SpeechHelper utility (`src/voice/SpeechHelper.ts`): lightweight room-specific speech
+- Void: "type to give a memory / hold space to speak" hint, fades in after 8s
+- Séance: hold space to speak to spirits — candle flares, voice indicator
+- Well: hold space to speak into the abyss — words materialize, then fall in
+
+### 94. Pre-Generated Assets
+- 8 new FAL dream images (well-depths, glacier-aurora, clocktower-gears, loom-threads, tidepool-bioluminescence, labyrinth-fog, mirror-shattered, radio-static)
+- 6 ElevenLabs ambient room sounds (well, observatory, furnace, garden, séance, clocktower)
+- DreamVisions expanded to 16 images total
+
+### 95. Room Ambience System (`src/sound/RoomAmbience.ts`)
+- Plays room-specific ambient sounds on navigation
+- 3-second crossfade between rooms, looping, volume 0.12
+- Rooms without sounds get silence
+- Separate from AmbientTextures (void drift states)
+
 ---
-*Last updated: Era 8, Feature 86 — Room Deepening Batch 2 (Sketchpad, Loom, DatePaintings)*
-*"six rooms deepened so far — audio, interaction, atmosphere. the house breathes."*
+*Last updated: Era 8, Feature 95 — Voice input, API integrations, room ambience, all 43 rooms fully navigable*
+*"every room speaks its own language. the house is alive."*
