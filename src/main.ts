@@ -341,6 +341,7 @@ const roomManager = new RoomManager()
 // Register rooms — Study emits new text, Instrument emits notes
 roomManager.addRoom(createVoidRoom({
   switchTo: (name) => roomManager.switchTo(name),
+  voiceSupported: voice.isSupported(),
 }))
 roomManager.addRoom(createStudyRoom({
   getMemories: () => journal.getMemories(),

@@ -22,6 +22,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { createSpeechSession, type SpeechSession } from '../voice/SpeechHelper'
 
 // Oracle response templates — the void speaks in riddles
 const ORACLE_TEMPLATES = [
@@ -105,6 +106,12 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
   const messages: Message[] = []
   let fadeInterval: number | null = null
   let betweenRevealed = false
+
+  // Voice input — speak to the spirits
+  let speech: SpeechSession | null = null
+  let voiceIndicatorEl: HTMLElement | null = null
+  let voiceTextEl: HTMLElement | null = null
+  let spaceHeld = false
 
   // Spirit wisp state
   let hoveredWisp = -1
@@ -282,6 +289,96 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       // Speak the response if TTS is available
       deps.speakText?.(response)
     }, delay)
+  }
+
+  // --- Voice input for séance ---
+
+  function handleSeanceKeyDown(e: KeyboardEvent) {
+    if (e.code !== 'Space' || e.repeat) return
+    // Don't capture if typing in the input
+    if (document.activeElement === inputEl) return
+    if (document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA') return
+    if (!speech?.supported) return
+
+    e.preventDefault()
+    spaceHeld = true
+    speech.start()
+
+    // Show voice indicator
+    if (voiceIndicatorEl) {
+      voiceIndicatorEl.style.opacity = '1'
+    }
+    if (voiceTextEl) {
+      voiceTextEl.textContent = ''
+      voiceTextEl.style.opacity = '1'
+    }
+
+    // Candle flares when spirits listen
+    if (candleEl) {
+      candleEl.style.animation = 'candleFlicker 0.4s ease-in-out infinite alternate'
+      candleEl.style.filter = 'brightness(2.0)'
+      candleEl.style.boxShadow = `
+        0 0 40px rgba(255, 180, 60, 0.6),
+        0 0 80px rgba(255, 140, 20, 0.3),
+        0 -12px 40px rgba(255, 100, 0, 0.2)
+      `
+    }
+  }
+
+  function handleSeanceKeyUp(e: KeyboardEvent) {
+    if (e.code !== 'Space') return
+    if (!spaceHeld) return
+    spaceHeld = false
+
+    const text = speech?.stop() || ''
+
+    // Reset candle
+    if (candleEl) {
+      candleEl.style.animation = 'candleFlicker 3s ease-in-out infinite alternate'
+      candleEl.style.filter = ''
+      candleEl.style.boxShadow = `
+        0 0 20px rgba(255, 180, 60, 0.4),
+        0 0 60px rgba(255, 140, 20, 0.15),
+        0 -8px 30px rgba(255, 100, 0, 0.1)
+      `
+    }
+
+    // Hide indicator
+    if (voiceIndicatorEl) voiceIndicatorEl.style.opacity = '0'
+
+    if (text) {
+      // Submit spoken text as a question to the void
+      if (voiceTextEl) {
+        voiceTextEl.style.opacity = '0'
+        voiceTextEl.textContent = ''
+      }
+      addMessage(text, 'user')
+
+      // Check for between trigger
+      const isBetweenTrigger = !betweenRevealed && deps.onBetween && checkBetweenTrigger(text)
+
+      const delay = 1000 + Math.random() * 2000
+      setTimeout(async () => {
+        let response: string
+        if (isBetweenTrigger) {
+          response = BETWEEN_RESPONSES[Math.floor(Math.random() * BETWEEN_RESPONSES.length)]
+          betweenRevealed = true
+          if (betweenLink) {
+            betweenLink.style.color = 'rgba(180, 160, 220, 0.15)'
+            betweenLink.style.pointerEvents = 'auto'
+          }
+        } else {
+          response = generateResponse(text)
+        }
+        addMessage(response, 'void')
+        deps.speakText?.(response)
+      }, delay)
+    } else {
+      if (voiceTextEl) {
+        voiceTextEl.style.opacity = '0'
+      }
+    }
   }
 
   function fadeOldMessages() {
@@ -590,6 +687,66 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       hint.textContent = 'the void answers from your memories'
       overlay.appendChild(hint)
 
+      // Voice input setup
+      speech = createSpeechSession()
+      if (speech.supported) {
+        // Voice indicator — appears near candle when listening
+        voiceIndicatorEl = document.createElement('div')
+        voiceIndicatorEl.style.cssText = `
+          position: absolute; top: 28%;
+          left: 50%; transform: translateX(-50%);
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 12px;
+          font-style: italic;
+          color: rgba(255, 180, 60, 0.5);
+          letter-spacing: 3px;
+          opacity: 0;
+          transition: opacity 0.8s ease;
+          pointer-events: none;
+          text-shadow: 0 0 20px rgba(255, 180, 60, 0.3);
+        `
+        voiceIndicatorEl.textContent = 'the spirits listen...'
+        overlay.appendChild(voiceIndicatorEl)
+
+        // Spoken text display — shows interim text
+        voiceTextEl = document.createElement('div')
+        voiceTextEl.style.cssText = `
+          position: absolute; top: 35%;
+          left: 50%; transform: translateX(-50%);
+          max-width: 60vw;
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 18px;
+          color: rgba(255, 215, 0, 0.5);
+          letter-spacing: 1px;
+          text-align: center;
+          line-height: 1.6;
+          opacity: 0;
+          transition: opacity 0.5s ease;
+          pointer-events: none;
+        `
+        overlay.appendChild(voiceTextEl)
+
+        speech.onUpdate((text) => {
+          if (voiceTextEl) voiceTextEl.textContent = text
+        })
+
+        // Voice hint near input
+        const voiceHint = document.createElement('div')
+        voiceHint.style.cssText = `
+          font-family: 'Cormorant Garamond', serif;
+          font-weight: 300; font-size: 10px;
+          font-style: italic;
+          color: rgba(180, 160, 220, 0.08);
+          margin-top: 8px;
+          letter-spacing: 2px;
+          transition: opacity 6s ease;
+        `
+        voiceHint.textContent = 'or hold space to speak'
+        overlay.appendChild(voiceHint)
+        // Fade in the voice hint after 15s
+        setTimeout(() => { voiceHint.style.color = 'rgba(180, 160, 220, 0.12)' }, 15000)
+      }
+
       // Hidden passage to The Between
       if (deps.onBetween) {
         betweenLink = document.createElement('div')
@@ -650,6 +807,11 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         resizeWispCanvas()
         wispAnimFrame = requestAnimationFrame(renderWisps)
       }
+      // Voice input listeners
+      if (speech?.supported) {
+        window.addEventListener('keydown', handleSeanceKeyDown)
+        window.addEventListener('keyup', handleSeanceKeyUp)
+      }
     },
 
     deactivate() {
@@ -658,6 +820,15 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       wispAnimFrame = null
       hoveredWisp = -1
       clickedWisp = -1
+      // Clean up voice
+      if (speech?.supported) {
+        window.removeEventListener('keydown', handleSeanceKeyDown)
+        window.removeEventListener('keyup', handleSeanceKeyUp)
+        if (spaceHeld) {
+          speech.stop()
+          spaceHeld = false
+        }
+      }
     },
 
     destroy() {
@@ -665,6 +836,9 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       if (wispAnimFrame) cancelAnimationFrame(wispAnimFrame)
       wispAnimFrame = null
       window.removeEventListener('resize', resizeWispCanvas)
+      window.removeEventListener('keydown', handleSeanceKeyDown)
+      window.removeEventListener('keyup', handleSeanceKeyUp)
+      speech?.destroy()
       overlay?.remove()
     },
   }

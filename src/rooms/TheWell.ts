@@ -21,6 +21,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { createSpeechSession, type SpeechSession } from '../voice/SpeechHelper'
 
 interface WellDeps {
   getMemories: () => StoredMemory[]
@@ -90,6 +91,13 @@ export function createWellRoom(deps: WellDeps): Room {
 
   // Coal spark particles
   let coalSparks: { x: number; y: number; vx: number; vy: number; life: number }[] = []
+
+  // Voice input — speak into the well
+  let speech: SpeechSession | null = null
+  let spaceHeld = false
+  let voiceText = ''
+  let voiceListening = false
+  let voiceTextAlpha = 0 // fades the text display
 
   function distortText(text: string): string {
     const techniques = [
@@ -326,6 +334,63 @@ export function createWellRoom(deps: WellDeps): Room {
     ctx.fillStyle = 'rgba(120, 160, 220, 0.06)'
     ctx.textAlign = 'center'
     ctx.fillText('drop a memory. wait for the echo.', w / 2, h - 20)
+
+    // Voice hint — subtle, appears after 10s
+    if (speech?.supported) {
+      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(120, 160, 220, ${Math.min(0.06, time * 0.006)})`
+      ctx.textAlign = 'center'
+      ctx.fillText('or hold space to speak into the well', w / 2, h - 8)
+    }
+
+    // Voice input rendering — spoken text materializes above the well
+    if (voiceListening || voiceTextAlpha > 0.01) {
+      const voiceY = wellTopY - 60
+
+      // Listening indicator — pulsing ring above the well
+      if (voiceListening) {
+        const pulse = Math.sin(time * 4) * 0.3 + 0.7
+        const ringR = 20 + pulse * 8
+        ctx.beginPath()
+        ctx.arc(wellCenterX, voiceY - 30, ringR, 0, Math.PI * 2)
+        ctx.strokeStyle = `rgba(120, 160, 220, ${0.15 * pulse})`
+        ctx.lineWidth = 1
+        ctx.stroke()
+
+        // "the well listens" text
+        ctx.font = '10px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(120, 160, 220, ${0.2 * pulse})`
+        ctx.textAlign = 'center'
+        ctx.fillText('speak into the darkness...', wellCenterX, voiceY - 60)
+      }
+
+      // Show spoken text above the well rim
+      if (voiceText) {
+        voiceTextAlpha = Math.min(1, voiceTextAlpha + 0.05)
+        const displayVoice = voiceText.length > 50 ? voiceText.slice(0, 50) + '...' : voiceText
+        const voiceLines = wrapText(displayVoice, 35)
+
+        for (let i = 0; i < voiceLines.length; i++) {
+          const ly = voiceY + i * 18
+          // Each character trembles slightly — the well is unstable
+          const chars = voiceLines[i].split('')
+          const lineWidth = ctx.measureText(voiceLines[i]).width
+          let charX = wellCenterX - lineWidth / 2
+
+          ctx.font = '14px "Cormorant Garamond", serif'
+          for (let c = 0; c < chars.length; c++) {
+            const tremor = Math.sin(time * 6 + c * 0.7) * 1.2
+            const charAlpha = voiceTextAlpha * (0.5 + Math.sin(time * 3 + c * 0.4) * 0.1)
+            ctx.fillStyle = `rgba(180, 210, 240, ${charAlpha})`
+            const cw = ctx.measureText(chars[c]).width
+            ctx.fillText(chars[c], charX + cw / 2, ly + tremor)
+            charX += cw
+          }
+        }
+      }
+    } else {
+      voiceTextAlpha = 0
+    }
   }
 
   function wrapText(text: string, maxChars: number): string[] {
@@ -637,6 +702,51 @@ export function createWellRoom(deps: WellDeps): Room {
     canvas.style.cursor = 'default'
   }
 
+  // --- Voice input handlers ---
+
+  function handleWellKeyDown(e: KeyboardEvent) {
+    if (e.code !== 'Space' || e.repeat) return
+    if (document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA') return
+    if (!speech?.supported) return
+
+    e.preventDefault()
+    spaceHeld = true
+    voiceListening = true
+    voiceText = ''
+    voiceTextAlpha = 0
+    speech.start()
+  }
+
+  function handleWellKeyUp(e: KeyboardEvent) {
+    if (e.code !== 'Space') return
+    if (!spaceHeld) return
+    spaceHeld = false
+    voiceListening = false
+
+    const text = speech?.stop() || ''
+    if (text) {
+      // Create a memory-like object and drop it into the well
+      const echoText = distortText(text)
+      droppedMemories.push({
+        text,
+        y: 0,
+        phase: 'falling',
+        echoText,
+        echoAlpha: 0,
+        fallSpeed: 0.004 + Math.random() * 0.002,
+        waitTime: 0,
+        dropTime: time,
+      })
+      waterLevel = Math.min(0.3, waterLevel + 0.02)
+
+      // Add a splash ripple
+      ripples.push({ radius: 5, alpha: 0.3, x: (canvas?.width || window.innerWidth) / 2 })
+    }
+    // Fade out the voice text display
+    voiceText = ''
+  }
+
   function rebuildList() {
     if (!listEl) return
     listEl.innerHTML = ''
@@ -748,6 +858,14 @@ export function createWellRoom(deps: WellDeps): Room {
       canvas.addEventListener('mousemove', handleCanvasMouseMove)
       canvas.addEventListener('click', handleCanvasClick)
 
+      // Voice input
+      speech = createSpeechSession()
+      if (speech.supported) {
+        speech.onUpdate((text) => {
+          voiceText = text
+        })
+      }
+
       // Descent link — appears when water level is high
       let descentEl: HTMLElement | null = null
       if (deps.onDescend) {
@@ -804,9 +922,18 @@ export function createWellRoom(deps: WellDeps): Room {
       fallingObject = null
       hoveredObject = -1
       coalSparks = []
+      voiceText = ''
+      voiceListening = false
+      voiceTextAlpha = 0
+      spaceHeld = false
       if (navigateTimeout) { clearTimeout(navigateTimeout); navigateTimeout = null }
       rebuildList()
       render()
+      // Voice listeners
+      if (speech?.supported) {
+        window.addEventListener('keydown', handleWellKeyDown)
+        window.addEventListener('keyup', handleWellKeyUp)
+      }
     },
 
     deactivate() {
@@ -815,6 +942,13 @@ export function createWellRoom(deps: WellDeps): Room {
       if (navigateTimeout) { clearTimeout(navigateTimeout); navigateTimeout = null }
       fallingObject = null
       hoveredObject = -1
+      // Clean up voice
+      if (speech?.supported) {
+        window.removeEventListener('keydown', handleWellKeyDown)
+        window.removeEventListener('keyup', handleWellKeyUp)
+        if (spaceHeld) { speech.stop(); spaceHeld = false }
+      }
+      voiceListening = false
     },
 
     destroy() {
@@ -825,6 +959,9 @@ export function createWellRoom(deps: WellDeps): Room {
         canvas.removeEventListener('mousemove', handleCanvasMouseMove)
         canvas.removeEventListener('click', handleCanvasClick)
       }
+      window.removeEventListener('keydown', handleWellKeyDown)
+      window.removeEventListener('keyup', handleWellKeyUp)
+      speech?.destroy()
       overlay?.remove()
     },
   }

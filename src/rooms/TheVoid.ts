@@ -18,6 +18,7 @@ import type { Room } from './RoomManager'
 
 interface VoidDeps {
   switchTo: (name: string) => void
+  voiceSupported?: boolean
 }
 
 interface Portal {
@@ -31,6 +32,8 @@ export function createVoidRoom(deps?: VoidDeps): Room {
   let overlay: HTMLElement | null = null
   let portalContainer: HTMLElement | null = null
   let portalTimeout: number | null = null
+  let voiceHintEl: HTMLElement | null = null
+  let voiceHintTimeout: number | null = null
 
   const PORTALS: Portal[] = [
     {
@@ -166,6 +169,40 @@ export function createVoidRoom(deps?: VoidDeps): Room {
     }
   }
 
+  function createVoiceHint() {
+    if (!portalContainer || !deps?.voiceSupported) return
+
+    voiceHintEl = document.createElement('div')
+    voiceHintEl.style.cssText = `
+      position: absolute;
+      bottom: 28%; left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 8s ease;
+      z-index: 4;
+    `
+
+    const inner = document.createElement('div')
+    inner.style.cssText = `
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 300;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: rgba(255, 215, 0, 0.06);
+      font-style: italic;
+    `
+    inner.textContent = 'hold space to speak'
+    voiceHintEl.appendChild(inner)
+    portalContainer.appendChild(voiceHintEl)
+
+    // Fade in after 25 seconds — long enough for the portals to appear first
+    voiceHintTimeout = window.setTimeout(() => {
+      if (voiceHintEl) voiceHintEl.style.opacity = '1'
+    }, 25000)
+  }
+
   function addBreathingAnimation() {
     // Gentle breathing — portals pulse slowly
     let frame = 0
@@ -214,6 +251,7 @@ export function createVoidRoom(deps?: VoidDeps): Room {
     activate() {
       if (deps) {
         createPortals()
+        createVoiceHint()
         addBreathingAnimation()
       }
     },
@@ -221,6 +259,9 @@ export function createVoidRoom(deps?: VoidDeps): Room {
     deactivate() {
       if (portalTimeout) cancelAnimationFrame(portalTimeout)
       portalTimeout = null
+      if (voiceHintTimeout) clearTimeout(voiceHintTimeout)
+      voiceHintTimeout = null
+      voiceHintEl = null
       // Clear portals so they re-create fresh on next visit
       if (portalContainer) portalContainer.innerHTML = ''
       for (const p of PORTALS) p.el = undefined
