@@ -1231,6 +1231,47 @@ Surface: 36 | Hidden: 7
 - Foghorn and drip audio synthesis
 - 50% of large lakes shrunk since 1990 — data as elegy
 
+### 105. Room Afterimage System (`src/effects/RoomAfterimage.ts`)
+- System-level: visual traces of the room you just left persist briefly during transitions
+- 20+ room-specific signatures: furnace (rising embers), tidepool (wave ripples), choir (sound rings), observatory (star motes), etc.
+- Particle shapes: circle, spark, ring, line, snowflake, wave, grain
+- Spawn patterns: scatter, rise, fall, edges, center, sweep
+- Canvas overlay z-index 55, fades over ~3 seconds
+
+### 106. Spacetime Ripple Effect (`src/effects/SpacetimeRipple.ts`)
+- Inspired by GW250114 (Feb 2026): clearest gravitational wave ever recorded
+- Concentric expanding rings with multiple harmonic modes (like ringdown overtones)
+- Bell-like audio: 3 harmonics (fundamental 35-55Hz, inharmonic overtones at 2.76x and 5.4x)
+- Subtle body CSS transform warp (scale + skewX) for 300ms
+- Triggers when entering destructive rooms (furnace, disintegration, midnight, glacarium)
+
+### 107. Memory Bleed System (`src/effects/MemoryBleed.ts`)
+- User's own memories drift through walls as translucent whispers, every 45-90 seconds
+- Weighted selection: degraded memories bleed more easily (weight = 0.2 + degradation * 0.8)
+- Extracts 3-6 word fragments with ellipsis to suggest incompleteness
+- Spawns near screen edges (seeping through walls), drifts upward
+- HSL color from memory's hue, alpha 0.08-0.15, dissolves after ~12 seconds
+- Inspired by: Alzheimer's jumbled replay research, overhearing through walls, palimpsests
+
+### 108. TheRadio Deepened (AM/FM bands, number station)
+- AM/FM band toggle (M key): warm amber AM palette vs cool green FM
+- Scanner line: vertical sweep tracking frequency position
+- Lissajous interference patterns when between stations
+- Number station easter egg: synthesized digit-like tones + encoded text overlay
+- Shortwave ambience: filtered noise varying with frequency
+- Formant voice modulations: bandpass-shaped noise for distant voice effects
+
+### 109. TheObservatory Deepened (nebula, telescope, constellations)
+- 6000-particle nebula background (THREE.Points, additive blending, 8-color palette)
+- Degradation-aware star twinkle: healthy stars pulse gently (0.3-1.1Hz), degraded twinkle erratically (1.5-4.5Hz)
+- Constellation lines: hover a star to see lines connecting memories that share words
+- Telescope zoom: double-click to zoom along ray, click star to approach it, Escape to reset
+- Deep space drone: two sub-bass oscillators (38/42Hz) + LFO + delay reverb + spatial pulsar pings
+
+### 110. Feb 2026 Cultural Content Update
+- 30+ new whisper fragments: JWST dark matter map, GW250114, coral reef collapse (84% bleached), Alzheimer's jumbled replay, Project Hail Mary, Sydney Biennale "Rememory"
+- 7 new DigitalDecay meditations: coral growth/death rates, dark matter neural network, gravitational lensing, marine thermal migration, 1.5°C threshold
+
 ---
-*Last updated: Era 9, Feature 104 — Choir/ProjectionRoom/TidePool deepened with cultural depth*
-*"red threads stretch between the rooms you've visited. the house remembers your path."*
+*Last updated: Era 9, Feature 110 — System-level effects (afterimage, ripple, bleed) + Radio/Observatory deepened*
+*"two black holes collided and spacetime rang like a bell for three seconds"*
