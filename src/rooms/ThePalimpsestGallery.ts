@@ -62,14 +62,18 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
   let textReveal = 0 // 0-1, how much text is visible
   let loading = true
   let pairingsViewed = 0
+  let failureMessage = ''
 
   // Met Museum departments with paintings
   const PAINTING_DEPARTMENTS = [11, 21] // European Paintings, Modern Art
 
-  async function fetchRandomArtwork(): Promise<Artwork | null> {
+  // Cached search results to avoid re-fetching the objectIDs list every time
+  let cachedObjectIDs: number[] = []
+
+  async function ensureObjectIDs(): Promise<number[]> {
+    if (cachedObjectIDs.length > 0) return cachedObjectIDs
+
     try {
-      // Get a random painting from the Met's Open Access collection
-      // First, search for a random object ID from paintings
       const deptId = PAINTING_DEPARTMENTS[Math.floor(Math.random() * PAINTING_DEPARTMENTS.length)]
       const searchResp = await fetch(
         `https://collectionapi.metmuseum.org/public/collection/v1/search?departmentId=${deptId}&hasImages=true&isPublicDomain=true&q=painting`,
@@ -80,35 +84,73 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
       if (!searchData.objectIDs || searchData.objectIDs.length === 0) throw new Error('no results')
 
-      // Pick a random object
-      const objectId = searchData.objectIDs[Math.floor(Math.random() * searchData.objectIDs.length)]
-
-      // Fetch the object details
-      const objResp = await fetch(
-        `https://collectionapi.metmuseum.org/public/collection/v1/objects/${objectId}`,
-        { signal: AbortSignal.timeout(8000) }
-      )
-      if (!objResp.ok) throw new Error('object fetch failed')
-      const obj = await objResp.json()
-
-      if (!obj.primaryImageSmall && !obj.primaryImage) throw new Error('no image')
-
-      return {
-        title: obj.title || 'Untitled',
-        artist: obj.artistDisplayName || 'Unknown',
-        date: obj.objectDate || '',
-        imageUrl: obj.primaryImageSmall || obj.primaryImage,
-        department: obj.department || '',
-      }
+      cachedObjectIDs = searchData.objectIDs
+      return cachedObjectIDs
     } catch {
-      return null
+      return []
     }
   }
 
-  async function loadNewPairing() {
+  async function fetchRandomArtwork(): Promise<Artwork | null> {
+    const objectIDs = await ensureObjectIDs()
+    if (objectIDs.length === 0) return null
+
+    // Try up to 5 random IDs to find one with an image
+    const maxAttempts = 5
+    const tried = new Set<number>()
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      let objectId: number
+      // Pick a random ID we haven't tried yet
+      do {
+        objectId = objectIDs[Math.floor(Math.random() * objectIDs.length)]
+      } while (tried.has(objectId) && tried.size < objectIDs.length)
+
+      if (tried.has(objectId)) break
+      tried.add(objectId)
+
+      try {
+        const objResp = await fetch(
+          `https://collectionapi.metmuseum.org/public/collection/v1/objects/${objectId}`,
+          { signal: AbortSignal.timeout(8000) }
+        )
+        if (!objResp.ok) continue
+        const obj = await objResp.json()
+
+        if (!obj.primaryImageSmall && !obj.primaryImage) continue
+
+        return {
+          title: obj.title || 'Untitled',
+          artist: obj.artistDisplayName || 'Unknown',
+          date: obj.objectDate || '',
+          imageUrl: obj.primaryImageSmall || obj.primaryImage,
+          department: obj.department || '',
+        }
+      } catch {
+        continue
+      }
+    }
+
+    return null
+  }
+
+  // Verify an image URL actually loads, returning a loaded HTMLImageElement or null
+  function loadImage(url: string): Promise<HTMLImageElement | null> {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => resolve(img)
+      img.onerror = () => resolve(null)
+      img.src = url
+    })
+  }
+
+  async function loadNewPairing(retryCount = 0) {
+    const maxRetries = 3
     loading = true
     imageLoaded = false
     textReveal = 0
+    failureMessage = ''
 
     const memories = deps.getMemories()
     if (memories.length > 0) {
@@ -119,26 +161,30 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
     const artwork = await fetchRandomArtwork()
     if (artwork) {
-      currentArtwork = artwork
-
-      // Load the image
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      img.onload = () => {
+      const img = await loadImage(artwork.imageUrl)
+      if (img) {
+        currentArtwork = artwork
         artworkImage = img
         imageLoaded = true
         loading = false
+        pairingsViewed++
+        return
       }
-      img.onerror = () => {
-        loading = false
-        // Try again with a different artwork
-        setTimeout(loadNewPairing, 2000)
+
+      // Image failed to load — retry immediately (no delay) with a new artwork
+      if (retryCount < maxRetries) {
+        await loadNewPairing(retryCount + 1)
+        return
       }
-      img.src = artwork.imageUrl
-    } else {
-      loading = false
+    } else if (retryCount < maxRetries) {
+      // No artwork found from API — retry
+      await loadNewPairing(retryCount + 1)
+      return
     }
 
+    // All retries exhausted
+    loading = false
+    failureMessage = 'the museum is closed — the paintings rest behind locked doors'
     pairingsViewed++
   }
 
@@ -253,7 +299,7 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       c.font = '11px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.1)'
       c.textAlign = 'center'
-      c.fillText('the gallery is empty tonight', w / 2, h / 2)
+      c.fillText(failureMessage || 'the gallery is empty tonight', w / 2, h / 2)
       c.font = '9px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.06)'
       c.fillText('click to try again', w / 2, h / 2 + 20)

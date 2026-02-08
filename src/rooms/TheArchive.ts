@@ -1,57 +1,35 @@
 /**
- * THE ARCHIVE — search through the ruins of the internet
+ * THE ARCHIVE — search through the world's library
  *
- * A room that connects to the real Wayback Machine CDX API to find
- * actual dead pages from the internet's history. You type a URL or
- * keyword, and the system searches the Wayback Machine for captures
- * of pages that no longer exist.
+ * A room that connects to the Open Library Search API to find
+ * books across the entirety of recorded human knowledge. You type
+ * a subject, title, or author, and the system searches for matching
+ * books with their covers, publication dates, and editions.
  *
- * Results are displayed as ghostly cards showing:
- * - The original URL
- * - When it was last seen alive
- * - When it died (last capture date)
- * - A snippet of the archived content (if fetchable)
+ * Results are displayed as archival cards showing:
+ * - The book cover image
+ * - Title and author
+ * - First publication year
+ * - Edition count and subjects
  *
  * The aesthetic is a filing cabinet / card catalog in a dusty library.
- * Sepia tones, typewriter font for URLs, faded paper textures.
+ * Sepia tones, typewriter font for metadata, faded paper textures.
  *
- * This makes the Digital Decay feature concrete — instead of curated
- * dead URLs, you can actually dig through the internet's graveyard.
- *
- * Inspired by: The Wayback Machine, digital archaeology, link rot
- * research (2026: ~38% of pages from 2013 are gone), library of
- * Alexandria, Jorge Luis Borges' Library of Babel
+ * Inspired by: Borges' Library of Babel, the archive as memory palace,
+ * Open Library's mission to catalog every book ever published
  */
 
 import type { Room } from './RoomManager'
 
-interface ArchiveResult {
-  url: string
-  timestamp: string // YYYYMMDDHHMMSS format
-  statusCode: string
-  mimeType: string
-  dateFormatted: string
-}
-
-// CDX API returns CSV-like format
-function parseCdxLine(line: string): ArchiveResult | null {
-  const parts = line.split(' ')
-  if (parts.length < 6) return null
-  return {
-    url: parts[2] || '',
-    timestamp: parts[1] || '',
-    statusCode: parts[4] || '',
-    mimeType: parts[3] || '',
-    dateFormatted: formatTimestamp(parts[1] || ''),
-  }
-}
-
-function formatTimestamp(ts: string): string {
-  if (ts.length < 8) return ts
-  const y = ts.slice(0, 4)
-  const m = ts.slice(4, 6)
-  const d = ts.slice(6, 8)
-  return `${y}-${m}-${d}`
+interface BookResult {
+  title: string
+  author: string
+  firstPublishYear: number | null
+  coverId: number | null
+  key: string
+  editionCount: number
+  pageCount: number | null
+  subjects: string[]
 }
 
 interface ArchiveDeps {
@@ -65,16 +43,9 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
   let searching = false
   let searchCount = 0
 
-  async function searchWayback(query: string): Promise<ArchiveResult[]> {
-    // The CDX API lets us search for URLs matching a pattern
-    // Use wildcard prefix search for domains
-    const searchUrl = query.includes('.')
-      ? query // treat as URL/domain
-      : `*.${query}.*` // treat as keyword in URL
+  async function searchBooks(query: string): Promise<BookResult[]> {
+    const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=20`
 
-    const url = `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(searchUrl)}&output=text&limit=20&fl=urlkey,timestamp,original,mimetype,statuscode,length&filter=mimetype:text/html&collapse=urlkey`
-
-    // Add timeout to prevent hanging
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000)
 
@@ -83,29 +54,36 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       clearTimeout(timeoutId)
       if (!response.ok) return []
 
-      const text = await response.text()
-      const lines = text.trim().split('\n').filter(l => l.trim())
+      const json = await response.json()
+      const docs: any[] = json.docs || []
 
-      return lines
-        .map(parseCdxLine)
-        .filter((r): r is ArchiveResult => r !== null)
+      return docs.map((doc: any) => ({
+        title: doc.title || 'Untitled',
+        author: Array.isArray(doc.author_name) ? doc.author_name[0] || 'Unknown' : 'Unknown',
+        firstPublishYear: typeof doc.first_publish_year === 'number' ? doc.first_publish_year : null,
+        coverId: typeof doc.cover_i === 'number' ? doc.cover_i : null,
+        key: doc.key || '',
+        editionCount: typeof doc.edition_count === 'number' ? doc.edition_count : 0,
+        pageCount: typeof doc.number_of_pages_median === 'number' ? doc.number_of_pages_median : null,
+        subjects: Array.isArray(doc.subject) ? doc.subject.slice(0, 4) : [],
+      }))
     } catch (err) {
       clearTimeout(timeoutId)
       throw err
     }
   }
 
-  function renderResults(results: ArchiveResult[], container: HTMLElement, statusEl: HTMLElement) {
+  function renderResults(books: BookResult[], container: HTMLElement, statusEl: HTMLElement) {
     container.innerHTML = ''
 
-    if (results.length === 0) {
-      statusEl.textContent = 'nothing found in the archive. the void is absolute.'
+    if (books.length === 0) {
+      statusEl.textContent = 'nothing found in the archive. the shelves are bare.'
       return
     }
 
-    statusEl.textContent = `${results.length} ghosts found`
+    statusEl.textContent = `${books.length} books unearthed`
 
-    for (const result of results) {
+    for (const book of books) {
       const card = document.createElement('div')
       card.style.cssText = `
         background: rgba(40, 30, 20, 0.3);
@@ -114,6 +92,9 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         margin-bottom: 8px;
         transition: border-color 0.3s ease, background 0.3s ease;
         cursor: pointer;
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
       `
       card.addEventListener('mouseenter', () => {
         card.style.borderColor = 'rgba(180, 160, 120, 0.25)'
@@ -124,35 +105,86 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         card.style.background = 'rgba(40, 30, 20, 0.3)'
       })
 
-      // URL
-      const urlEl = document.createElement('div')
-      urlEl.style.cssText = `
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        color: rgba(180, 160, 120, 0.5);
-        word-break: break-all;
-        margin-bottom: 6px;
-      `
-      urlEl.textContent = result.url
-      card.appendChild(urlEl)
+      // Cover image
+      if (book.coverId) {
+        const img = document.createElement('img')
+        img.src = `https://covers.openlibrary.org/b/id/${book.coverId}-M.jpg`
+        img.alt = book.title
+        img.style.cssText = `
+          width: 50px;
+          min-width: 50px;
+          height: 72px;
+          object-fit: cover;
+          opacity: 0.7;
+          filter: sepia(0.4);
+          border: 1px solid rgba(180, 160, 120, 0.1);
+        `
+        img.addEventListener('error', () => { img.style.display = 'none' })
+        card.appendChild(img)
+      }
 
-      // Date and status
+      // Text content
+      const textCol = document.createElement('div')
+      textCol.style.cssText = `flex: 1; min-width: 0;`
+
+      // Title
+      const titleEl = document.createElement('div')
+      titleEl.style.cssText = `
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 14px;
+        color: rgba(180, 160, 120, 0.6);
+        margin-bottom: 4px;
+        line-height: 1.3;
+      `
+      titleEl.textContent = book.title
+      textCol.appendChild(titleEl)
+
+      // Author
+      const authorEl = document.createElement('div')
+      authorEl.style.cssText = `
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 12px; font-style: italic;
+        color: rgba(180, 160, 120, 0.35);
+        margin-bottom: 4px;
+      `
+      authorEl.textContent = book.author
+      textCol.appendChild(authorEl)
+
+      // Meta line: year, editions, pages
       const meta = document.createElement('div')
       meta.style.cssText = `
-        font-family: 'Cormorant Garamond', serif;
-        font-size: 11px; font-style: italic;
-        color: rgba(180, 160, 120, 0.25);
+        font-family: 'Courier New', monospace;
+        font-size: 10px;
+        color: rgba(180, 160, 120, 0.2);
+        margin-bottom: 4px;
       `
-      const status = result.statusCode === '200' ? 'captured' : `status ${result.statusCode}`
-      meta.textContent = `last seen: ${result.dateFormatted} · ${status}`
-      card.appendChild(meta)
+      const parts: string[] = []
+      if (book.firstPublishYear) parts.push(`first published ${book.firstPublishYear}`)
+      if (book.editionCount > 0) parts.push(`${book.editionCount} edition${book.editionCount === 1 ? '' : 's'}`)
+      if (book.pageCount) parts.push(`~${book.pageCount} pages`)
+      meta.textContent = parts.join(' · ')
+      textCol.appendChild(meta)
 
-      // Click to open in Wayback Machine
+      // Subjects
+      if (book.subjects.length > 0) {
+        const subjectsEl = document.createElement('div')
+        subjectsEl.style.cssText = `
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 10px; font-style: italic;
+          color: rgba(180, 160, 120, 0.15);
+          line-height: 1.4;
+        `
+        subjectsEl.textContent = book.subjects.join(', ')
+        textCol.appendChild(subjectsEl)
+      }
+
+      card.appendChild(textCol)
+
+      // Click to open on Open Library
       card.addEventListener('click', () => {
-        window.open(
-          `https://web.archive.org/web/${result.timestamp}/${result.url}`,
-          '_blank'
-        )
+        if (book.key) {
+          window.open(`https://openlibrary.org${book.key}`, '_blank')
+        }
       })
 
       container.appendChild(card)
@@ -202,7 +234,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         margin-top: 6px; margin-bottom: 24px;
         text-align: center; max-width: 400px;
       `
-      sub.textContent = 'search the wayback machine for ghosts of the internet'
+      sub.textContent = 'search through the world\'s library \u2014 every book ever written'
       overlay.appendChild(sub)
 
       // Search input
@@ -215,7 +247,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
 
       const input = document.createElement('input')
       input.type = 'text'
-      input.placeholder = 'enter a URL or domain (e.g. geocities.com)...'
+      input.placeholder = 'a title, author, or subject...'
       input.style.cssText = `
         flex: 1;
         background: transparent;
@@ -230,7 +262,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       `
 
       const searchBtn = document.createElement('button')
-      searchBtn.textContent = 'dig'
+      searchBtn.textContent = 'search'
       searchBtn.style.cssText = `
         background: transparent;
         border: 1px solid rgba(180, 160, 120, 0.2);
@@ -283,12 +315,11 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       `
 
       const curated = [
-        'geocities.com', 'vine.co', 'myspace.com',
-        'stumbleupon.com', 'reader.google.com', 'del.icio.us',
-        'friendster.com', 'digg.com',
+        'memory', 'forgetting', 'time', 'dreams',
+        'loss', 'ruins', 'labyrinth', 'photographs',
       ]
 
-      for (const url of curated) {
+      for (const term of curated) {
         const chip = document.createElement('span')
         chip.style.cssText = `
           font-family: 'Courier New', monospace;
@@ -299,7 +330,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
           cursor: pointer;
           transition: all 0.3s ease;
         `
-        chip.textContent = url
+        chip.textContent = term
         chip.addEventListener('mouseenter', () => {
           chip.style.borderColor = 'rgba(180, 160, 120, 0.3)'
           chip.style.color = 'rgba(180, 160, 120, 0.5)'
@@ -309,7 +340,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
           chip.style.color = 'rgba(180, 160, 120, 0.25)'
         })
         chip.addEventListener('click', () => {
-          input.value = url
+          input.value = term
           doSearch()
         })
         suggestions.appendChild(chip)
@@ -325,7 +356,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         margin-bottom: 40px;
         text-align: center;
       `
-      hint.textContent = '~38% of web pages from 2013 no longer exist. what did they hold?'
+      hint.textContent = 'every book is a memory someone refused to let die'
       overlay.appendChild(hint)
 
       // Passage links to connected rooms
@@ -371,7 +402,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         margin-bottom: 40px;
         text-align: center;
       `
-      descent.textContent = '▼ descend deeper'
+      descent.textContent = '\u25bc descend deeper'
       descent.addEventListener('mouseenter', () => {
         if (searchCount >= 2) descent.style.color = 'rgba(180, 160, 120, 0.4)'
       })
@@ -386,16 +417,15 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       async function doSearch() {
         const query = input.value.trim()
 
-        // Safety: reset searching flag if stuck for more than 30s
+        // Safety: prevent double searches
         if (searching) {
           console.warn('[archive] search already in progress, skipping')
           return
         }
 
         if (!query) {
-          status.textContent = 'type a URL or domain first'
+          status.textContent = 'type a title, author, or subject first'
           status.style.color = 'rgba(180, 160, 120, 0.3)'
-          // Flash the input border to indicate it needs text
           input.style.borderBottomColor = 'rgba(255, 180, 100, 0.5)'
           setTimeout(() => {
             input.style.borderBottomColor = 'rgba(180, 160, 120, 0.15)'
@@ -407,12 +437,12 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         searching = true
         searchBtn.textContent = '...'
         searchBtn.style.opacity = '0.5'
-        status.textContent = `searching the archive for "${query}"...`
+        status.textContent = `searching for "${query}"...`
         status.style.color = 'rgba(180, 160, 120, 0.4)'
         results.innerHTML = ''
 
         try {
-          const data = await searchWayback(query)
+          const data = await searchBooks(query)
           renderResults(data, results, status)
           searchCount++
           // Reveal descent link after 2 searches
@@ -421,14 +451,14 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
           }
         } catch (err) {
           const errMsg = err instanceof Error && err.name === 'AbortError'
-            ? 'the archive took too long. the past resists being found.'
+            ? 'the library took too long to respond. try again.'
             : 'the archive is unreachable. try again.'
           status.textContent = errMsg
           status.style.color = 'rgba(180, 120, 80, 0.4)'
           console.warn('[archive] search failed:', err)
         } finally {
           searching = false
-          searchBtn.textContent = 'dig'
+          searchBtn.textContent = 'search'
           searchBtn.style.opacity = '1'
         }
       }

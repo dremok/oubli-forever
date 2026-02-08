@@ -44,7 +44,6 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
   let active = false
   let developing = false
   let prints: DevelopedPrint[] = loadPrints()
-  const apiKey = import.meta.env.FAL_KEY || ''
 
   function loadPrints(): DevelopedPrint[] {
     try {
@@ -76,27 +75,135 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     return mem.currentText
   }
 
-  async function generateImage(prompt: string): Promise<string | null> {
-    const artPrompt = `analog photograph, darkroom print, silver gelatin, high contrast black and white with subtle warm tone, ${prompt}, grain, slightly soft focus, vintage photographic quality, moody shadows, atmospheric, intimate, 35mm film aesthetic`
+  function generateProceduralPrint(prompt: string): string {
+    // Create a procedural darkroom print from the text
+    const size = 400
+    const c = document.createElement('canvas')
+    c.width = size
+    c.height = size
+    const ctx = c.getContext('2d')!
 
-    const response = await fetch('https://fal.run/fal-ai/flux/schnell', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Key ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        prompt: artPrompt,
-        image_size: 'square',
-        num_inference_steps: 4,
-        num_images: 1,
-        enable_safety_checker: false,
-      }),
-    })
+    // Seed RNG from prompt text
+    let seed = 0
+    for (let i = 0; i < prompt.length; i++) {
+      seed = ((seed << 5) - seed + prompt.charCodeAt(i)) | 0
+    }
+    const rng = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed / 0x7fffffff
+    }
 
-    if (!response.ok) return null
-    const data = await response.json()
-    return data?.images?.[0]?.url || null
+    // Dark background with subtle warmth
+    const bgR = 8 + Math.floor(rng() * 12)
+    const bgG = 4 + Math.floor(rng() * 8)
+    const bgB = 2 + Math.floor(rng() * 6)
+    ctx.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`
+    ctx.fillRect(0, 0, size, size)
+
+    // Extract words for visual seeds
+    const words = prompt.toLowerCase().split(/\s+/).filter(w => w.length > 2)
+
+    // Layer 1: Large radial gradient washes (2-4)
+    const washes = 2 + Math.floor(rng() * 3)
+    for (let i = 0; i < washes; i++) {
+      const cx = rng() * size
+      const cy = rng() * size
+      const radius = 80 + rng() * 180
+      const warmth = rng()
+      const r = Math.floor(120 + warmth * 80)
+      const g = Math.floor(60 + warmth * 40)
+      const b = Math.floor(30 + warmth * 20)
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
+      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${0.08 + rng() * 0.12})`)
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, size, size)
+    }
+
+    // Layer 2: Geometric shapes derived from words
+    for (let i = 0; i < Math.min(words.length, 8); i++) {
+      const word = words[i]
+      const charSum = word.split('').reduce((s, c) => s + c.charCodeAt(0), 0)
+      const alpha = 0.03 + rng() * 0.08
+      const warm = 100 + (charSum % 100)
+      ctx.fillStyle = `rgba(${warm}, ${Math.floor(warm * 0.5)}, ${Math.floor(warm * 0.3)}, ${alpha})`
+
+      const shape = charSum % 4
+      const x = rng() * size
+      const y = rng() * size
+      const s = 30 + rng() * 120
+
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(rng() * Math.PI * 2)
+
+      if (shape === 0) {
+        // Circle
+        ctx.beginPath()
+        ctx.arc(0, 0, s / 2, 0, Math.PI * 2)
+        ctx.fill()
+      } else if (shape === 1) {
+        // Rectangle
+        ctx.fillRect(-s / 2, -s / 3, s, s * 0.66)
+      } else if (shape === 2) {
+        // Triangle
+        ctx.beginPath()
+        ctx.moveTo(0, -s / 2)
+        ctx.lineTo(s / 2, s / 2)
+        ctx.lineTo(-s / 2, s / 2)
+        ctx.closePath()
+        ctx.fill()
+      } else {
+        // Ellipse
+        ctx.beginPath()
+        ctx.ellipse(0, 0, s / 2, s / 3, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.restore()
+    }
+
+    // Layer 3: Fine line structures
+    ctx.strokeStyle = `rgba(180, 140, 100, ${0.04 + rng() * 0.06})`
+    ctx.lineWidth = 0.5
+    for (let i = 0; i < 8 + Math.floor(rng() * 12); i++) {
+      ctx.beginPath()
+      ctx.moveTo(rng() * size, rng() * size)
+      ctx.quadraticCurveTo(rng() * size, rng() * size, rng() * size, rng() * size)
+      ctx.stroke()
+    }
+
+    // Layer 4: Text fragments scattered
+    ctx.font = '10px "Cormorant Garamond", serif'
+    ctx.textAlign = 'center'
+    for (let i = 0; i < Math.min(words.length, 6); i++) {
+      const alpha = 0.04 + rng() * 0.1
+      ctx.fillStyle = `rgba(200, 160, 120, ${alpha})`
+      ctx.save()
+      ctx.translate(rng() * size, rng() * size)
+      ctx.rotate((rng() - 0.5) * 0.6)
+      ctx.fillText(words[i], 0, 0)
+      ctx.restore()
+    }
+
+    // Layer 5: Film grain
+    const imageData = ctx.getImageData(0, 0, size, size)
+    const d = imageData.data
+    for (let i = 0; i < d.length; i += 4) {
+      const noise = (rng() - 0.5) * 16
+      d[i] = Math.max(0, Math.min(255, d[i] + noise))
+      d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + noise * 0.8))
+      d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + noise * 0.6))
+    }
+    ctx.putImageData(imageData, 0, 0)
+
+    // Layer 6: Vignette
+    const vignette = ctx.createRadialGradient(size / 2, size / 2, size * 0.2, size / 2, size / 2, size * 0.7)
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)')
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.5)')
+    ctx.fillStyle = vignette
+    ctx.fillRect(0, 0, size, size)
+
+    return c.toDataURL('image/jpeg', 0.85)
   }
 
   function renderGallery(galleryEl: HTMLElement) {
@@ -142,7 +249,6 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
 
       const img = document.createElement('img')
       img.src = print.imageUrl
-      img.crossOrigin = 'anonymous'
       // Age effect: sepia increases, contrast decreases
       const sepia = print.age * 80
       const contrast = 100 - print.age * 30
@@ -194,7 +300,6 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
 
     const img = document.createElement('img')
     img.src = print.imageUrl
-    img.crossOrigin = 'anonymous'
     const sepia = print.age * 80
     const contrast = 100 - print.age * 30
     img.style.cssText = `
@@ -226,7 +331,7 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     statusEl: HTMLElement,
     galleryEl: HTMLElement
   ) {
-    if (developing || !apiKey) return
+    if (developing) return
     developing = true
 
     // Phase 1: Darkness
@@ -254,36 +359,18 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     `
     trayBg.appendChild(wash)
 
-    // Phase 2: Developing
+    // Phase 2: Developing (procedural generation from text)
     await new Promise(r => setTimeout(r, 1500))
     statusEl.textContent = 'developing...'
 
-    let imageUrl: string | null = null
-    try {
-      imageUrl = await generateImage(prompt)
-    } catch {
-      statusEl.textContent = 'development failed. the chemicals have expired.'
-      developing = false
-      return
-    }
-
-    if (!imageUrl) {
-      statusEl.textContent = 'the image did not take. try again.'
-      developing = false
-      return
-    }
+    const imageUrl = generateProceduralPrint(prompt)
 
     // Phase 3: Image slowly appears
+    await new Promise(r => setTimeout(r, 500))
     statusEl.textContent = 'image emerging...'
 
     const img = new Image()
-    img.crossOrigin = 'anonymous'
-
-    await new Promise<void>((resolve) => {
-      img.onload = () => resolve()
-      img.onerror = () => resolve()
-      img.src = imageUrl!
-    })
+    img.src = imageUrl
 
     img.style.cssText = `
       width: 100%; height: 100%; object-fit: cover;
@@ -430,11 +517,6 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
         transition: color 0.5s ease;
       `
       overlay.appendChild(status)
-
-      if (!apiKey) {
-        status.textContent = 'the enlarger is dark. no light source available.'
-        status.style.color = 'rgba(200, 100, 100, 0.3)'
-      }
 
       // Input area — prompt or use a memory
       const inputArea = document.createElement('div')
