@@ -1470,6 +1470,22 @@ Complete rewrite of the labyrinth from a fixed 25x25 grid to an infinite hash-ba
 
 Also: DDA raycasting for performance, Wikipedia fragments on walls, minimap with ghost cells for forgotten regions, portal rooms to connected spaces (cipher, cartographer, library). Inspired by Borges' "Garden of Forking Paths", grey matter erosion research, Shiota's thread installations.
 
+### 141. Labyrinth Scare Overhaul — More Frequent, More Intense
+- 5 scare types: flash (violent full-screen), slowburn (creeps then SLAMS), glitch (digital break), darkness (lights out + red eyes), bleed (walls drip blood)
+- Scares escalate: cooldown drops from 30s to 12s, each scare more intense
+- 15 FAL scare images + 24 ElevenLabs sounds (knocking, banging, metal, screams, whispers, sinister laughs, breathing, bones, music box, panicked whispers)
+- 16 clickable wall effects: scary (face flash, screen invert, wall bleed, static, lights out, tracking eye), beautiful (rainbow spiral, golden particles, aurora, starfield, prismatic), mysterious (portal, time freeze, cryptic messages, map reveal, bell toll)
+
+### 142. Labyrinth Insanity Escalation System
+The labyrinth now progressively drives you insane the longer you stay:
+- 6 stages: subtle unease → disorientation → reality bending → alien geometry → losing control → full madness
+- Camera tilts, FOV warps wider, movement drifts off course, wall colors shift sickly, corridors stretch impossibly
+- Walls visibly breathe, horizon shifts, random glitch tears, color inversions, vision narrows to tunnel
+- Involuntary micro-movement at high insanity, turn speed fluctuates wildly
+- Sanity % indicator appears as you deteriorate
+- Phantom sound system: procedurally synthesized knocking, metal bangs, haunting whispers, sinister laughs, scraping — frequency increases with insanity
+- 12 distinct wall objects (rusty handles, cracks, peeping eyes, symbols, mirrors, bloodstains, keyholes, handprints, fungus, candles, scratches, face reliefs) rendered at wall-correct perspective
+
 ---
-*Last updated: Era 9, Feature 140 — Infinite labyrinth with forgetting + jump scares*
-*"the labyrinth forgets its own corridors. the way back has changed."*
+*Last updated: Era 9, Feature 142 — Labyrinth insanity escalation*
+*"the labyrinth forgets its own corridors. you forget yourself."*
