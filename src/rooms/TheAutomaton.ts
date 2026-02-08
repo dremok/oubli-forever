@@ -22,6 +22,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface AutomatonDeps {
   switchTo?: (name: string) => void
@@ -58,6 +59,36 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   let frameCount = 0
   let paused = false
   let hoveredPortal = -1
+
+  // --- Audio state ---
+  let audioReady = false
+  let ac: AudioContext | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let portalOscs: (OscillatorNode | null)[] = [null, null, null]
+  let portalGains: (GainNode | null)[] = [null, null, null]
+  let portalWasActive: boolean[] = [false, false, false]
+  let lastLiveCells = 0
+  let birthsThisStep = 0
+  let deathsThisStep = 0
+  // Grid pulse brightness offset (0-0.02)
+  let gridPulseBrightness = 0
+
+  // --- Death particles ---
+  interface DeathParticle {
+    x: number
+    y: number
+    vx: number
+    vy: number
+    alpha: number
+    size: number
+  }
+  const deathParticles: DeathParticle[] = []
+
+  // --- Newborn glow tracking ---
+  // Cells born in the last few steps get a radial glow
+  // We track them as [row, col, birthGen]
+  const newbornCells: [number, number, number][] = []
 
   interface PortalZone {
     room: string
@@ -296,6 +327,9 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   function step() {
     const next: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0))
 
+    birthsThisStep = 0
+    deathsThisStep = 0
+
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const neighbors = countNeighbors(r, c)
@@ -307,10 +341,26 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
           } else {
             next[r][c] = 0 // die
             deathCount[r][c]++
+            deathsThisStep++
+
+            // Spawn death particle (10% chance)
+            if (Math.random() < 0.1) {
+              deathParticles.push({
+                x: c * cellSize + cellSize / 2,
+                y: r * cellSize + cellSize / 2,
+                vx: (Math.random() - 0.5) * 0.3,
+                vy: -(Math.random() * 0.5 + 0.2),
+                alpha: 0.4 + Math.random() * 0.2,
+                size: 1 + Math.random() * 1.5,
+              })
+            }
           }
         } else {
           if (neighbors === 3) {
             next[r][c] = generation + 1 // born
+            birthsThisStep++
+            // Track newborn for glow effect
+            newbornCells.push([r, c, generation + 1])
           }
         }
       }
@@ -318,6 +368,22 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
 
     grid = next
     generation++
+
+    // Prune old newborn entries (keep only cells born within last 3 generations)
+    while (newbornCells.length > 0 && generation - newbornCells[0][2] > 3) {
+      newbornCells.shift()
+    }
+
+    // --- Audio: life pulse, birth/death crackle ---
+    if (audioReady && ac) {
+      playLifePulse()
+      playBirthDeathCrackle()
+      updateDroneFrequency()
+      updatePortalAudio()
+    }
+
+    // Grid pulse brightness peaks on step then decays
+    gridPulseBrightness = 0.02
 
     // Every 2 generations, check portal stability (period-2 detection)
     if (generation % 2 === 0) {
@@ -328,6 +394,198 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     if (generation % 200 === 0) {
       protectPortals()
     }
+  }
+
+  // --- Audio helper functions ---
+
+  function playLifePulse() {
+    if (!ac) return
+    try {
+      const dest = getAudioDestination()
+      const osc = ac.createOscillator()
+      const gain = ac.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = 200
+      const cellRatio = Math.min(lastLiveCells / 500, 1)
+      gain.gain.value = 0.001 * cellRatio
+      osc.connect(gain)
+      gain.connect(dest)
+      osc.start(ac.currentTime)
+      osc.stop(ac.currentTime + 0.002)
+    } catch (_) { /* audio node creation can fail if context is closed */ }
+  }
+
+  function playBirthDeathCrackle() {
+    if (!ac || (birthsThisStep === 0 && deathsThisStep === 0)) return
+    try {
+      const dest = getAudioDestination()
+      const bufferSize = ac.sampleRate * 0.02 // 20ms noise burst
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1)
+      }
+
+      if (birthsThisStep > 0) {
+        const src = ac.createBufferSource()
+        src.buffer = buffer
+        const filter = ac.createBiquadFilter()
+        filter.type = 'bandpass'
+        filter.frequency.value = 2000
+        filter.Q.value = 2
+        const gain = ac.createGain()
+        gain.gain.value = Math.min(0.01, 0.005 + birthsThisStep * 0.0002)
+        src.connect(filter)
+        filter.connect(gain)
+        gain.connect(dest)
+        src.start(ac.currentTime)
+      }
+
+      if (deathsThisStep > 0) {
+        const src = ac.createBufferSource()
+        src.buffer = buffer
+        const filter = ac.createBiquadFilter()
+        filter.type = 'bandpass'
+        filter.frequency.value = 500
+        filter.Q.value = 2
+        const gain = ac.createGain()
+        gain.gain.value = Math.min(0.01, 0.005 + deathsThisStep * 0.0002)
+        src.connect(filter)
+        filter.connect(gain)
+        gain.connect(dest)
+        src.start(ac.currentTime)
+      }
+    } catch (_) { /* audio node creation can fail */ }
+  }
+
+  function updateDroneFrequency() {
+    if (!droneOsc) return
+    const targetFreq = 60 + Math.min(lastLiveCells * 0.01, 5)
+    droneOsc.frequency.setTargetAtTime(targetFreq, ac!.currentTime, 0.5)
+  }
+
+  function updatePortalAudio() {
+    if (!ac) return
+    const portalFreqs = [330, 392, 262] // terrarium, seismograph, pendulum
+    try {
+      const dest = getAudioDestination()
+      for (let i = 0; i < portalZones.length; i++) {
+        const pz = portalZones[i]
+        const wasActive = portalWasActive[i]
+
+        if (pz.active && !wasActive) {
+          // Portal just activated — start hum
+          const osc = ac.createOscillator()
+          osc.type = 'sine'
+          osc.frequency.value = portalFreqs[i]
+          const gain = ac.createGain()
+          gain.gain.value = 0
+          gain.gain.setTargetAtTime(0.02, ac.currentTime, 1.0)
+          osc.connect(gain)
+          gain.connect(dest)
+          osc.start(ac.currentTime)
+          portalOscs[i] = osc
+          portalGains[i] = gain
+        } else if (!pz.active && wasActive) {
+          // Portal just deactivated — fade out and stop
+          const gain = portalGains[i]
+          const osc = portalOscs[i]
+          if (gain && osc) {
+            gain.gain.setTargetAtTime(0, ac.currentTime, 0.3)
+            osc.stop(ac.currentTime + 1.5)
+          }
+          portalOscs[i] = null
+          portalGains[i] = null
+        }
+
+        portalWasActive[i] = pz.active
+      }
+    } catch (_) { /* audio cleanup race */ }
+  }
+
+  function playClickSound() {
+    if (!audioReady || !ac) return
+    try {
+      const dest = getAudioDestination()
+      const osc = ac.createOscillator()
+      const gain = ac.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = 440
+      gain.gain.value = 0.03
+      gain.gain.setTargetAtTime(0, ac.currentTime, 0.003)
+      osc.connect(gain)
+      gain.connect(dest)
+      osc.start(ac.currentTime)
+      osc.stop(ac.currentTime + 0.005)
+    } catch (_) { /* */ }
+  }
+
+  function initAudio() {
+    getAudioContext().then((context) => {
+      if (!active) return
+      ac = context
+      audioReady = true
+      try {
+        const dest = getAudioDestination()
+        // Generation drone: low continuous triangle wave
+        droneOsc = ac.createOscillator()
+        droneOsc.type = 'triangle'
+        droneOsc.frequency.value = 60
+        droneGain = ac.createGain()
+        droneGain.gain.value = 0
+        // Fade drone in over 2 seconds
+        droneGain.gain.setTargetAtTime(0.01, ac.currentTime, 2.0)
+        droneOsc.connect(droneGain)
+        droneGain.connect(dest)
+        droneOsc.start(ac.currentTime)
+      } catch (_) { /* */ }
+    }).catch(() => { /* audio init failed, room still works silently */ })
+  }
+
+  function cleanupAudio(fadeTime = 0.5) {
+    audioReady = false
+    if (!ac) return
+
+    const now = ac.currentTime
+
+    // Fade drone
+    if (droneGain) {
+      try { droneGain.gain.setTargetAtTime(0, now, fadeTime * 0.3) } catch (_) { /* */ }
+    }
+    if (droneOsc) {
+      try { droneOsc.stop(now + fadeTime + 0.1) } catch (_) { /* */ }
+    }
+
+    // Fade portal hums
+    for (let i = 0; i < portalOscs.length; i++) {
+      const g = portalGains[i]
+      const o = portalOscs[i]
+      if (g) {
+        try { g.gain.setTargetAtTime(0, now, fadeTime * 0.3) } catch (_) { /* */ }
+      }
+      if (o) {
+        try { o.stop(now + fadeTime + 0.1) } catch (_) { /* */ }
+      }
+      portalOscs[i] = null
+      portalGains[i] = null
+    }
+    portalWasActive = [false, false, false]
+  }
+
+  function destroyAudio() {
+    cleanupAudio(0)
+    // Disconnect all nodes
+    try { droneOsc?.disconnect() } catch (_) { /* */ }
+    try { droneGain?.disconnect() } catch (_) { /* */ }
+    for (let i = 0; i < portalOscs.length; i++) {
+      try { portalOscs[i]?.disconnect() } catch (_) { /* */ }
+      try { portalGains[i]?.disconnect() } catch (_) { /* */ }
+      portalOscs[i] = null
+      portalGains[i] = null
+    }
+    droneOsc = null
+    droneGain = null
+    ac = null
   }
 
   function render() {
@@ -344,8 +602,14 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Clear with very slight trail (creates afterglow)
-    ctx.fillStyle = 'rgba(3, 2, 5, 0.85)'
+    // Decay grid pulse brightness
+    gridPulseBrightness *= 0.92
+
+    // Clear with very slight trail (creates afterglow), pulse brightness on step
+    const bgR = Math.round(3 + gridPulseBrightness * 255)
+    const bgG = Math.round(2 + gridPulseBrightness * 200)
+    const bgB = Math.round(5 + gridPulseBrightness * 255)
+    ctx.fillStyle = `rgba(${bgR}, ${bgG}, ${bgB}, 0.85)`
     ctx.fillRect(0, 0, w, h)
 
     // Draw cells
@@ -389,6 +653,42 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
           ctx.fillRect(c * cellSize, r * cellSize, cellSize - 1, cellSize - 1)
         }
       }
+    }
+
+    // Track live cells for audio
+    lastLiveCells = liveCells
+
+    // --- Newborn cell glow ---
+    for (const [nr, nc, birthGen] of newbornCells) {
+      if (grid[nr]?.[nc] > 0) {
+        const glowAge = generation - birthGen
+        if (glowAge < 3) {
+          const cx = nc * cellSize + cellSize / 2
+          const cy = nr * cellSize + cellSize / 2
+          const glowAlpha = 0.15 * (1 - glowAge / 3)
+          const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cellSize * 2.5)
+          grad.addColorStop(0, `rgba(255, 180, 220, ${glowAlpha})`)
+          grad.addColorStop(1, 'rgba(255, 180, 220, 0)')
+          ctx.fillStyle = grad
+          ctx.fillRect(cx - cellSize * 2.5, cy - cellSize * 2.5, cellSize * 5, cellSize * 5)
+        }
+      }
+    }
+
+    // --- Death particles ---
+    for (let i = deathParticles.length - 1; i >= 0; i--) {
+      const p = deathParticles[i]
+      p.x += p.vx
+      p.y += p.vy
+      p.alpha -= 0.005
+      if (p.alpha <= 0) {
+        deathParticles.splice(i, 1)
+        continue
+      }
+      ctx.fillStyle = `rgba(160, 140, 180, ${p.alpha})`
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     // UI overlay
@@ -503,6 +803,7 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
       canvas.addEventListener('click', (e) => {
         const c = Math.floor(e.clientX / cellSize)
         const r = Math.floor(e.clientY / cellSize)
+        playClickSound()
         // Place a random pattern or just toggle cells
         if (Math.random() < 0.3) {
           const patternNames = Object.keys(PATTERNS) as (keyof typeof PATTERNS)[]
@@ -603,17 +904,22 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     activate() {
       active = true
       initGrid()
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      cleanupAudio(0.5)
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
+      deathParticles.length = 0
+      newbornCells.length = 0
       overlay?.remove()
     },
   }

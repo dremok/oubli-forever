@@ -19,6 +19,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface CipherDeps {
   switchTo?: (name: string) => void
@@ -108,6 +109,14 @@ function decrypt(text: string, shift: number): string {
   return encrypt(text, 26 - shift)
 }
 
+// Scrolling code column for background atmosphere
+interface CodeColumn {
+  x: number
+  chars: string[]
+  speed: number
+  offset: number
+}
+
 export function createCipherRoom(deps?: CipherDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -138,10 +147,303 @@ export function createCipherRoom(deps?: CipherDeps): Room {
   ]
   let navBuffer = ''
   let navMatchFound = ''
-  let navMatchFlash = 0 // 1 → 0, gold flash on match
+  let navMatchFlash = 0 // 1 -> 0, gold flash on match
   let navHintTimer = 0 // cycles to show "type a destination..."
   let solvedRoomFlash = 0 // flash room names after solving
   let solvedRoomNames: string[] = []
+
+  // --- Audio state ---
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  let enigmaOsc: OscillatorNode | null = null
+  let enigmaGain: GainNode | null = null
+
+  // Track which characters have pinged (to avoid re-triggering)
+  let pingedChars: Set<string> = new Set() // key: "puzzleIdx-charIdx"
+
+  // --- Visual: ink fade-in ---
+  let inkFadeStartTime = 0 // time when current puzzle started
+  let lastRenderedPuzzle = -1
+
+  // --- Visual: scrolling code columns ---
+  let codeColumns: CodeColumn[] = []
+
+  // --- Visual: cipher wheel rotation ---
+  let wheelAngle = 0
+
+  // --- Audio helpers ---
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      // Master gain for this room
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // Enigma hum: quiet triangle wave drone at 100Hz
+      enigmaOsc = ac.createOscillator()
+      enigmaOsc.type = 'triangle'
+      enigmaOsc.frequency.value = 100
+      enigmaGain = ac.createGain()
+      enigmaGain.gain.value = 0.01
+      enigmaOsc.connect(enigmaGain)
+      enigmaGain.connect(audioMaster)
+      enigmaOsc.start()
+
+      audioInitialized = true
+    } catch {
+      // Audio not available — silent fallback
+    }
+  }
+
+  function fadeAudioIn() {
+    if (!audioMaster) return
+    const ac = audioMaster.context
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(1.0, now + 0.5)
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    const ac = audioMaster.context
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    setTimeout(() => {
+      try { enigmaOsc?.stop() } catch { /* already stopped */ }
+      enigmaGain?.disconnect()
+      enigmaOsc?.disconnect()
+      audioMaster?.disconnect()
+      enigmaOsc = null
+      enigmaGain = null
+      audioMaster = null
+      audioInitialized = false
+    }, 600)
+  }
+
+  /** Shift click: mechanical rotor sound — 5ms noise burst through bandpass */
+  function playShiftClick() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context
+      const now = ac.currentTime
+      const bufferSize = Math.max(1, Math.round(ac.sampleRate * 0.005))
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+      const src = ac.createBufferSource()
+      src.buffer = buffer
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 1500
+      bp.Q.value = 2
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.04, now)
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.02)
+      src.connect(bp)
+      bp.connect(g)
+      g.connect(audioMaster)
+      src.start(now)
+      src.stop(now + 0.02)
+    } catch { /* ignore */ }
+  }
+
+  /** Correct character ping: subtle high sine 880Hz, 30ms */
+  function playCharPing() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context
+      const now = ac.currentTime
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = 880
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.008, now)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.03)
+      osc.connect(g)
+      g.connect(audioMaster)
+      osc.start(now)
+      osc.stop(now + 0.04)
+    } catch { /* ignore */ }
+  }
+
+  /** Solve fanfare: ascending 3-note sequence E4->G#4->B4 */
+  function playSolveFanfare() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context
+      const now = ac.currentTime
+      const notes = [330, 415, 494] // E4, G#4, B4
+      for (let i = 0; i < notes.length; i++) {
+        const startT = now + i * 0.15
+        const osc = ac.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = notes[i]
+        const g = ac.createGain()
+        g.gain.setValueAtTime(0, startT)
+        g.gain.linearRampToValueAtTime(0.04, startT + 0.01)
+        g.gain.setValueAtTime(0.04, startT + 0.1)
+        g.gain.exponentialRampToValueAtTime(0.001, startT + 0.2)
+        osc.connect(g)
+        g.connect(audioMaster!)
+        osc.start(startT)
+        osc.stop(startT + 0.25)
+      }
+    } catch { /* ignore */ }
+  }
+
+  /** Type echo: faint 3ms noise typewriter click */
+  function playTypeEcho() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context
+      const now = ac.currentTime
+      const bufferSize = Math.max(1, Math.round(ac.sampleRate * 0.003))
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+      const src = ac.createBufferSource()
+      src.buffer = buffer
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.02, now)
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.015)
+      src.connect(g)
+      g.connect(audioMaster)
+      src.start(now)
+      src.stop(now + 0.015)
+    } catch { /* ignore */ }
+  }
+
+  /** Match chime: warm bell 523Hz with detuned 525Hz, 500ms decay */
+  function playMatchChime() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context
+      const now = ac.currentTime
+      const freqs = [523, 525]
+      for (const freq of freqs) {
+        const osc = ac.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        const g = ac.createGain()
+        g.gain.setValueAtTime(0.03, now)
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.5)
+        osc.connect(g)
+        g.connect(audioMaster!)
+        osc.start(now)
+        osc.stop(now + 0.6)
+      }
+    } catch { /* ignore */ }
+  }
+
+  // --- Visual helpers ---
+
+  function initCodeColumns() {
+    codeColumns = []
+    const w = canvas?.width || window.innerWidth
+    const colCount = Math.floor(w / 30)
+    for (let i = 0; i < colCount; i++) {
+      const chars: string[] = []
+      const len = 10 + Math.floor(Math.random() * 20)
+      for (let j = 0; j < len; j++) {
+        chars.push(String.fromCharCode(97 + Math.floor(Math.random() * 26)))
+      }
+      codeColumns.push({
+        x: (i + 0.5) * (w / colCount),
+        chars,
+        speed: 8 + Math.random() * 12,
+        offset: Math.random() * 600,
+      })
+    }
+  }
+
+  function drawScrollingCode(c: CanvasRenderingContext2D, w: number, h: number) {
+    c.font = '10px monospace'
+    c.textAlign = 'center'
+    const charH = 14
+    for (const col of codeColumns) {
+      const y0 = (col.offset + time * col.speed) % (h + col.chars.length * charH)
+      for (let j = 0; j < col.chars.length; j++) {
+        const cy = y0 + j * charH - col.chars.length * charH
+        if (cy < -charH || cy > h + charH) continue
+        // Fade at top/bottom edges
+        const edgeFade = Math.min(cy / 60, (h - cy) / 60, 1)
+        const alpha = Math.max(0, 0.015 * edgeFade)
+        c.fillStyle = `rgba(200, 180, 140, ${alpha})`
+        c.fillText(col.chars[j], col.x, cy)
+      }
+    }
+  }
+
+  function drawCipherWheel(c: CanvasRenderingContext2D, w: number, h: number) {
+    const cx = w / 2
+    const cy = h / 2
+    const maxR = Math.min(w, h) * 0.38
+
+    c.save()
+    c.translate(cx, cy)
+    c.globalAlpha = 0.03
+
+    // Outer ring
+    c.strokeStyle = 'rgba(200, 180, 140, 1)'
+    c.lineWidth = 0.5
+    c.beginPath()
+    c.arc(0, 0, maxR, 0, Math.PI * 2)
+    c.stroke()
+
+    // Inner ring
+    c.beginPath()
+    c.arc(0, 0, maxR * 0.75, 0, Math.PI * 2)
+    c.stroke()
+
+    // Letters on outer ring
+    c.font = '11px monospace'
+    c.fillStyle = 'rgba(200, 180, 140, 1)'
+    c.textAlign = 'center'
+    c.textBaseline = 'middle'
+    for (let i = 0; i < 26; i++) {
+      const angle = wheelAngle + (i / 26) * Math.PI * 2
+      const lx = Math.cos(angle) * maxR * 0.88
+      const ly = Math.sin(angle) * maxR * 0.88
+      c.fillText(String.fromCharCode(65 + i), lx, ly)
+    }
+
+    // Letters on inner ring (shifted)
+    for (let i = 0; i < 26; i++) {
+      const angle = -wheelAngle * 0.7 + (i / 26) * Math.PI * 2
+      const lx = Math.cos(angle) * maxR * 0.65
+      const ly = Math.sin(angle) * maxR * 0.65
+      c.fillText(String.fromCharCode(65 + ((i + currentShift) % 26)), lx, ly)
+    }
+
+    c.globalAlpha = 1.0
+    c.restore()
+  }
+
+  function drawCharGlow(c: CanvasRenderingContext2D, x: number, y: number) {
+    const grad = c.createRadialGradient(x, y, 0, x, y, 10)
+    grad.addColorStop(0, 'rgba(100, 200, 100, 0.08)')
+    grad.addColorStop(1, 'rgba(100, 200, 100, 0)')
+    c.fillStyle = grad
+    c.fillRect(x - 10, y - 10, 20, 20)
+  }
+
+  // --- Core ---
 
   function loadProgress() {
     try {
@@ -163,12 +465,14 @@ export function createCipherRoom(deps?: CipherDeps): Room {
 
   function checkSolution() {
     if (solved) return
+    playShiftClick()
     const puzzle = PUZZLES[currentPuzzle]
     if (currentShift === puzzle.shift) {
       solved = true
       solvedFlash = 1
       solvedCount = Math.max(solvedCount, currentPuzzle + 1)
       saveProgress()
+      playSolveFanfare()
       // Flash connected room names as "decoded" hints
       solvedRoomFlash = 1
       solvedRoomNames = Object.keys(navDestinations)
@@ -180,6 +484,8 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       currentPuzzle++
       currentShift = 0
       solved = false
+      pingedChars = new Set()
+      inkFadeStartTime = time
     }
   }
 
@@ -189,12 +495,28 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     time += 0.016
     if (solvedFlash > 0) solvedFlash *= 0.98
 
+    // Track puzzle changes for ink fade-in
+    if (lastRenderedPuzzle !== currentPuzzle) {
+      inkFadeStartTime = time
+      lastRenderedPuzzle = currentPuzzle
+      pingedChars = new Set()
+    }
+
+    // Cipher wheel rotation
+    wheelAngle += 0.0003
+
     const w = canvas.width
     const h = canvas.height
 
     // Background
     ctx.fillStyle = 'rgba(5, 5, 10, 1)'
     ctx.fillRect(0, 0, w, h)
+
+    // Scrolling code background (Matrix-style, barely visible)
+    drawScrollingCode(ctx, w, h)
+
+    // Cipher wheel background decoration
+    drawCipherWheel(ctx, w, h)
 
     // Solved flash
     if (solvedFlash > 0.01) {
@@ -205,6 +527,10 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     const puzzle = PUZZLES[currentPuzzle]
     const ciphertext = encrypt(puzzle.plaintext, puzzle.shift)
     const attempt = decrypt(ciphertext, currentShift)
+
+    // Ink fade-in timing: characters appear one by one over ~1.5 seconds
+    const inkElapsed = time - inkFadeStartTime
+    const charsRevealed = Math.floor(inkElapsed * 40) // ~40 chars/sec fade-in
 
     // Title
     ctx.font = '10px "Cormorant Garamond", serif'
@@ -217,9 +543,8 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     ctx.fillStyle = 'rgba(200, 180, 140, 0.1)'
     ctx.fillText(`${currentPuzzle + 1} / ${PUZZLES.length}`, w / 2, 42)
 
-    // Ciphertext (the encrypted message)
+    // Ciphertext (the encrypted message) — with ink fade-in
     ctx.font = '20px monospace'
-    ctx.fillStyle = 'rgba(200, 180, 140, 0.4)'
     ctx.textAlign = 'center'
 
     // Word wrap the ciphertext
@@ -227,8 +552,16 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     const cipherLines = wrapText(ciphertext, maxCharsPerLine)
     const startY = h * 0.2
 
+    let globalCharIdx = 0
     for (let i = 0; i < cipherLines.length; i++) {
-      ctx.fillText(cipherLines[i], w / 2, startY + i * 30)
+      const line = cipherLines[i]
+      for (let ci = 0; ci < line.length; ci++) {
+        const charAlpha = Math.min(1, Math.max(0, (charsRevealed - globalCharIdx) * 0.2))
+        ctx.fillStyle = `rgba(200, 180, 140, ${0.4 * charAlpha})`
+        const charX = w / 2 - (line.length * 12) / 2 + ci * 12
+        ctx.fillText(line[ci], charX + 6, startY + i * 30)
+        globalCharIdx++
+      }
     }
 
     // Divider
@@ -255,7 +588,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
 
       // Arrow
       ctx.fillStyle = 'rgba(200, 180, 140, 0.06)'
-      ctx.fillText('↓', x, alphaY + 18)
+      ctx.fillText('\u2193', x, alphaY + 18)
 
       // Shifted letter (bottom)
       const isMatch = solved && currentShift === puzzle.shift
@@ -274,10 +607,10 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     // Left/right arrows for shift control
     ctx.font = '24px monospace'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.2)'
-    ctx.fillText('◀', w / 2 - 60, alphaY + 58)
-    ctx.fillText('▶', w / 2 + 60, alphaY + 58)
+    ctx.fillText('\u25C0', w / 2 - 60, alphaY + 58)
+    ctx.fillText('\u25B6', w / 2 + 60, alphaY + 58)
 
-    // Decoded attempt
+    // Decoded attempt — with character shimmer for correct chars
     ctx.font = '20px monospace'
     const decodeY = h * 0.62
     const attemptLines = wrapText(attempt, maxCharsPerLine)
@@ -288,21 +621,37 @@ export function createCipherRoom(deps?: CipherDeps): Room {
         const charX = w / 2 - (line.length * 12) / 2 + ci * 12
         const y = decodeY + li * 30
 
+        // Compute global index for this character in the full attempt string
+        let lineOffset = 0
+        for (let prev = 0; prev < li; prev++) {
+          lineOffset += attemptLines[prev].length
+        }
+        const globalIdx = lineOffset + ci
+
         if (solved) {
           // Solved — golden glow
           ctx.fillStyle = `rgba(255, 215, 0, ${0.6 + Math.sin(time * 1.5 + ci * 0.2) * 0.15})`
         } else {
           // Working — characters that match the real plaintext are brighter
-          const fullAttempt = attempt
-          const fullPlain = puzzle.plaintext
-          const globalIdx = cipherLines.slice(0, li).join('').length + ci
-          const isCorrectChar = globalIdx < fullPlain.length && fullAttempt[globalIdx] === fullPlain[globalIdx]
-          ctx.fillStyle = isCorrectChar
-            ? 'rgba(100, 200, 100, 0.4)'
-            : 'rgba(200, 100, 80, 0.25)'
+          const isCorrectChar = globalIdx < puzzle.plaintext.length && attempt[globalIdx] === puzzle.plaintext[globalIdx]
+          if (isCorrectChar) {
+            // Character shimmer: draw glow behind correct characters
+            drawCharGlow(ctx, charX + 6, y - 5)
+            ctx.fillStyle = 'rgba(100, 200, 100, 0.4)'
+
+            // Audio ping for newly matched characters
+            const pingKey = `${currentPuzzle}-${globalIdx}`
+            if (!pingedChars.has(pingKey)) {
+              pingedChars.add(pingKey)
+              playCharPing()
+            }
+          } else {
+            ctx.fillStyle = 'rgba(200, 100, 80, 0.25)'
+          }
         }
 
         ctx.textAlign = 'center'
+        ctx.font = '20px monospace'
         ctx.fillText(line[ci], charX + 6, y)
       }
     }
@@ -475,11 +824,13 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     // Navigation by typing room names (letter keys only)
     if (e.key.length === 1 && /[a-z]/i.test(e.key) && !navMatchFound && deps?.switchTo) {
       navBuffer += e.key.toLowerCase()
+      playTypeEcho()
       // Check if buffer matches a destination
       const matched = Object.keys(navDestinations).find(name => name === navBuffer)
       if (matched) {
         navMatchFound = matched
         navMatchFlash = 1
+        playMatchChime()
         setTimeout(() => {
           if (deps?.switchTo) deps.switchTo(navDestinations[matched])
           navBuffer = ''
@@ -530,6 +881,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
         if (canvas) {
           canvas.width = window.innerWidth
           canvas.height = window.innerHeight
+          initCodeColumns()
         }
       }
       window.addEventListener('resize', onResize)
@@ -544,7 +896,13 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       navMatchFound = ''
       navMatchFlash = 0
       navHintTimer = 0
+      pingedChars = new Set()
+      lastRenderedPuzzle = -1
+      inkFadeStartTime = 0
+      wheelAngle = 0
       loadProgress()
+      initCodeColumns()
+      initAudio().then(() => fadeAudioIn())
       render()
     },
 
@@ -553,12 +911,14 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       navBuffer = ''
       navMatchFound = ''
       cancelAnimationFrame(frameId)
+      fadeAudioOut()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
       window.removeEventListener('keydown', handleKey)
+      destroyAudio()
       overlay?.remove()
     },
   }

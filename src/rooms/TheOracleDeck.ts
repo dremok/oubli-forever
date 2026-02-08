@@ -18,6 +18,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface OracleDeckDeps {
   switchTo?: (name: string) => void
@@ -143,6 +144,35 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
   let portalClickTime = 0         // timestamp of click for delayed nav
   let hoveredPortal = -1          // which portal card is hovered
 
+  // --- Audio state ---
+  let audioCtxRef: AudioContext | null = null
+  let droneOsc1: OscillatorNode | null = null
+  let droneOsc2: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let audioMaster: GainNode | null = null
+  let revealTonePlayed = false      // prevent re-triggering reveal tone
+  let portalHoverOsc: OscillatorNode | null = null
+  let portalHoverGain: GainNode | null = null
+  let activePortalHover = -1        // which portal currently has a hover tone
+
+  // --- Visual state ---
+  interface MysticalParticle {
+    x: number; y: number; vx: number; vy: number
+    alpha: number; size: number; life: number; maxLife: number
+    hue: number
+  }
+  let particles: MysticalParticle[] = []
+
+  interface AmbientSigil {
+    x: number; y: number; rot: number; rotSpeed: number
+    type: 'circle' | 'triangle' | 'spiral'; size: number; alpha: number
+  }
+  let sigils: AmbientSigil[] = []
+
+  // Reading word-by-word fade state
+  let readingRevealTime = 0 // time when card was revealed (drawAnimation crossed 0.5)
+  let readingRevealed = false
+
   function loadProgress() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
@@ -156,19 +186,292 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     } catch {}
   }
 
+  async function initAudio() {
+    try {
+      audioCtxRef = await getAudioContext()
+      const dest = getAudioDestination()
+
+      audioMaster = audioCtxRef.createGain()
+      audioMaster.gain.value = 1.0
+      audioMaster.connect(dest)
+
+      // Mystical drone: two detuned sines creating 1.5Hz beat
+      const droneFilter = audioCtxRef.createBiquadFilter()
+      droneFilter.type = 'lowpass'
+      droneFilter.frequency.value = 300
+
+      droneGain = audioCtxRef.createGain()
+      droneGain.gain.value = 0.015
+      droneGain.connect(droneFilter)
+      droneFilter.connect(audioMaster)
+
+      droneOsc1 = audioCtxRef.createOscillator()
+      droneOsc1.type = 'sine'
+      droneOsc1.frequency.value = 110
+      droneOsc1.connect(droneGain)
+      droneOsc1.start()
+
+      droneOsc2 = audioCtxRef.createOscillator()
+      droneOsc2.type = 'sine'
+      droneOsc2.frequency.value = 111.5
+      droneOsc2.connect(droneGain)
+      droneOsc2.start()
+    } catch {
+      // Audio not available
+    }
+  }
+
+  function playCardDrawSound() {
+    if (!audioCtxRef || !audioMaster) return
+    try {
+      const t = audioCtxRef.currentTime
+      const bufferSize = audioCtxRef.sampleRate * 0.3
+      const buffer = audioCtxRef.createBuffer(1, bufferSize, audioCtxRef.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1)
+      }
+
+      const source = audioCtxRef.createBufferSource()
+      source.buffer = buffer
+
+      const bandpass = audioCtxRef.createBiquadFilter()
+      bandpass.type = 'bandpass'
+      bandpass.Q.value = 2
+      bandpass.frequency.setValueAtTime(800, t)
+      bandpass.frequency.linearRampToValueAtTime(1200, t + 0.3)
+
+      const gain = audioCtxRef.createGain()
+      gain.gain.setValueAtTime(0.03, t)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3)
+
+      source.connect(bandpass)
+      bandpass.connect(gain)
+      gain.connect(audioMaster)
+      source.start(t)
+      source.stop(t + 0.3)
+    } catch { /* ignore */ }
+  }
+
+  function playRevealTone(suit: string) {
+    if (!audioCtxRef || !audioMaster) return
+    try {
+      const t = audioCtxRef.currentTime
+      const osc = audioCtxRef.createOscillator()
+      const gain = audioCtxRef.createGain()
+
+      // Suit-specific tone
+      switch (suit) {
+        case 'Void':
+          osc.type = 'sine'
+          osc.frequency.value = 220
+          break
+        case 'Flame':
+          osc.type = 'triangle'
+          osc.frequency.value = 330
+          break
+        case 'Current':
+          osc.type = 'sine'
+          osc.frequency.value = 392
+          break
+        case 'Stone': {
+          osc.type = 'square'
+          osc.frequency.value = 165
+          // Route through lowpass for heavy feel
+          const lp = audioCtxRef.createBiquadFilter()
+          lp.type = 'lowpass'
+          lp.frequency.value = 400
+          osc.connect(lp)
+          lp.connect(gain)
+          gain.gain.setValueAtTime(0, t)
+          gain.gain.linearRampToValueAtTime(0.025, t + 0.05)
+          gain.gain.setValueAtTime(0.025, t + 0.35)
+          gain.gain.linearRampToValueAtTime(0, t + 0.5)
+          gain.connect(audioMaster)
+          osc.start(t)
+          osc.stop(t + 0.5)
+          return // already connected
+        }
+        case 'Breath':
+        default:
+          osc.type = 'sine'
+          osc.frequency.value = 440
+          break
+      }
+
+      gain.gain.setValueAtTime(0, t)
+      gain.gain.linearRampToValueAtTime(0.025, t + 0.05)
+      gain.gain.setValueAtTime(0.025, t + 0.35)
+      gain.gain.linearRampToValueAtTime(0, t + 0.5)
+
+      osc.connect(gain)
+      gain.connect(audioMaster)
+      osc.start(t)
+      osc.stop(t + 0.5)
+    } catch { /* ignore */ }
+  }
+
+  function playShuffleWhisper() {
+    if (!audioCtxRef || !audioMaster) return
+    try {
+      const t = audioCtxRef.currentTime
+      for (let i = 0; i < 5; i++) {
+        const clickTime = t + i * 0.05
+        const bufLen = Math.floor(audioCtxRef.sampleRate * 0.002)
+        const buf = audioCtxRef.createBuffer(1, bufLen, audioCtxRef.sampleRate)
+        const d = buf.getChannelData(0)
+        for (let j = 0; j < bufLen; j++) {
+          d[j] = (Math.random() * 2 - 1)
+        }
+        const src = audioCtxRef.createBufferSource()
+        src.buffer = buf
+        const g = audioCtxRef.createGain()
+        g.gain.value = 0.02
+        src.connect(g)
+        g.connect(audioMaster)
+        src.start(clickTime)
+        src.stop(clickTime + 0.002)
+      }
+    } catch { /* ignore */ }
+  }
+
+  function updatePortalHoverSound(portalIndex: number, hue: number) {
+    if (!audioCtxRef || !audioMaster) return
+
+    if (portalIndex < 0) {
+      // No portal hovered — fade out
+      if (portalHoverGain && portalHoverOsc) {
+        try {
+          portalHoverGain.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.1)
+          const oscRef = portalHoverOsc
+          const gainRef = portalHoverGain
+          setTimeout(() => {
+            try { oscRef.stop() } catch { /* */ }
+            oscRef.disconnect()
+            gainRef.disconnect()
+          }, 300)
+        } catch { /* */ }
+        portalHoverOsc = null
+        portalHoverGain = null
+        activePortalHover = -1
+      }
+      return
+    }
+
+    if (activePortalHover === portalIndex) return // already playing this one
+
+    // Stop previous
+    if (portalHoverOsc) {
+      try { portalHoverOsc.stop() } catch { /* */ }
+      portalHoverOsc.disconnect()
+      portalHoverGain?.disconnect()
+    }
+
+    try {
+      // Map hue to frequency: 0-360 -> 200-500Hz
+      const freq = 200 + (hue / 360) * 300
+      portalHoverOsc = audioCtxRef.createOscillator()
+      portalHoverOsc.type = 'sine'
+      portalHoverOsc.frequency.value = freq
+      portalHoverGain = audioCtxRef.createGain()
+      portalHoverGain.gain.setValueAtTime(0, audioCtxRef.currentTime)
+      portalHoverGain.gain.linearRampToValueAtTime(0.008, audioCtxRef.currentTime + 0.15)
+      portalHoverOsc.connect(portalHoverGain)
+      portalHoverGain.connect(audioMaster)
+      portalHoverOsc.start()
+      activePortalHover = portalIndex
+    } catch { /* */ }
+  }
+
+  function fadeAudioOut() {
+    if (audioMaster && audioCtxRef) {
+      audioMaster.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.3)
+    }
+    // Clean up portal hover
+    if (portalHoverOsc) {
+      try { portalHoverOsc.stop() } catch { /* */ }
+      portalHoverOsc?.disconnect()
+      portalHoverGain?.disconnect()
+      portalHoverOsc = null
+      portalHoverGain = null
+      activePortalHover = -1
+    }
+  }
+
+  function cleanupAudio() {
+    try { droneOsc1?.stop() } catch { /* */ }
+    try { droneOsc2?.stop() } catch { /* */ }
+    try { portalHoverOsc?.stop() } catch { /* */ }
+    droneOsc1?.disconnect()
+    droneOsc2?.disconnect()
+    droneGain?.disconnect()
+    audioMaster?.disconnect()
+    portalHoverOsc?.disconnect()
+    portalHoverGain?.disconnect()
+    droneOsc1 = null
+    droneOsc2 = null
+    droneGain = null
+    audioMaster = null
+    portalHoverOsc = null
+    portalHoverGain = null
+    activePortalHover = -1
+    audioCtxRef = null
+  }
+
+  // --- Particle helpers ---
+  function spawnParticles(card: Card, cx: number, cy: number, cardW: number, cardH: number) {
+    const count = 10 + Math.floor(Math.random() * 6) // 10-15
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: cx + (Math.random() - 0.5) * cardW * 0.8,
+        y: cy + cardH * 0.3 + Math.random() * cardH * 0.4,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -(0.3 + Math.random() * 0.5),
+        alpha: 0.4 + Math.random() * 0.3,
+        size: 1 + Math.random() * 2,
+        life: 0,
+        maxLife: 60 + Math.random() * 60,
+        hue: card.hue + (Math.random() - 0.5) * 20,
+      })
+    }
+  }
+
+  function initSigils(w: number, h: number) {
+    sigils = []
+    const types: AmbientSigil['type'][] = ['circle', 'triangle', 'spiral']
+    for (let i = 0; i < 6; i++) {
+      sigils.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.003,
+        type: types[Math.floor(Math.random() * types.length)],
+        size: 20 + Math.random() * 40,
+        alpha: 0.01 + Math.random() * 0.01,
+      })
+    }
+  }
+
   function drawCard() {
     if (drawing) return
 
-    if (deckIndex >= deck.length) {
+    const reshuffled = deckIndex >= deck.length
+    if (reshuffled) {
       deck = generateDeck()
       deckIndex = 0
+      playShuffleWhisper()
     }
 
     drawnCard = deck[deckIndex++]
     drawing = true
     drawAnimation = 0
+    revealTonePlayed = false
+    readingRevealed = false
+    readingRevealTime = 0
+    particles = []
     totalDraws++
     saveProgress()
+    playCardDrawSound()
   }
 
   function drawSymbol(ctx: CanvasRenderingContext2D, symbol: string, cx: number, cy: number, size: number, alpha: number, hue: number) {
@@ -274,6 +577,41 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     ctx.fillStyle = 'rgba(8, 5, 15, 1)'
     ctx.fillRect(0, 0, w, h)
 
+    // Ambient sigils — very faint rotating geometric shapes
+    if (sigils.length === 0) initSigils(w, h)
+    for (const s of sigils) {
+      s.rot += s.rotSpeed
+      ctx.save()
+      ctx.translate(s.x, s.y)
+      ctx.rotate(s.rot)
+      ctx.strokeStyle = `rgba(160, 140, 200, ${s.alpha})`
+      ctx.lineWidth = 0.5
+      if (s.type === 'circle') {
+        ctx.beginPath()
+        ctx.arc(0, 0, s.size, 0, Math.PI * 2)
+        ctx.stroke()
+      } else if (s.type === 'triangle') {
+        ctx.beginPath()
+        ctx.moveTo(0, -s.size)
+        ctx.lineTo(-s.size * 0.87, s.size * 0.5)
+        ctx.lineTo(s.size * 0.87, s.size * 0.5)
+        ctx.closePath()
+        ctx.stroke()
+      } else {
+        // spiral
+        ctx.beginPath()
+        for (let t = 0; t < Math.PI * 4; t += 0.15) {
+          const r = (t / (Math.PI * 4)) * s.size
+          const px = Math.cos(t) * r
+          const py = Math.sin(t) * r
+          if (t === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        }
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
     // Update draw animation
     if (drawing && drawAnimation < 1) {
       drawAnimation += 0.02
@@ -295,12 +633,35 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
         ? Math.cos(flipProgress * Math.PI)
         : Math.cos(flipProgress * Math.PI)
 
+      // Card shadow — subtle dark gradient below card
+      if (flipProgress > 0.3) {
+        const shadowAlpha = (flipProgress - 0.3) * 0.15
+        const shadowGrad = ctx.createRadialGradient(
+          w / 2, cardY + cardH + 10, 0,
+          w / 2, cardY + cardH + 10, cardW * 0.7,
+        )
+        shadowGrad.addColorStop(0, `rgba(0, 0, 0, ${shadowAlpha})`)
+        shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+        ctx.fillStyle = shadowGrad
+        ctx.fillRect(w / 2 - cardW, cardY + cardH - 5, cardW * 2, cardW * 0.7)
+      }
+
       ctx.save()
       ctx.translate(w / 2, h / 2 - 20)
       ctx.scale(Math.abs(scaleX) || 0.01, 1)
       ctx.translate(-w / 2, -(h / 2 - 20))
 
       if (flipProgress >= 0.5) {
+        // Trigger reveal tone at midpoint
+        if (!revealTonePlayed) {
+          revealTonePlayed = true
+          readingRevealed = true
+          readingRevealTime = time
+          playRevealTone(drawnCard.suit)
+          // Spawn mystical particles
+          spawnParticles(drawnCard, w / 2, cardY + cardH / 2, cardW, cardH)
+        }
+
         // Card face (shown after flip midpoint)
         // Card background
         ctx.fillStyle = `rgba(15, 12, 25, 0.95)`
@@ -316,8 +677,17 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
         ctx.lineWidth = 1
         ctx.strokeRect(cardX + 12, cardY + 12, cardW - 24, cardH - 24)
 
-        // Symbol
+        // Symbol — slowly rotating and pulsing after reveal
+        const symbolAge = time - readingRevealTime
+        const symbolRotation = symbolAge * 0.15
+        const symbolPulse = 1 + Math.sin(symbolAge * 1.5) * 0.08
         const breathe = Math.sin(time * 0.8) * 0.05
+
+        ctx.save()
+        ctx.translate(w / 2, cardY + cardH * 0.35)
+        ctx.rotate(symbolRotation)
+        ctx.scale(symbolPulse, symbolPulse)
+        ctx.translate(-(w / 2), -(cardY + cardH * 0.35))
         drawSymbol(
           ctx, drawnCard.symbol,
           w / 2, cardY + cardH * 0.35,
@@ -325,6 +695,7 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
           0.3 + breathe,
           drawnCard.hue,
         )
+        ctx.restore()
 
         // Card name
         ctx.font = '14px "Cormorant Garamond", serif'
@@ -337,28 +708,57 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
         ctx.fillStyle = `hsla(${drawnCard.hue}, 20%, 50%, 0.2)`
         ctx.fillText(drawnCard.suit.toLowerCase(), w / 2, cardY + cardH * 0.65)
 
-        // Reading
+        // Reading — sequential word fade-in
         ctx.font = '11px "Cormorant Garamond", serif'
-        ctx.fillStyle = `rgba(200, 190, 180, ${0.25 + Math.sin(time * 0.5) * 0.05})`
-
-        // Word wrap the reading
         const words = drawnCard.reading.split(' ')
         const maxWidth = cardW - 40
-        let line = ''
-        let lineY = cardY + cardH * 0.75
+        const timeSinceReveal = readingRevealed ? time - readingRevealTime : 0
+        const wordDelay = 0.12 // seconds between each word appearing
 
+        // Pre-calculate line breaks
+        const lines: { words: string[]; indices: number[] }[] = [{ words: [], indices: [] }]
+        let testLine = ''
+        let wordIdx = 0
         for (const word of words) {
-          const test = line + (line ? ' ' : '') + word
+          const test = testLine + (testLine ? ' ' : '') + word
           const metrics = ctx.measureText(test)
-          if (metrics.width > maxWidth && line) {
-            ctx.fillText(line, w / 2, lineY)
-            line = word
-            lineY += 16
+          if (metrics.width > maxWidth && testLine) {
+            lines.push({ words: [], indices: [] })
+            testLine = word
           } else {
-            line = test
+            testLine = test
           }
+          lines[lines.length - 1].words.push(word)
+          lines[lines.length - 1].indices.push(wordIdx)
+          wordIdx++
         }
-        if (line) ctx.fillText(line, w / 2, lineY)
+
+        ctx.textAlign = 'center'
+        let lineY = cardY + cardH * 0.75
+        for (const lineData of lines) {
+          let lineStr = ''
+          for (let wi = 0; wi < lineData.words.length; wi++) {
+            const globalIdx = lineData.indices[wi]
+            const wordAlpha = Math.min(1, Math.max(0, (timeSinceReveal - globalIdx * wordDelay) / 0.3))
+            const baseAlpha = (0.25 + Math.sin(time * 0.5) * 0.05) * wordAlpha
+
+            // Draw each word segment with its own alpha
+            const prefix = lineStr ? ' ' : ''
+            const xOffset = lineStr ? ctx.measureText(lineStr).width : 0
+            const fullLine = lineStr + prefix + lineData.words[wi]
+            const fullWidth = ctx.measureText(fullLine).width
+            const lineStartX = w / 2 - fullWidth / 2
+
+            ctx.fillStyle = `rgba(200, 190, 180, ${baseAlpha})`
+            const wordX = lineStartX + xOffset + (lineStr ? ctx.measureText(prefix).width : 0)
+            ctx.textAlign = 'left'
+            ctx.fillText(lineData.words[wi], wordX, lineY)
+
+            lineStr = fullLine
+          }
+          lineY += 16
+        }
+        ctx.textAlign = 'center' // restore
       } else {
         // Card back
         ctx.fillStyle = 'rgba(20, 15, 35, 0.95)'
@@ -377,6 +777,27 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       }
 
       ctx.restore()
+    }
+
+    // Mystical particles — float upward around the card
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i]
+      p.life++
+      p.x += p.vx
+      p.y += p.vy
+      p.vy *= 0.99 // slow down slightly
+      const lifeRatio = p.life / p.maxLife
+      const fadeAlpha = lifeRatio < 0.2 ? lifeRatio / 0.2 : (1 - lifeRatio) / 0.8
+      const a = p.alpha * Math.max(0, fadeAlpha)
+
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${p.hue}, 50%, 65%, ${a})`
+      ctx.fill()
+
+      if (p.life >= p.maxLife) {
+        particles.splice(i, 1)
+      }
     }
 
     // Deck indicator
@@ -526,6 +947,13 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
 
         ctx.restore()
       }
+
+      // Portal hover audio — play tone when hovering, silence when not
+      if (hoveredPortal >= 0 && portalHover[hoveredPortal] > 0.5) {
+        updatePortalHoverSound(hoveredPortal, portalCards[hoveredPortal].hue)
+      } else {
+        updatePortalHoverSound(-1, 0)
+      }
     }
 
     // Draw prompt
@@ -637,17 +1065,25 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       deck = generateDeck()
       deckIndex = 0
       drawnCard = null
+      particles = []
+      sigils = []
+      revealTonePlayed = false
+      readingRevealed = false
+      readingRevealTime = 0
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      fadeAudioOut()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      cleanupAudio()
       overlay?.remove()
     },
   }
