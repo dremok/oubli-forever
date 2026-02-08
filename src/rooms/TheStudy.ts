@@ -51,6 +51,16 @@ const PROMPTS_BASE = [
   'Write about something beautiful that no longer exists...',
   'What does the word "home" feel like?',
   'Describe a moment that changed everything...',
+
+  // Feb 2026 — culturally grounded prompts
+  'Confess: what is the most embarrassing version of yourself you try to forget?',
+  'The mountains have no snow this year. Write about something that was always there until it wasn\'t...',
+  'An eclipse is happening right now that almost no one will see. Describe a beautiful thing you witnessed alone...',
+  'If your memories were made of used clothing, which garments would they be?',
+  'Something emerged from nothing and existed for one second. Write about a brief, perfect moment...',
+  'The void is not empty. What fills the emptiness you carry?',
+  'Write about a landscape that has changed beyond recognition...',
+  'A material that can be memory, logic, or learning — what would you choose to be right now?',
 ]
 
 // Fallback quotes for when the API is unreachable
