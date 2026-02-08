@@ -1385,6 +1385,42 @@ Surface: 36 | Hidden: 7
 - 40+ new whisper fragments: consciousness as memory, brain forgetting enzymes (CUL5/OTULIN), internet forced to forget, AI forgetting by design (FadeMem), cultural memory/analog resistance, institutional forgetting (WaPo), astronomical memory (Betelgeuse/Siwarha), fire/ancient memory, Saunders' Vigil
 - 8 new DigitalDecay meditations
 
+### 128. Room Deepening — Cipher, ClockTower, Glacarium, Labyrinth, Mirror
+- TheCipher: puzzle audio, hint system, visual polish
+- TheClockTower: pendulum physics audio, hour chime, degradation visuals
+- TheGlacarium: aurora particles, ice cracking, crystal interaction depth
+- TheLabyrinth: wall texture, torch shadows, ambient footsteps, larger maze
+- TheMirror: behavioral portrait with word clouds, fog decay, visit tracking, connects to Between + Projection
+
+### 129. Feb 2026 Cultural Content Update (Round 5)
+- 61 new whisper fragments: quantum superposition 7000 atoms, CRISPR memory reversal, Shiota threads, Doomsday Clock, anti-AI movement, Fennell Wuthering Heights, polar vortex
+- 10 new DigitalDecay meditations
+
+### 130. Feb 2026 Cultural Content Update (Round 6)
+New cultural research findings:
+- **Episodic/semantic memory collapse**: fMRI shows both memory types share same brain network (Nottingham/Cambridge)
+- **Shape-shifting molecular memory**: ruthenium devices that remember, think, learn (CeNSE)
+- **Great Meme Reset of 2026**: TikTok collective desire to forget brainrot era
+- **Defiantly Analog Olympics**: Milan 2026 chose fire over drones, humanity over AI
+- **Italian Brainrot**: AI-generated nonsense creatures as viral folk art
+- **3600-year alerce trees burning**: Patagonia fires destroy ancient living memory
+- **Transcranial ultrasound**: MIT tool probes consciousness via deep brain stimulation
+- **Self-destructing plastic**: Rutgers material programmed to break down on command
+- **Ice-Cold Earth in Kepler archives**: frozen world found in old data (HD 137010 b)
+- **Isaac Julien Metamorphosis**: five-screen installation, Victoria Miro, Feb 13
+- **Wabi-sabi viral on TikTok**: beauty of imperfection goes mainstream, then hollow
+- **Charli XCX The Moment**: cultural era examining whether to let itself die (A24)
+- **Jon Hamm dissociation trend**: viral bliss of choosing to forget
+- **Mythical Creatures at USC PAM**: immigrant memory as mythology, 12 immersive rooms
+
+### 131. Cultural Inscriptions Across 14 Rooms
+Added cycling cultural inscription text (10 per room, ~22-25s cycle) to rooms that previously had none:
+- TheFurnace, TheSeismograph, TheTerrarium, TheTidePool
+- TheGarden, TheChoir, TheLighthouse, TheMadeleine
+- TheSatellite, TheOracleDeck, TheAsteroidField, TheRadio, TheDatePaintings
+- Each room's inscriptions themed to its subject (fire/ocean/music/etc.) + Feb 2026 research
+- 40 new whisper fragments + 8 new DigitalDecay meditations from round 6 research
+
 ---
-*Last updated: Era 9, Feature 127 — Weathervane, Ossuary, DisintegrationLoops, Cartographer deepened + cultural round 4*
-*"we are always remembering the present. we never experience it directly."*
+*Last updated: Era 9, Feature 131 — Cultural inscriptions across 14 rooms + cultural round 6*
+*"the alerce trees have lived 3,600 years. this february, they burn."*
