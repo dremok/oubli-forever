@@ -22,6 +22,7 @@
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { createSpeechSession, type SpeechSession } from '../voice/SpeechHelper'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface WellDeps {
   getMemories: () => StoredMemory[]
@@ -99,6 +100,323 @@ export function createWellRoom(deps: WellDeps): Room {
   let voiceListening = false
   let voiceTextAlpha = 0 // fades the text display
 
+  // Audio nodes
+  let audioInitialized = false
+  let audioCtxRef: AudioContext | null = null
+  let masterVol: GainNode | null = null
+  // Cave drone (resonant low oscillator with feedback delay)
+  let droneOsc: OscillatorNode | null = null
+  let droneOsc2: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneLowpass: BiquadFilterNode | null = null
+  // Water drip (scheduled sine blips)
+  let dripInterval: ReturnType<typeof setInterval> | null = null
+  // Underground water flow (very low filtered noise)
+  let flowSource: AudioBufferSourceNode | null = null
+  let flowGain: GainNode | null = null
+  let flowLowpass: BiquadFilterNode | null = null
+  // Feedback delay for cave resonance
+  let delayNode: DelayNode | null = null
+  let feedbackGain: GainNode | null = null
+  let delayFilter: BiquadFilterNode | null = null
+
+  // Visual: condensation droplets along screen edges
+  interface CondensationDrop {
+    x: number
+    y: number
+    size: number
+    alpha: number
+    vy: number // very slow downward drift
+    edge: 'left' | 'right' | 'top' // which screen edge
+  }
+  let condensation: CondensationDrop[] = []
+
+  // --- Audio ---
+  function createBrownNoise(ac: AudioContext, seconds: number): AudioBuffer {
+    const length = ac.sampleRate * seconds
+    const buffer = ac.createBuffer(1, length, ac.sampleRate)
+    const data = buffer.getChannelData(0)
+    let lastOut = 0
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1
+      lastOut = (lastOut + 0.02 * white) / 1.02
+      data[i] = lastOut * 3.5
+    }
+    return buffer
+  }
+
+  async function initAudio() {
+    if (audioInitialized) return
+    audioInitialized = true
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+      audioCtxRef = ac
+
+      masterVol = ac.createGain()
+      masterVol.gain.value = 0
+      masterVol.connect(dest)
+      masterVol.gain.setTargetAtTime(1, ac.currentTime, 0.5)
+
+      // --- Feedback delay for cave resonance ---
+      delayNode = ac.createDelay(2.0)
+      delayNode.delayTime.value = 1.2 // long echo
+      feedbackGain = ac.createGain()
+      feedbackGain.gain.value = 0.35 // moderate feedback
+      delayFilter = ac.createBiquadFilter()
+      delayFilter.type = 'lowpass'
+      delayFilter.frequency.value = 600 // darken each echo repeat
+      delayFilter.Q.value = 0.5
+      // delay -> filter -> feedback -> delay (loop)
+      delayNode.connect(delayFilter)
+      delayFilter.connect(feedbackGain)
+      feedbackGain.connect(delayNode)
+      // also send delay output to master
+      delayFilter.connect(masterVol)
+
+      // --- Cave drone: two detuned low oscillators ---
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0.03
+      droneLowpass = ac.createBiquadFilter()
+      droneLowpass.type = 'lowpass'
+      droneLowpass.frequency.value = 90
+      droneLowpass.Q.value = 2 // slight resonance for cave quality
+      droneGain.connect(droneLowpass)
+      droneLowpass.connect(masterVol)
+      // Also feed drone into the delay for cavernous feel
+      droneLowpass.connect(delayNode)
+
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'sine'
+      droneOsc.frequency.value = 42 // very low fundamental
+      droneOsc.connect(droneGain)
+      droneOsc.start()
+
+      droneOsc2 = ac.createOscillator()
+      droneOsc2.type = 'sine'
+      droneOsc2.frequency.value = 42.5 // slight detune for beating
+      droneOsc2.connect(droneGain)
+      droneOsc2.start()
+
+      // --- Underground water flow: brown noise through tight lowpass ---
+      const flowBuffer = createBrownNoise(ac, 4)
+      flowGain = ac.createGain()
+      flowGain.gain.value = 0.018
+      flowLowpass = ac.createBiquadFilter()
+      flowLowpass.type = 'lowpass'
+      flowLowpass.frequency.value = 80 // very low rumble
+      flowLowpass.Q.value = 0.7
+      flowGain.connect(flowLowpass)
+      flowLowpass.connect(masterVol)
+
+      flowSource = ac.createBufferSource()
+      flowSource.buffer = flowBuffer
+      flowSource.loop = true
+      flowSource.connect(flowGain)
+      flowSource.start()
+
+      // --- Water drips at irregular intervals ---
+      scheduleDrips()
+    } catch (_) {
+      /* audio not available */
+    }
+  }
+
+  function scheduleDrips() {
+    if (dripInterval) clearInterval(dripInterval)
+    dripInterval = setInterval(() => {
+      if (!audioCtxRef || !masterVol) return
+      // Random chance each tick — irregular dripping
+      if (Math.random() > 0.3) return
+      playDrip()
+    }, 800 + Math.random() * 1200)
+  }
+
+  function playDrip() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      const t = ac.currentTime
+      // Short high-pitched sine blip — a water drop hitting stone
+      const freq = 1800 + Math.random() * 1400
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      // Quick pitch drop like a drop hitting water
+      osc.frequency.setTargetAtTime(freq * 0.6, t + 0.01, 0.02)
+
+      const g = ac.createGain()
+      g.gain.value = 0.006 + Math.random() * 0.008
+      g.gain.setTargetAtTime(0, t + 0.03, 0.025)
+
+      osc.connect(g)
+      g.connect(masterVol)
+      // Also send drip into delay for echo
+      if (delayNode) g.connect(delayNode)
+      osc.start(t)
+      osc.stop(t + 0.12)
+    } catch (_) { /* */ }
+  }
+
+  /** Descending tone — a memory falling into the well's depth */
+  function playFallingTone() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      const t = ac.currentTime
+      const startFreq = 400 + Math.random() * 200
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = startFreq
+      // Descend in pitch over 2 seconds
+      osc.frequency.exponentialRampToValueAtTime(40, t + 2.5)
+
+      const g = ac.createGain()
+      g.gain.value = 0.015
+      g.gain.setTargetAtTime(0, t + 0.5, 0.6)
+
+      osc.connect(g)
+      g.connect(masterVol)
+      if (delayNode) g.connect(delayNode) // echo in the cave
+      osc.start(t)
+      osc.stop(t + 3)
+    } catch (_) { /* */ }
+  }
+
+  /** Wet reverberant splash — when an echo returns from the depths */
+  function playEchoSplash() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+      const t = ac.currentTime
+      // Noise burst through bandpass — splash texture
+      const bufLen = ac.sampleRate * 0.3
+      const buf = ac.createBuffer(1, bufLen, ac.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < bufLen; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufLen * 0.15))
+      }
+      const src = ac.createBufferSource()
+      src.buffer = buf
+
+      const bp = ac.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 600 + Math.random() * 400
+      bp.Q.value = 1.5
+
+      const g = ac.createGain()
+      g.gain.value = 0.02
+      g.gain.setTargetAtTime(0, t + 0.1, 0.15)
+
+      src.connect(bp)
+      bp.connect(g)
+      g.connect(masterVol)
+      if (delayNode) g.connect(delayNode) // reverb through delay
+      src.start(t)
+      src.stop(t + 0.5)
+
+      // Also a low resonant thud
+      const thud = ac.createOscillator()
+      thud.type = 'sine'
+      thud.frequency.value = 80 + Math.random() * 40
+      thud.frequency.setTargetAtTime(40, t + 0.05, 0.1)
+      const tg = ac.createGain()
+      tg.gain.value = 0.012
+      tg.gain.setTargetAtTime(0, t + 0.08, 0.08)
+      thud.connect(tg)
+      tg.connect(masterVol)
+      thud.start(t)
+      thud.stop(t + 0.3)
+    } catch (_) { /* */ }
+  }
+
+  /** Update drone pitch based on water level — subtle rising pitch */
+  function updateDroneForWaterLevel() {
+    if (!audioCtxRef || !droneOsc || !droneOsc2) return
+    const t = audioCtxRef.currentTime
+    // Base 42Hz, rises to 55Hz as water fills
+    const basePitch = 42 + waterLevel * 43
+    droneOsc.frequency.setTargetAtTime(basePitch, t, 0.5)
+    droneOsc2.frequency.setTargetAtTime(basePitch + 0.5, t, 0.5)
+  }
+
+  function stopAudio() {
+    if (masterVol && audioCtxRef) {
+      masterVol.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.3)
+    }
+    if (dripInterval) { clearInterval(dripInterval); dripInterval = null }
+  }
+
+  function destroyAudio() {
+    stopAudio()
+    try {
+      droneOsc?.stop()
+      droneOsc2?.stop()
+      flowSource?.stop()
+    } catch (_) { /* already stopped */ }
+    droneOsc = null
+    droneOsc2 = null
+    droneGain = null
+    droneLowpass = null
+    flowSource = null
+    flowGain = null
+    flowLowpass = null
+    delayNode = null
+    feedbackGain = null
+    delayFilter = null
+    masterVol = null
+    audioCtxRef = null
+    audioInitialized = false
+  }
+
+  // --- Visual: condensation management ---
+  function spawnCondensation() {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+    // Maintain ~30 droplets
+    if (condensation.length >= 30) return
+    const edge = Math.random() < 0.4 ? 'left' : Math.random() < 0.7 ? 'right' : 'top'
+    let x: number, y: number
+    if (edge === 'left') {
+      x = Math.random() * 20
+      y = Math.random() * h
+    } else if (edge === 'right') {
+      x = w - Math.random() * 20
+      y = Math.random() * h
+    } else {
+      x = Math.random() * w
+      y = Math.random() * 15
+    }
+    condensation.push({
+      x, y, edge,
+      size: 0.5 + Math.random() * 1.5,
+      alpha: 0.03 + Math.random() * 0.06,
+      vy: 0.02 + Math.random() * 0.08,
+    })
+  }
+
+  function updateAndDrawCondensation() {
+    if (!ctx || !canvas) return
+    const h = canvas.height
+    for (let i = condensation.length - 1; i >= 0; i--) {
+      const d = condensation[i]
+      d.y += d.vy
+      // Slowly grow slightly
+      d.size += 0.001
+      if (d.y > h + 5) {
+        condensation.splice(i, 1)
+        continue
+      }
+      ctx.beginPath()
+      ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(140, 180, 220, ${d.alpha})`
+      ctx.fill()
+    }
+    // Spawn new drops occasionally
+    if (Math.random() < 0.08) spawnCondensation()
+  }
+
   function distortText(text: string): string {
     const techniques = [
       // Reverse words
@@ -154,6 +472,9 @@ export function createWellRoom(deps: WellDeps): Room {
       dropTime: time,
     })
     waterLevel = Math.min(0.3, waterLevel + 0.02)
+    // Audio: descending tone as memory falls
+    playFallingTone()
+    updateDroneForWaterLevel()
   }
 
   function render() {
@@ -216,6 +537,25 @@ export function createWellRoom(deps: WellDeps): Room {
       ctx.stroke()
     }
 
+    // Deeper darkness at the well opening — vignette inside
+    const wellDarkGrad = ctx.createRadialGradient(
+      wellCenterX, (wellTopY + wellBottomY) / 2, wellWidth * 0.3,
+      wellCenterX, (wellTopY + wellBottomY) / 2, wellWidth * 1.1
+    )
+    wellDarkGrad.addColorStop(0, 'rgba(0, 0, 0, 0)')
+    wellDarkGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0)')
+    wellDarkGrad.addColorStop(1, 'rgba(0, 0, 5, 0.3)')
+    ctx.save()
+    ctx.beginPath()
+    ctx.ellipse(wellCenterX, wellTopY, wellWidth, 15, 0, 0, Math.PI)
+    ctx.lineTo(wellCenterX - wellWidth, wellBottomY)
+    ctx.ellipse(wellCenterX, wellBottomY, wellWidth, 10, 0, Math.PI, 0, true)
+    ctx.lineTo(wellCenterX + wellWidth, wellTopY)
+    ctx.clip()
+    ctx.fillStyle = wellDarkGrad
+    ctx.fillRect(wellCenterX - wellWidth - 5, wellTopY - 5, wellWidth * 2 + 10, wellBottomY - wellTopY + 20)
+    ctx.restore()
+
     // Water at bottom
     if (waterLevel > 0) {
       ctx.beginPath()
@@ -225,6 +565,18 @@ export function createWellRoom(deps: WellDeps): Room {
       waterGrad.addColorStop(1, 'rgba(5, 10, 25, 0.5)')
       ctx.fillStyle = waterGrad
       ctx.fill()
+
+      // Water surface shimmer — animated highlights
+      for (let s = 0; s < 8; s++) {
+        const shimmerPhase = time * 0.8 + s * 1.2
+        const shimmerX = wellCenterX + Math.sin(shimmerPhase) * (wellWidth * 0.6)
+        const shimmerW = 6 + Math.sin(shimmerPhase * 1.3 + s) * 3
+        const shimmerAlpha = 0.04 + Math.sin(shimmerPhase * 0.7) * 0.02
+        ctx.beginPath()
+        ctx.ellipse(shimmerX, waterY - 1, shimmerW, 1.2, 0, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(100, 160, 240, ${shimmerAlpha})`
+        ctx.fill()
+      }
 
       // Water ripples
       for (let i = ripples.length - 1; i >= 0; i--) {
@@ -255,6 +607,8 @@ export function createWellRoom(deps: WellDeps): Room {
           dm.waitTime = 0
           // Splash ripple
           ripples.push({ radius: 3, alpha: 0.3, x: wellCenterX + (Math.random() - 0.5) * 20 })
+          // Audio: splash when memory hits water
+          playEchoSplash()
         }
 
         // Draw falling text
@@ -275,6 +629,8 @@ export function createWellRoom(deps: WellDeps): Room {
         if (dm.waitTime > waitDuration) {
           dm.phase = 'echoing'
           dm.echoAlpha = 0
+          // Audio: echo returns from the depths
+          playEchoSplash()
         }
       }
 
@@ -391,6 +747,9 @@ export function createWellRoom(deps: WellDeps): Room {
     } else {
       voiceTextAlpha = 0
     }
+
+    // Condensation droplets on screen edges — moisture in the air
+    updateAndDrawCondensation()
   }
 
   function wrapText(text: string, maxChars: number): string[] {
@@ -635,6 +994,7 @@ export function createWellRoom(deps: WellDeps): Room {
         fo.splashed = true
         ripples.push({ radius: 5, alpha: 0.4, x: fo.x + (Math.random() - 0.5) * 10 })
         ripples.push({ radius: 2, alpha: 0.3, x: fo.x + (Math.random() - 0.5) * 15 })
+        playEchoSplash()
       }
 
       // Check if fallen past bottom
@@ -739,6 +1099,9 @@ export function createWellRoom(deps: WellDeps): Room {
         dropTime: time,
       })
       waterLevel = Math.min(0.3, waterLevel + 0.02)
+      // Audio: falling tone for voice-dropped memory
+      playFallingTone()
+      updateDroneForWaterLevel()
 
       // Add a splash ripple
       ripples.push({ radius: 5, alpha: 0.3, x: (canvas?.width || window.innerWidth) / 2 })
@@ -914,7 +1277,7 @@ export function createWellRoom(deps: WellDeps): Room {
       return overlay
     },
 
-    activate() {
+    async activate() {
       active = true
       droppedMemories = []
       ripples = []
@@ -922,6 +1285,7 @@ export function createWellRoom(deps: WellDeps): Room {
       fallingObject = null
       hoveredObject = -1
       coalSparks = []
+      condensation = []
       voiceText = ''
       voiceListening = false
       voiceTextAlpha = 0
@@ -934,6 +1298,8 @@ export function createWellRoom(deps: WellDeps): Room {
         window.addEventListener('keydown', handleWellKeyDown)
         window.addEventListener('keyup', handleWellKeyUp)
       }
+      // Audio
+      await initAudio()
     },
 
     deactivate() {
@@ -949,6 +1315,8 @@ export function createWellRoom(deps: WellDeps): Room {
         if (spaceHeld) { speech.stop(); spaceHeld = false }
       }
       voiceListening = false
+      // Fade out audio over ~500ms
+      stopAudio()
     },
 
     destroy() {
@@ -962,6 +1330,7 @@ export function createWellRoom(deps: WellDeps): Room {
       window.removeEventListener('keydown', handleWellKeyDown)
       window.removeEventListener('keyup', handleWellKeyUp)
       speech?.destroy()
+      destroyAudio()
       overlay?.remove()
     },
   }

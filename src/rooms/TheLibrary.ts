@@ -32,6 +32,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface Memory {
   id: string
@@ -164,6 +165,44 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
   let hoveredShelf = -1
   let hoveredPortal = -1
 
+  // --- Cursor state ---
+  let mouseX = 0
+  let mouseY = 0
+
+  // --- Visual atmosphere state ---
+  interface DustParticle {
+    x: number; y: number; vx: number; vy: number
+    size: number; alpha: number; life: number; maxLife: number
+  }
+  interface PageFragment {
+    x: number; y: number; vx: number; vy: number
+    rotation: number; rotSpeed: number
+    w: number; h: number; alpha: number; life: number; maxLife: number
+    chars: string
+  }
+  interface GlowingLetter {
+    x: number; y: number; char: string; alpha: number; vy: number; life: number
+  }
+  let dustParticles: DustParticle[] = []
+  let pageFragments: PageFragment[] = []
+  let glowingLetters: GlowingLetter[] = []
+  const MAX_DUST = 80
+  const MAX_FRAGMENTS = 6
+
+  // --- Audio state ---
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  let choirOscillators: OscillatorNode[] = []
+  let choirGains: GainNode[] = []
+  let heartbeatOsc: OscillatorNode | null = null
+  let heartbeatGain: GainNode | null = null
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null
+  let pageTurnInterval: ReturnType<typeof setInterval> | null = null
+  let footstepInterval: ReturnType<typeof setInterval> | null = null
+  let reverbDelay: DelayNode | null = null
+  let reverbFeedback: GainNode | null = null
+  let reverbWet: GainNode | null = null
+
   // --- Poetry state ---
   let cachedPoems: Poem[] = []
   let currentPoem: Poem | null = null
@@ -221,6 +260,7 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       currentPoem = poem
       spawnPoemLines(poem)
       lastPoemFetchTime = time
+      playPoemChime()
     })
   }
 
@@ -433,6 +473,7 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     memoryFragmentPositions = result.fragments
     scrollY = 0
     pagesViewed++
+    playDoorwayEcho()
   }
 
   function goToMemoryLocation(memoryIndex: number) {
@@ -474,6 +515,10 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     memoryFragmentPositions = result.fragments
     scrollY = 0
     pagesViewed++
+    // Manual page turn sound (in addition to ambient random ones)
+    if (audioInitialized && audioMaster) {
+      try { playPageTurnSound(audioMaster.context as AudioContext) } catch { /* */ }
+    }
   }
 
   function prevPage() {
@@ -490,6 +535,10 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     pageContent = result.lines
     memoryFragmentPositions = result.fragments
     scrollY = 0
+    // Manual page turn sound
+    if (audioInitialized && audioMaster) {
+      try { playPageTurnSound(audioMaster.context as AudioContext) } catch { /* */ }
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -576,6 +625,562 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     }
   }
 
+  // ==========================================================
+  // AUDIO SYSTEM
+  // ==========================================================
+
+  async function initAudio() {
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // Reverb for spatial echoes
+      reverbDelay = ac.createDelay(0.8)
+      reverbDelay.delayTime.value = 0.45
+      reverbFeedback = ac.createGain()
+      reverbFeedback.gain.value = 0.4
+      reverbWet = ac.createGain()
+      reverbWet.gain.value = 0.2
+      reverbDelay.connect(reverbFeedback)
+      reverbFeedback.connect(reverbDelay)
+      reverbDelay.connect(reverbWet)
+      reverbWet.connect(audioMaster)
+
+      // Choir-like hum: many detuned sine oscillators = countless voices reading
+      const choirFreqs = [82, 84, 110, 112, 146, 148, 164, 166, 220, 222]
+      for (const freq of choirFreqs) {
+        const osc = ac.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = freq + (Math.random() - 0.5) * 2
+        const gain = ac.createGain()
+        gain.gain.value = 0
+        osc.connect(gain)
+        gain.connect(audioMaster)
+        // Also feed reverb for spaciousness
+        gain.connect(reverbDelay)
+        osc.start()
+        choirOscillators.push(osc)
+        choirGains.push(gain)
+      }
+
+      // Heartbeat — the library's mechanical clock rhythm
+      heartbeatOsc = ac.createOscillator()
+      heartbeatOsc.type = 'sine'
+      heartbeatOsc.frequency.value = 60
+      heartbeatGain = ac.createGain()
+      heartbeatGain.gain.value = 0
+      heartbeatOsc.connect(heartbeatGain)
+      heartbeatGain.connect(audioMaster)
+      heartbeatOsc.start()
+
+      audioInitialized = true
+
+      // Fade master in
+      const now = ac.currentTime
+      audioMaster.gain.setValueAtTime(0, now)
+      audioMaster.gain.linearRampToValueAtTime(1, now + 3)
+
+      // Fade choir gains in gently over time with slow modulation
+      for (let i = 0; i < choirGains.length; i++) {
+        const g = choirGains[i]
+        g.gain.setValueAtTime(0, now)
+        g.gain.linearRampToValueAtTime(0.006 + Math.random() * 0.004, now + 4 + i * 0.3)
+      }
+
+      // Start heartbeat ticking (~0.7Hz for a slow mechanical pulse)
+      startHeartbeat(ac)
+      // Start random page-turn sounds
+      startPageTurns(ac)
+      // Start distant footsteps
+      startFootsteps(ac)
+    } catch {
+      // Audio not available — degrade gracefully
+    }
+  }
+
+  function startHeartbeat(ac: AudioContext) {
+    if (heartbeatInterval) clearInterval(heartbeatInterval)
+    heartbeatInterval = setInterval(() => {
+      if (!heartbeatGain || !active) return
+      const now = ac.currentTime
+      // Two-beat pulse: thud...thud (like a clock's tick-tock)
+      heartbeatGain.gain.setValueAtTime(0, now)
+      heartbeatGain.gain.linearRampToValueAtTime(0.015, now + 0.01)
+      heartbeatGain.gain.linearRampToValueAtTime(0, now + 0.08)
+      // Second beat, quieter
+      heartbeatGain.gain.setValueAtTime(0, now + 0.35)
+      heartbeatGain.gain.linearRampToValueAtTime(0.008, now + 0.36)
+      heartbeatGain.gain.linearRampToValueAtTime(0, now + 0.42)
+    }, 1400)
+  }
+
+  function startPageTurns(ac: AudioContext) {
+    if (pageTurnInterval) clearInterval(pageTurnInterval)
+    const scheduleTurn = () => {
+      if (!audioMaster || !active) return
+      playPageTurnSound(ac)
+      // Random interval 4-12 seconds
+      pageTurnInterval = setTimeout(scheduleTurn, 4000 + Math.random() * 8000) as unknown as ReturnType<typeof setInterval>
+    }
+    pageTurnInterval = setTimeout(scheduleTurn, 3000 + Math.random() * 5000) as unknown as ReturnType<typeof setInterval>
+  }
+
+  function playPageTurnSound(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const now = ac.currentTime
+      // Page turn = short burst of filtered noise
+      const bufferSize = ac.sampleRate * 0.15
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        // Shaped noise: louder at start, quieter at end
+        const env = 1 - i / bufferSize
+        data[i] = (Math.random() * 2 - 1) * env * env
+      }
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+      const filter = ac.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.value = 2000 + Math.random() * 2000
+      filter.Q.value = 0.8
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0.02 + Math.random() * 0.015, now)
+      gain.gain.linearRampToValueAtTime(0, now + 0.15)
+      source.connect(filter)
+      filter.connect(gain)
+      gain.connect(audioMaster)
+      source.start(now)
+      source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect() }
+    } catch { /* ignore */ }
+  }
+
+  function startFootsteps(ac: AudioContext) {
+    if (footstepInterval) clearInterval(footstepInterval)
+    const scheduleStep = () => {
+      if (!audioMaster || !active) return
+      playFootstep(ac)
+      // Random interval 6-18 seconds — distant, rare
+      footstepInterval = setTimeout(scheduleStep, 6000 + Math.random() * 12000) as unknown as ReturnType<typeof setInterval>
+    }
+    footstepInterval = setTimeout(scheduleStep, 5000 + Math.random() * 8000) as unknown as ReturnType<typeof setInterval>
+  }
+
+  function playFootstep(ac: AudioContext) {
+    if (!audioMaster || !reverbDelay) return
+    try {
+      const now = ac.currentTime
+      // Footstep: low thud with reverb echo
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(120 + Math.random() * 40, now)
+      osc.frequency.exponentialRampToValueAtTime(40, now + 0.08)
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0.012 + Math.random() * 0.008, now)
+      gain.gain.linearRampToValueAtTime(0, now + 0.12)
+      osc.connect(gain)
+      gain.connect(audioMaster)
+      gain.connect(reverbDelay) // echo through the library
+      osc.start(now)
+      osc.stop(now + 0.15)
+      osc.onended = () => { osc.disconnect(); gain.disconnect() }
+    } catch { /* ignore */ }
+  }
+
+  function playPoemChime() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      // Crystalline chime: high sine with harmonics
+      const freqs = [880, 1320, 1760]
+      for (let i = 0; i < freqs.length; i++) {
+        const osc = ac.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = freqs[i] + (Math.random() - 0.5) * 10
+        const gain = ac.createGain()
+        gain.gain.setValueAtTime(0, now + i * 0.08)
+        gain.gain.linearRampToValueAtTime(0.02 - i * 0.005, now + i * 0.08 + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 2 + i * 0.3)
+        osc.connect(gain)
+        gain.connect(audioMaster!)
+        if (reverbDelay) gain.connect(reverbDelay)
+        osc.start(now + i * 0.08)
+        osc.stop(now + 2.5 + i * 0.3)
+        osc.onended = () => { osc.disconnect(); gain.disconnect() }
+      }
+    } catch { /* ignore */ }
+  }
+
+  function playDoorwayEcho() {
+    if (!audioInitialized || !audioMaster || !reverbDelay) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      // Low resonant whoosh for navigating hexagons
+      const osc = ac.createOscillator()
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(180, now)
+      osc.frequency.exponentialRampToValueAtTime(80, now + 0.4)
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.03, now + 0.05)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
+      osc.connect(gain)
+      gain.connect(audioMaster)
+      gain.connect(reverbDelay) // deep echo
+      osc.start(now)
+      osc.stop(now + 0.7)
+      osc.onended = () => { osc.disconnect(); gain.disconnect() }
+    } catch { /* ignore */ }
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
+    if (pageTurnInterval) { clearTimeout(pageTurnInterval as unknown as number); pageTurnInterval = null }
+    if (footstepInterval) { clearTimeout(footstepInterval as unknown as number); footstepInterval = null }
+    setTimeout(() => {
+      for (const osc of choirOscillators) { try { osc.stop() } catch { /* */ }; osc.disconnect() }
+      for (const g of choirGains) { g.disconnect() }
+      choirOscillators = []
+      choirGains = []
+      try { heartbeatOsc?.stop() } catch { /* */ }
+      heartbeatOsc?.disconnect()
+      heartbeatGain?.disconnect()
+      reverbDelay?.disconnect()
+      reverbFeedback?.disconnect()
+      reverbWet?.disconnect()
+      audioMaster?.disconnect()
+      heartbeatOsc = null
+      heartbeatGain = null
+      reverbDelay = null
+      reverbFeedback = null
+      reverbWet = null
+      audioMaster = null
+      audioInitialized = false
+    }, 600)
+  }
+
+  // Modulate choir gains slowly for breathing, living sound
+  function updateChoirModulation() {
+    if (!audioInitialized) return
+    for (let i = 0; i < choirGains.length; i++) {
+      const baseVol = 0.005 + (i % 3) * 0.002
+      const mod = Math.sin(time * (0.15 + i * 0.04) + i * 1.7) * 0.003
+      const val = Math.max(0, baseVol + mod)
+      choirGains[i].gain.value = val
+    }
+  }
+
+  // ==========================================================
+  // VISUAL ATMOSPHERE
+  // ==========================================================
+
+  function spawnDust() {
+    if (!canvas) return
+    while (dustParticles.length < MAX_DUST) {
+      dustParticles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -0.1 - Math.random() * 0.2,
+        size: 0.5 + Math.random() * 1.5,
+        alpha: 0,
+        life: 0,
+        maxLife: 8 + Math.random() * 12,
+      })
+    }
+  }
+
+  function updateDust(dt: number) {
+    if (!canvas) return
+    for (let i = dustParticles.length - 1; i >= 0; i--) {
+      const p = dustParticles[i]
+      p.life += dt
+      p.x += p.vx * dt * 10
+      p.y += p.vy * dt * 10
+
+      // Attracted gently toward cursor (lamplight catches dust)
+      const dx = mouseX - p.x
+      const dy = mouseY - p.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < 200 && dist > 1) {
+        p.vx += dx / dist * 0.01
+        p.vy += dy / dist * 0.01
+      }
+
+      // Fade lifecycle
+      const frac = p.life / p.maxLife
+      if (frac < 0.1) p.alpha = frac / 0.1 * 0.4
+      else if (frac > 0.8) p.alpha = (1 - frac) / 0.2 * 0.4
+      else p.alpha = 0.4
+
+      // Near cursor: brighter (lamplight)
+      if (dist < 150) {
+        p.alpha *= 1 + (1 - dist / 150) * 2
+      }
+
+      if (p.life > p.maxLife || p.y < -10 || p.x < -10 || p.x > canvas.width + 10) {
+        dustParticles.splice(i, 1)
+      }
+    }
+    // Respawn
+    spawnDust()
+  }
+
+  function renderDust(c: CanvasRenderingContext2D) {
+    for (const p of dustParticles) {
+      if (p.alpha <= 0) continue
+      const glow = Math.sin(time * 2 + p.x * 0.01) * 0.05
+      c.beginPath()
+      c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      c.fillStyle = `rgba(220, 200, 140, ${Math.min(1, Math.max(0, p.alpha + glow))})`
+      c.fill()
+    }
+  }
+
+  function spawnPageFragment() {
+    if (!canvas || pageFragments.length >= MAX_FRAGMENTS) return
+    const side = Math.random()
+    let x: number, y: number
+    if (side < 0.5) {
+      x = Math.random() * canvas.width
+      y = -20
+    } else {
+      x = side < 0.75 ? -20 : canvas.width + 20
+      y = Math.random() * canvas.height
+    }
+    // tiny rectangle with random text
+    const chars = Array.from({ length: 3 + Math.floor(Math.random() * 5) }, () =>
+      BABEL_CHARS[Math.floor(Math.random() * BABEL_CHARS.length)]
+    ).join('')
+    pageFragments.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: 0.15 + Math.random() * 0.2,
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.02,
+      w: 20 + Math.random() * 25,
+      h: 10 + Math.random() * 14,
+      alpha: 0,
+      life: 0,
+      maxLife: 12 + Math.random() * 10,
+      chars,
+    })
+  }
+
+  function updatePageFragments(dt: number) {
+    if (!canvas) return
+    for (let i = pageFragments.length - 1; i >= 0; i--) {
+      const f = pageFragments[i]
+      f.life += dt
+      f.x += f.vx * dt * 10
+      f.y += f.vy * dt * 10
+      f.rotation += f.rotSpeed
+
+      const frac = f.life / f.maxLife
+      if (frac < 0.15) f.alpha = frac / 0.15 * 0.12
+      else if (frac > 0.75) f.alpha = (1 - frac) / 0.25 * 0.12
+      else f.alpha = 0.12
+
+      if (f.life > f.maxLife) {
+        pageFragments.splice(i, 1)
+      }
+    }
+    // Spawn new fragments occasionally
+    if (Math.random() < 0.02) spawnPageFragment()
+  }
+
+  function renderPageFragments(c: CanvasRenderingContext2D) {
+    for (const f of pageFragments) {
+      if (f.alpha <= 0) continue
+      c.save()
+      c.translate(f.x, f.y)
+      c.rotate(f.rotation)
+      // Tiny aged paper rectangle
+      c.fillStyle = `rgba(40, 35, 25, ${f.alpha})`
+      c.fillRect(-f.w / 2, -f.h / 2, f.w, f.h)
+      c.strokeStyle = `rgba(80, 70, 50, ${f.alpha * 0.6})`
+      c.lineWidth = 0.3
+      c.strokeRect(-f.w / 2, -f.h / 2, f.w, f.h)
+      // Faint text on fragment
+      c.font = '5px monospace'
+      c.fillStyle = `rgba(120, 100, 70, ${f.alpha * 0.8})`
+      c.fillText(f.chars, -f.w / 2 + 2, 2)
+      c.restore()
+    }
+  }
+
+  function renderHexagonalGrid(c: CanvasRenderingContext2D, w: number, h: number) {
+    // Faint hexagonal grid suggesting infinite corridors
+    const hexR = 60
+    const hexH = hexR * Math.sqrt(3)
+    c.strokeStyle = `rgba(60, 50, 35, ${0.025 + Math.sin(time * 0.2) * 0.008})`
+    c.lineWidth = 0.3
+
+    const cols = Math.ceil(w / (hexR * 1.5)) + 2
+    const rows = Math.ceil(h / hexH) + 2
+
+    for (let row = -1; row < rows; row++) {
+      for (let col = -1; col < cols; col++) {
+        const cx = col * hexR * 1.5
+        const cy = row * hexH + (col % 2 === 0 ? 0 : hexH / 2)
+
+        // Fade grid based on distance from center
+        const dx = cx - w / 2
+        const dy = cy - h / 2
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const fade = Math.max(0, 1 - dist / (Math.max(w, h) * 0.6))
+        if (fade < 0.01) continue
+
+        c.globalAlpha = fade
+        c.beginPath()
+        for (let i = 0; i < 6; i++) {
+          const angle = Math.PI / 3 * i + Math.PI / 6
+          const px = cx + hexR * 0.4 * Math.cos(angle)
+          const py = cy + hexR * 0.4 * Math.sin(angle)
+          if (i === 0) c.moveTo(px, py)
+          else c.lineTo(px, py)
+        }
+        c.closePath()
+        c.stroke()
+      }
+    }
+    c.globalAlpha = 1
+  }
+
+  function renderInfiniteCorridors(c: CanvasRenderingContext2D, w: number, h: number) {
+    // Deep perspective lines suggesting infinite corridors receding
+    const cx = w / 2
+    const cy = h / 2
+    const numLines = 12
+    const perspectiveDepth = 8
+
+    for (let d = perspectiveDepth; d >= 1; d--) {
+      const scale = d / perspectiveDepth
+      const alpha = (1 - scale) * 0.03
+      const rectW = w * 0.35 * scale
+      const rectH = h * 0.4 * scale
+
+      c.strokeStyle = `rgba(70, 60, 40, ${alpha})`
+      c.lineWidth = 0.3
+      c.strokeRect(cx - rectW / 2, cy - rectH / 2, rectW, rectH)
+    }
+
+    // Converging lines from corners toward vanishing point
+    const vanishX = cx + Math.sin(time * 0.1) * 5
+    const vanishY = cy + Math.cos(time * 0.13) * 3
+    c.strokeStyle = 'rgba(50, 45, 30, 0.015)'
+    c.lineWidth = 0.3
+    const corners = [[0, 0], [w, 0], [w, h], [0, h]]
+    for (const [fx, fy] of corners) {
+      c.beginPath()
+      c.moveTo(fx, fy)
+      c.lineTo(vanishX, vanishY)
+      c.stroke()
+    }
+  }
+
+  function renderLamplight(c: CanvasRenderingContext2D) {
+    // Warm reading-lamp circle following cursor
+    const gradient = c.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 180)
+    gradient.addColorStop(0, 'rgba(255, 230, 160, 0.06)')
+    gradient.addColorStop(0.3, 'rgba(255, 220, 140, 0.03)')
+    gradient.addColorStop(0.7, 'rgba(200, 170, 100, 0.01)')
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    c.fillStyle = gradient
+    c.fillRect(0, 0, c.canvas.width, c.canvas.height)
+  }
+
+  function updateGlowingLetters(dt: number) {
+    for (let i = glowingLetters.length - 1; i >= 0; i--) {
+      const gl = glowingLetters[i]
+      gl.life += dt
+      gl.y -= gl.vy * dt * 10
+      gl.alpha = Math.max(0, 1 - gl.life / 2) * 0.6
+      if (gl.life > 2) {
+        glowingLetters.splice(i, 1)
+      }
+    }
+  }
+
+  function renderGlowingLetters(c: CanvasRenderingContext2D) {
+    c.font = '12px monospace'
+    c.textAlign = 'center'
+    for (const gl of glowingLetters) {
+      if (gl.alpha <= 0) continue
+      c.fillStyle = `rgba(255, 230, 160, ${gl.alpha})`
+      c.fillText(gl.char, gl.x, gl.y)
+    }
+  }
+
+  // Handle click on text to make letters glow and drift upward
+  function handleTextClick(e: MouseEvent) {
+    if (!canvas || !active) return
+    const w = canvas.width
+    const h = canvas.height
+    const pageW = Math.min(w * 0.6, 500)
+    const pageH = Math.min(h * 0.7, 500)
+    const pageX = (w - pageW) / 2
+    const pageY = (h - pageH) / 2 - 10
+    const lineHeight = pageH / (LINES_PER_PAGE + 2)
+    const charWidth = (pageW - 40) / CHARS_PER_LINE
+
+    // Check if click is inside the page area
+    if (e.clientX >= pageX + 20 && e.clientX <= pageX + pageW - 20 &&
+        e.clientY >= pageY + 10 && e.clientY <= pageY + pageH - 10) {
+      const col = Math.floor((e.clientX - pageX - 20) / charWidth)
+      const line = Math.floor((e.clientY - pageY - 12) / lineHeight)
+      if (line >= 0 && line < pageContent.length && col >= 0 && col < pageContent[line].length) {
+        // Spawn a few glowing letters around the click
+        const count = 3 + Math.floor(Math.random() * 4)
+        for (let i = 0; i < count; i++) {
+          const ci = Math.max(0, Math.min(pageContent[line].length - 1, col - 1 + i))
+          glowingLetters.push({
+            x: pageX + 20 + ci * charWidth + Math.random() * 4,
+            y: pageY + 20 + line * lineHeight,
+            char: pageContent[line][ci],
+            alpha: 0.6,
+            vy: 0.3 + Math.random() * 0.4,
+            life: 0,
+          })
+        }
+      }
+    }
+  }
+
+  function handleMouseMove(e: MouseEvent) {
+    mouseX = e.clientX
+    mouseY = e.clientY
+
+    if (!canvas) return
+    // Existing hover detection for portal books
+    hoveredPortal = -1
+    hoveredShelf = -1
+    for (let i = 0; i < portalBooks.length; i++) {
+      const b = getPortalBookBounds(canvas.width, canvas.height, i)
+      if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
+          e.clientY >= b.y && e.clientY <= b.y + b.h) {
+        hoveredPortal = i
+        break
+      }
+    }
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -590,6 +1195,12 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     // Update floating poem lines
     updateFloatingLines(dt)
 
+    // Update atmosphere particles
+    updateDust(dt)
+    updatePageFragments(dt)
+    updateGlowingLetters(dt)
+    updateChoirModulation()
+
     const c = ctx
     const w = canvas.width
     const h = canvas.height
@@ -597,6 +1208,15 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     // Library darkness — warm lamplight
     c.fillStyle = 'rgba(10, 8, 5, 1)'
     c.fillRect(0, 0, w, h)
+
+    // --- Background: hexagonal grid (behind everything) ---
+    renderHexagonalGrid(c, w, h)
+
+    // --- Background: infinite corridor perspective ---
+    renderInfiniteCorridors(c, w, h)
+
+    // --- Background: page fragments drifting ---
+    renderPageFragments(c)
 
     // --- Floating poem lines (behind the page) ---
     renderFloatingLines(c)
@@ -633,23 +1253,38 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       const frag = memoryFragmentPositions.find(f => f.line === line)
 
       for (let col = 0; col < text.length; col++) {
-        const cx = pageX + 20 + col * charWidth
+        const charX = pageX + 20 + col * charWidth
+
+        // Lamplight proximity: text is more readable near cursor
+        const dxCur = charX - mouseX
+        const dyCur = ly - mouseY
+        const cursorDist = Math.sqrt(dxCur * dxCur + dyCur * dyCur)
+        const lampBoost = cursorDist < 140 ? (1 - cursorDist / 140) * 0.25 : 0
 
         // Is this character part of a memory fragment?
         const isFrag = frag && col >= frag.col && col < frag.col + frag.length
         const breathe = Math.sin(time * 1.5 + col * 0.2) * 0.03
 
         if (isFrag) {
-          // Memory fragment — golden highlight
-          c.fillStyle = `rgba(255, 215, 0, ${0.4 + breathe})`
+          // Memory fragment — golden highlight, brighter near lamp
+          c.fillStyle = `rgba(255, 215, 0, ${0.4 + breathe + lampBoost * 0.5})`
         } else {
-          // Random text — barely legible
-          c.fillStyle = `rgba(140, 120, 90, ${0.12 + breathe * 0.5})`
+          // Random text — barely legible, but readable near lamp
+          c.fillStyle = `rgba(140, 120, 90, ${0.12 + breathe * 0.5 + lampBoost})`
         }
 
-        c.fillText(text[col], cx, ly)
+        c.fillText(text[col], charX, ly)
       }
     }
+
+    // --- Lamplight overlay (warm cursor glow over text) ---
+    renderLamplight(c)
+
+    // --- Golden dust particles ---
+    renderDust(c)
+
+    // --- Glowing letters drifting upward from clicks ---
+    renderGlowingLetters(c)
 
     // Location code
     const locStr = `hex:${String(location.hexagon).padStart(6, '0')} wall:${location.wall} shelf:${location.shelf} vol:${location.volume} p:${location.page}`
@@ -742,9 +1377,9 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%;'
       ctx = canvas.getContext('2d')
 
-      // Click to navigate to memory's location or portal books
+      // Click to navigate to memory's location, portal books, or glow text
       canvas.addEventListener('click', (e) => {
-        // Check portal books
+        // Check portal books first
         if (deps.switchTo && canvas) {
           for (let i = 0; i < portalBooks.length; i++) {
             const b = getPortalBookBounds(canvas.width, canvas.height, i)
@@ -763,23 +1398,15 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
           if (idx >= 0 && idx < memories.length) {
             goToMemoryLocation(idx)
           }
+          return
         }
+
+        // Otherwise, handle text click (glowing letters)
+        handleTextClick(e)
       })
 
-      // Hover detection for portal books
-      canvas.addEventListener('mousemove', (e) => {
-        if (!canvas) return
-        hoveredPortal = -1
-        hoveredShelf = -1
-        for (let i = 0; i < portalBooks.length; i++) {
-          const b = getPortalBookBounds(canvas.width, canvas.height, i)
-          if (e.clientX >= b.x && e.clientX <= b.x + b.w &&
-              e.clientY >= b.y && e.clientY <= b.y + b.h) {
-            hoveredPortal = i
-            break
-          }
-        }
-      })
+      // Hover/cursor tracking for lamplight + portal books
+      canvas.addEventListener('mousemove', handleMouseMove)
 
       window.addEventListener('keydown', handleKeyDown)
 
@@ -795,12 +1422,15 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       return overlay
     },
 
-    activate() {
+    async activate() {
       active = true
       pagesViewed = 0
       time = 0
       lastPoemFetchTime = 0
       floatingLines = []
+      dustParticles = []
+      pageFragments = []
+      glowingLetters = []
 
       // Start at a location derived from the first memory, or random
       const memories = deps.getMemories()
@@ -819,6 +1449,12 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       // Fetch initial poem
       loadNewPoem()
 
+      // Init audio
+      await initAudio()
+
+      // Spawn initial dust
+      spawnDust()
+
       window.addEventListener('keydown', handleKeyDown)
       render()
     },
@@ -827,12 +1463,20 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       window.removeEventListener('keydown', handleKeyDown)
+      fadeAudioOut()
+      if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
+      if (pageTurnInterval) { clearTimeout(pageTurnInterval as unknown as number); pageTurnInterval = null }
+      if (footstepInterval) { clearTimeout(footstepInterval as unknown as number); footstepInterval = null }
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
       window.removeEventListener('keydown', handleKeyDown)
+      destroyAudio()
+      dustParticles = []
+      pageFragments = []
+      glowingLetters = []
       overlay?.remove()
     },
   }

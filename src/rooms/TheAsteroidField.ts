@@ -32,6 +32,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface Memory {
   id: string
@@ -136,6 +137,43 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
   let hoveredAsteroid: Asteroid | null = null
   let mouseX = 0
   let mouseY = 0
+
+  // --- Cursor interactivity ---
+  let prevMouseX = 0
+  let prevMouseY = 0
+  let mouseSpeed = 0
+  interface CometParticle { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
+  let cometTrail: CometParticle[] = []
+
+  // --- Visual atmosphere ---
+  interface StarLayer { x: number; y: number; brightness: number; depth: number; size: number }
+  let deepStars: StarLayer[] = []
+  interface MicroMeteorite { x: number; y: number; vx: number; vy: number; life: number; length: number }
+  let microMeteorites: MicroMeteorite[] = []
+  let nebulaHue = 260 // starting hue, shifts over time
+
+  // --- Audio state ---
+  let audioCtxRef: AudioContext | null = null
+  let audioInitialized = false
+  let masterVol: GainNode | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneLfo: OscillatorNode | null = null
+  let droneLfoGain: GainNode | null = null
+  let droneFilter: BiquadFilterNode | null = null
+  let noiseSource: AudioBufferSourceNode | null = null
+  let noiseGain: GainNode | null = null
+  let noiseFilter: BiquadFilterNode | null = null
+  let noisePanner: StereoPannerNode | null = null
+  let radarOsc: OscillatorNode | null = null
+  let radarGain: GainNode | null = null
+  let radarFilter: BiquadFilterNode | null = null
+  let rumbleOsc: OscillatorNode | null = null
+  let rumbleGain: GainNode | null = null
+  let flybyInterval: ReturnType<typeof setInterval> | null = null
+  let radarInterval: ReturnType<typeof setInterval> | null = null
+  let rumbleInterval: ReturnType<typeof setInterval> | null = null
+  const scheduledTimeouts: ReturnType<typeof setTimeout>[] = []
 
   // Navigation portals — asteroid fragment style
   let portals: NavigationPortal[] = []
@@ -550,6 +588,307 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
     }
   }
 
+  function initDeepStars(w: number, h: number) {
+    deepStars = []
+    // Three depth layers for parallax
+    for (let i = 0; i < 200; i++) {
+      const depth = Math.random() // 0 = far, 1 = close
+      deepStars.push({
+        x: Math.random() * w * 1.2 - w * 0.1,
+        y: Math.random() * h * 1.2 - h * 0.1,
+        brightness: 0.02 + Math.random() * 0.06 * (0.3 + depth * 0.7),
+        depth,
+        size: 0.3 + depth * 0.8,
+      })
+    }
+  }
+
+  function spawnMicroMeteorite(w: number, h: number) {
+    if (microMeteorites.length > 5) return
+    const angle = -0.3 - Math.random() * 0.5 // mostly downward-right
+    const speed = 4 + Math.random() * 6
+    microMeteorites.push({
+      x: Math.random() * w,
+      y: Math.random() * h * 0.3,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed * -1 + speed,
+      life: 15 + Math.random() * 20,
+      length: 8 + Math.random() * 15,
+    })
+  }
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+      audioCtxRef = ac
+      audioInitialized = true
+
+      // Master volume for this room — fade in
+      masterVol = ac.createGain()
+      masterVol.gain.setValueAtTime(0, ac.currentTime)
+      masterVol.gain.linearRampToValueAtTime(1, ac.currentTime + 2)
+      masterVol.connect(dest)
+
+      // --- Cosmic drone: very low oscillator with slow LFO ---
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'sine'
+      droneOsc.frequency.setValueAtTime(28, ac.currentTime) // sub-bass cosmic hum
+
+      // LFO modulates drone frequency slowly
+      droneLfo = ac.createOscillator()
+      droneLfo.type = 'sine'
+      droneLfo.frequency.setValueAtTime(0.08, ac.currentTime) // very slow wobble
+      droneLfoGain = ac.createGain()
+      droneLfoGain.gain.setValueAtTime(3, ac.currentTime) // +/- 3Hz modulation
+      droneLfo.connect(droneLfoGain)
+      droneLfoGain.connect(droneOsc.frequency)
+      droneLfo.start(ac.currentTime)
+
+      droneFilter = ac.createBiquadFilter()
+      droneFilter.type = 'lowpass'
+      droneFilter.frequency.setValueAtTime(80, ac.currentTime)
+      droneFilter.Q.setValueAtTime(2, ac.currentTime)
+
+      droneGain = ac.createGain()
+      droneGain.gain.setValueAtTime(0.06, ac.currentTime)
+
+      droneOsc.connect(droneFilter)
+      droneFilter.connect(droneGain)
+      droneGain.connect(masterVol)
+      droneOsc.start(ac.currentTime)
+
+      // --- Noise source for flyby whooshes and ambient hiss ---
+      const noiseBufferLen = ac.sampleRate * 4
+      const noiseBuffer = ac.createBuffer(1, noiseBufferLen, ac.sampleRate)
+      const noiseData = noiseBuffer.getChannelData(0)
+      for (let i = 0; i < noiseBufferLen; i++) {
+        noiseData[i] = Math.random() * 2 - 1
+      }
+
+      noiseSource = ac.createBufferSource()
+      noiseSource.buffer = noiseBuffer
+      noiseSource.loop = true
+
+      noiseFilter = ac.createBiquadFilter()
+      noiseFilter.type = 'bandpass'
+      noiseFilter.frequency.setValueAtTime(400, ac.currentTime)
+      noiseFilter.Q.setValueAtTime(0.5, ac.currentTime)
+
+      noisePanner = ac.createStereoPanner()
+      noisePanner.pan.setValueAtTime(0, ac.currentTime)
+
+      noiseGain = ac.createGain()
+      noiseGain.gain.setValueAtTime(0.003, ac.currentTime) // very faint ambient hiss
+
+      noiseSource.connect(noiseFilter)
+      noiseFilter.connect(noisePanner)
+      noisePanner.connect(noiseGain)
+      noiseGain.connect(masterVol)
+      noiseSource.start(ac.currentTime)
+
+      // --- Radar ping oscillator (reusable) ---
+      radarOsc = ac.createOscillator()
+      radarOsc.type = 'sine'
+      radarOsc.frequency.setValueAtTime(1200, ac.currentTime)
+
+      radarFilter = ac.createBiquadFilter()
+      radarFilter.type = 'bandpass'
+      radarFilter.frequency.setValueAtTime(1200, ac.currentTime)
+      radarFilter.Q.setValueAtTime(15, ac.currentTime)
+
+      radarGain = ac.createGain()
+      radarGain.gain.setValueAtTime(0, ac.currentTime)
+
+      radarOsc.connect(radarFilter)
+      radarFilter.connect(radarGain)
+      radarGain.connect(masterVol)
+      radarOsc.start(ac.currentTime)
+
+      // --- Gravitational rumble oscillator ---
+      rumbleOsc = ac.createOscillator()
+      rumbleOsc.type = 'triangle'
+      rumbleOsc.frequency.setValueAtTime(18, ac.currentTime)
+
+      rumbleGain = ac.createGain()
+      rumbleGain.gain.setValueAtTime(0, ac.currentTime)
+
+      rumbleOsc.connect(rumbleGain)
+      rumbleGain.connect(masterVol)
+      rumbleOsc.start(ac.currentTime)
+
+      // --- Flyby whoosh interval: sweep noise filter left-to-right ---
+      flybyInterval = setInterval(() => {
+        if (!audioCtxRef || !noiseFilter || !noisePanner || !noiseGain) return
+        const t = audioCtxRef.currentTime
+        // Ramp noise up, sweep filter and pan
+        noiseGain.gain.setTargetAtTime(0.025, t, 0.1)
+        noiseFilter.frequency.setValueAtTime(200, t)
+        noiseFilter.frequency.exponentialRampToValueAtTime(3000, t + 1.5)
+        noiseFilter.frequency.exponentialRampToValueAtTime(200, t + 3)
+        noisePanner.pan.setValueAtTime(-0.8, t)
+        noisePanner.pan.linearRampToValueAtTime(0.8, t + 3)
+        // Fade back to ambient
+        const tid = setTimeout(() => {
+          if (noiseGain && audioCtxRef) {
+            noiseGain.gain.setTargetAtTime(0.003, audioCtxRef.currentTime, 0.3)
+          }
+        }, 3200)
+        scheduledTimeouts.push(tid)
+      }, 8000 + Math.random() * 12000)
+
+      // --- Radar ping interval ---
+      radarInterval = setInterval(() => {
+        if (!audioCtxRef || !radarGain || !radarOsc) return
+        const t = audioCtxRef.currentTime
+        // Quick ping — sharp attack, fast decay
+        radarGain.gain.setValueAtTime(0, t)
+        radarGain.gain.linearRampToValueAtTime(0.04, t + 0.01)
+        radarGain.gain.exponentialRampToValueAtTime(0.001, t + 0.4)
+        // Slight frequency variation
+        const pingFreq = 1000 + Math.random() * 600
+        radarOsc.frequency.setValueAtTime(pingFreq, t)
+        radarOsc.frequency.exponentialRampToValueAtTime(pingFreq * 0.7, t + 0.3)
+      }, 3000 + Math.random() * 5000)
+
+      // --- Gravitational rumble for large/close asteroids ---
+      rumbleInterval = setInterval(() => {
+        if (!audioCtxRef || !rumbleGain || !rumbleOsc) return
+        // Only rumble if a large or close asteroid is near screen center
+        const closeAst = asteroids.find(a =>
+          a.isHazardous || a.missDistance < 5 || a.size > 20
+        )
+        if (!closeAst) return
+        const t = audioCtxRef.currentTime
+        const intensity = closeAst.isHazardous ? 0.08 : 0.04
+        rumbleGain.gain.setValueAtTime(0, t)
+        rumbleGain.gain.linearRampToValueAtTime(intensity, t + 0.3)
+        rumbleGain.gain.exponentialRampToValueAtTime(0.001, t + 2.5)
+        rumbleOsc.frequency.setValueAtTime(15 + closeAst.size * 0.3, t)
+      }, 6000 + Math.random() * 8000)
+
+    } catch {
+      // Audio init failed — silent mode
+    }
+  }
+
+  function playAsteroidClick(ast: Asteroid) {
+    if (!audioCtxRef || !masterVol) return
+    const ac = audioCtxRef
+    const t = ac.currentTime
+
+    // Resonant metallic ring based on asteroid size
+    // Larger asteroids = lower pitch, longer ring
+    const baseFreq = 200 + (1 - Math.min(ast.size / 35, 1)) * 800 // 200-1000Hz
+    const ringDuration = 0.8 + (ast.size / 35) * 2 // 0.8 - 2.8s
+
+    // Create a short-lived oscillator for the click ring
+    const osc1 = ac.createOscillator()
+    osc1.type = 'sine'
+    osc1.frequency.setValueAtTime(baseFreq, t)
+    osc1.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, t + ringDuration)
+
+    // Second harmonic for metallic character
+    const osc2 = ac.createOscillator()
+    osc2.type = 'sine'
+    osc2.frequency.setValueAtTime(baseFreq * 2.76, t) // inharmonic for metallic timbre
+    osc2.frequency.exponentialRampToValueAtTime(baseFreq * 2.2, t + ringDuration)
+
+    // Third partial — high shimmer
+    const osc3 = ac.createOscillator()
+    osc3.type = 'sine'
+    osc3.frequency.setValueAtTime(baseFreq * 5.4, t)
+
+    const clickGain = ac.createGain()
+    clickGain.gain.setValueAtTime(0, t)
+    clickGain.gain.linearRampToValueAtTime(0.08, t + 0.005) // sharp attack
+    clickGain.gain.exponentialRampToValueAtTime(0.001, t + ringDuration)
+
+    const clickGain2 = ac.createGain()
+    clickGain2.gain.setValueAtTime(0, t)
+    clickGain2.gain.linearRampToValueAtTime(0.03, t + 0.005)
+    clickGain2.gain.exponentialRampToValueAtTime(0.001, t + ringDuration * 0.6)
+
+    const clickGain3 = ac.createGain()
+    clickGain3.gain.setValueAtTime(0, t)
+    clickGain3.gain.linearRampToValueAtTime(0.015, t + 0.003)
+    clickGain3.gain.exponentialRampToValueAtTime(0.001, t + ringDuration * 0.3)
+
+    // Bandpass for resonant quality
+    const ringFilter = ac.createBiquadFilter()
+    ringFilter.type = 'bandpass'
+    ringFilter.frequency.setValueAtTime(baseFreq * 1.5, t)
+    ringFilter.Q.setValueAtTime(5, t)
+
+    osc1.connect(clickGain)
+    osc2.connect(clickGain2)
+    osc3.connect(clickGain3)
+    clickGain.connect(ringFilter)
+    clickGain2.connect(ringFilter)
+    clickGain3.connect(ringFilter)
+    ringFilter.connect(masterVol)
+
+    osc1.start(t)
+    osc2.start(t)
+    osc3.start(t)
+    osc1.stop(t + ringDuration + 0.1)
+    osc2.stop(t + ringDuration + 0.1)
+    osc3.stop(t + ringDuration + 0.1)
+
+    // Hazardous asteroids also trigger a deep impact thud
+    if (ast.isHazardous && rumbleGain && rumbleOsc) {
+      rumbleGain.gain.setValueAtTime(0, t)
+      rumbleGain.gain.linearRampToValueAtTime(0.12, t + 0.05)
+      rumbleGain.gain.exponentialRampToValueAtTime(0.001, t + 1.5)
+    }
+  }
+
+  function stopAudio() {
+    if (masterVol && audioCtxRef) {
+      masterVol.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.3)
+    }
+    if (flybyInterval !== null) { clearInterval(flybyInterval); flybyInterval = null }
+    if (radarInterval !== null) { clearInterval(radarInterval); radarInterval = null }
+    if (rumbleInterval !== null) { clearInterval(rumbleInterval); rumbleInterval = null }
+    for (const tid of scheduledTimeouts) clearTimeout(tid)
+    scheduledTimeouts.length = 0
+  }
+
+  function destroyAudio() {
+    stopAudio()
+    try {
+      droneOsc?.stop()
+      droneLfo?.stop()
+      noiseSource?.stop()
+      radarOsc?.stop()
+      rumbleOsc?.stop()
+    } catch { /* already stopped */ }
+    try {
+      droneOsc?.disconnect()
+      droneLfo?.disconnect()
+      droneLfoGain?.disconnect()
+      droneFilter?.disconnect()
+      droneGain?.disconnect()
+      noiseSource?.disconnect()
+      noiseFilter?.disconnect()
+      noisePanner?.disconnect()
+      noiseGain?.disconnect()
+      radarOsc?.disconnect()
+      radarFilter?.disconnect()
+      radarGain?.disconnect()
+      rumbleOsc?.disconnect()
+      rumbleGain?.disconnect()
+      masterVol?.disconnect()
+    } catch { /* already disconnected */ }
+    droneOsc = null; droneLfo = null; droneLfoGain = null
+    droneFilter = null; droneGain = null
+    noiseSource = null; noiseFilter = null; noisePanner = null; noiseGain = null
+    radarOsc = null; radarFilter = null; radarGain = null
+    rumbleOsc = null; rumbleGain = null
+    masterVol = null; audioCtxRef = null; audioInitialized = false
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -559,25 +898,106 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Deep space
+    // --- Cursor physics ---
+    const dmx = mouseX - prevMouseX
+    const dmy = mouseY - prevMouseY
+    mouseSpeed = Math.sqrt(dmx * dmx + dmy * dmy)
+    prevMouseX = mouseX
+    prevMouseY = mouseY
+
+    // Spawn comet trail particles when moving fast
+    if (mouseSpeed > 3) {
+      const count = Math.min(3, Math.floor(mouseSpeed / 5))
+      for (let i = 0; i < count; i++) {
+        cometTrail.push({
+          x: mouseX + (Math.random() - 0.5) * 4,
+          y: mouseY + (Math.random() - 0.5) * 4,
+          vx: -dmx * 0.1 + (Math.random() - 0.5) * 0.5,
+          vy: -dmy * 0.1 + (Math.random() - 0.5) * 0.5,
+          life: 30 + Math.random() * 20,
+          maxLife: 30 + Math.random() * 20,
+          size: 0.5 + Math.random() * 1.5,
+        })
+      }
+    }
+    // Cap comet particles
+    if (cometTrail.length > 80) cometTrail.splice(0, cometTrail.length - 80)
+
+    // Deep space background
     c.fillStyle = 'rgba(2, 2, 6, 1)'
     c.fillRect(0, 0, w, h)
 
-    // Star field
-    for (let i = 0; i < 120; i++) {
-      const sx = ((i * 137.5 + 23) % w)
-      const sy = ((i * 97.3 + 17) % h)
-      const twinkle = Math.sin(time * 1.2 + i * 3.1) * 0.3 + 0.4
-      c.fillStyle = `rgba(200, 210, 230, ${0.04 * twinkle})`
+    // --- Nebula glow (background, color shifts over time) ---
+    nebulaHue = (nebulaHue + 0.02) % 360
+    const nebX = w * 0.65 + Math.sin(time * 0.05) * w * 0.1
+    const nebY = h * 0.35 + Math.cos(time * 0.07) * h * 0.08
+    const nebR = Math.min(w, h) * 0.4
+    const nebGrad = c.createRadialGradient(nebX, nebY, 0, nebX, nebY, nebR)
+    nebGrad.addColorStop(0, `hsla(${nebulaHue}, 60%, 30%, 0.015)`)
+    nebGrad.addColorStop(0.4, `hsla(${(nebulaHue + 40) % 360}, 50%, 20%, 0.008)`)
+    nebGrad.addColorStop(1, 'transparent')
+    c.fillStyle = nebGrad
+    c.fillRect(0, 0, w, h)
+
+    // Second nebula patch
+    const neb2X = w * 0.25 + Math.cos(time * 0.04) * w * 0.05
+    const neb2Y = h * 0.7 + Math.sin(time * 0.06) * h * 0.05
+    const neb2Grad = c.createRadialGradient(neb2X, neb2Y, 0, neb2X, neb2Y, nebR * 0.6)
+    neb2Grad.addColorStop(0, `hsla(${(nebulaHue + 180) % 360}, 40%, 25%, 0.01)`)
+    neb2Grad.addColorStop(1, 'transparent')
+    c.fillStyle = neb2Grad
+    c.fillRect(0, 0, w, h)
+
+    // --- Parallax star field ---
+    if (deepStars.length === 0) initDeepStars(w, h)
+    for (const star of deepStars) {
+      // Parallax: mouse offset based on depth
+      const parallaxX = (mouseX - w / 2) * star.depth * 0.01
+      const parallaxY = (mouseY - h / 2) * star.depth * 0.01
+      const sx = star.x + parallaxX
+      const sy = star.y + parallaxY
+      if (sx < 0 || sx > w || sy < 0 || sy > h) continue
+      const twinkle = Math.sin(time * (0.5 + star.depth * 1.5) + star.x * 0.1) * 0.3 + 0.7
+      c.fillStyle = `rgba(200, 210, 230, ${star.brightness * twinkle})`
       c.beginPath()
-      c.arc(sx, sy, 0.7, 0, Math.PI * 2)
+      c.arc(sx, sy, star.size, 0, Math.PI * 2)
       c.fill()
+    }
+
+    // --- Micro-meteorite streaks ---
+    if (Math.random() < 0.02) spawnMicroMeteorite(w, h)
+    for (let i = microMeteorites.length - 1; i >= 0; i--) {
+      const m = microMeteorites[i]
+      m.x += m.vx
+      m.y += m.vy
+      m.life--
+      if (m.life <= 0 || m.x > w || m.y > h) {
+        microMeteorites.splice(i, 1)
+        continue
+      }
+      const alpha = Math.min(1, m.life / 10) * 0.3
+      c.strokeStyle = `rgba(220, 230, 255, ${alpha})`
+      c.lineWidth = 0.5
+      c.beginPath()
+      c.moveTo(m.x, m.y)
+      c.lineTo(m.x - m.vx * (m.length / 8), m.y - m.vy * (m.length / 8))
+      c.stroke()
     }
 
     // Update and draw asteroids
     hoveredAsteroid = null
 
     for (const ast of asteroids) {
+      // --- Gravitational cursor attraction ---
+      const gx = mouseX - ast.x
+      const gy = mouseY - ast.y
+      const gDist = Math.sqrt(gx * gx + gy * gy)
+      if (gDist < 200 && gDist > 5) {
+        const gForce = 0.15 / (gDist * 0.1 + 1) // inverse distance, capped
+        ast.vx += (gx / gDist) * gForce * 0.016
+        ast.vy += (gy / gDist) * gForce * 0.016
+      }
+
       ast.x += ast.vx
       ast.y += ast.vy
       ast.rotation += ast.rotSpeed
@@ -612,6 +1032,38 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
 
       drawAsteroidBody(c, ast)
       drawAsteroidLabel(c, ast)
+
+      // --- Hover highlight ring ---
+      if (ast.hoverAlpha > 0.01) {
+        c.save()
+        c.strokeStyle = `rgba(180, 200, 255, ${0.15 * ast.hoverAlpha})`
+        c.lineWidth = 1
+        const ringR = ast.size + 6 + Math.sin(time * 3) * 2
+        c.beginPath()
+        c.arc(ast.x, ast.y, ringR, 0, Math.PI * 2)
+        c.stroke()
+        // Second outer ring, fainter
+        c.strokeStyle = `rgba(180, 200, 255, ${0.06 * ast.hoverAlpha})`
+        c.beginPath()
+        c.arc(ast.x, ast.y, ringR + 4, 0, Math.PI * 2)
+        c.stroke()
+        c.restore()
+      }
+
+      // --- Gravitational lensing shimmer near large asteroids ---
+      if (ast.size > 15) {
+        const shimmerR = ast.size * 3
+        const shimmerAlpha = 0.02 * (ast.size / 35)
+        const shimGrad = c.createRadialGradient(ast.x, ast.y, ast.size, ast.x, ast.y, shimmerR)
+        const shimPhase = Math.sin(time * 1.5 + ast.x * 0.02) * 0.5 + 0.5
+        shimGrad.addColorStop(0, `rgba(150, 170, 255, ${shimmerAlpha * shimPhase})`)
+        shimGrad.addColorStop(0.5, `rgba(120, 140, 200, ${shimmerAlpha * 0.3 * shimPhase})`)
+        shimGrad.addColorStop(1, 'transparent')
+        c.fillStyle = shimGrad
+        c.beginPath()
+        c.arc(ast.x, ast.y, shimmerR, 0, Math.PI * 2)
+        c.fill()
+      }
     }
 
     // Draw tooltips on top (second pass so they aren't occluded)
@@ -680,6 +1132,25 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
       }
     }
 
+    // --- Comet trail particles ---
+    for (let i = cometTrail.length - 1; i >= 0; i--) {
+      const p = cometTrail[i]
+      p.x += p.vx
+      p.y += p.vy
+      p.vx *= 0.97
+      p.vy *= 0.97
+      p.life--
+      if (p.life <= 0) {
+        cometTrail.splice(i, 1)
+        continue
+      }
+      const alpha = (p.life / p.maxLife) * 0.4
+      c.fillStyle = `rgba(180, 200, 255, ${alpha})`
+      c.beginPath()
+      c.arc(p.x, p.y, p.size * (p.life / p.maxLife), 0, Math.PI * 2)
+      c.fill()
+    }
+
     // Data panel
     c.font = '9px monospace'
     c.fillStyle = 'rgba(150, 140, 130, 0.12)'
@@ -726,6 +1197,18 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
   }
 
   function handleClick(e: MouseEvent) {
+    // Check asteroid clicks — play metallic ring
+    for (const ast of asteroids) {
+      const dx = e.clientX - ast.x
+      const dy = e.clientY - ast.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < ast.size + 12) {
+        playAsteroidClick(ast)
+        // Don't return — allow portal checks too if overlapping
+        break
+      }
+    }
+
     if (!deps.switchTo) return
 
     // Check portal clicks
@@ -757,7 +1240,12 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
     // Update cursor for portals and asteroids
     if (canvas) {
       const overPortal = portals.some(p => p.hovered)
-      canvas.style.cursor = overPortal ? 'pointer' : 'default'
+      const overAsteroid = asteroids.some(a => {
+        const adx = e.clientX - a.x
+        const ady = e.clientY - a.y
+        return Math.sqrt(adx * adx + ady * ady) < a.size + 12
+      })
+      canvas.style.cursor = overPortal ? 'pointer' : overAsteroid ? 'crosshair' : 'default'
     }
   }
 
@@ -788,6 +1276,7 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
           canvas.height = window.innerHeight
           placeMemories()
           initPortals(canvas.width, canvas.height)
+          initDeepStars(canvas.width, canvas.height)
         }
       }
       window.addEventListener('resize', onResize)
@@ -800,22 +1289,28 @@ export function createAsteroidFieldRoom(deps: AsteroidFieldDeps): Room {
       active = true
       dataLoaded = false
       hazardousCount = 0
+      cometTrail = []
+      microMeteorites = []
       if (canvas) {
         initPortals(canvas.width, canvas.height)
+        initDeepStars(canvas.width, canvas.height)
       }
       placeMemories()
       fetchAsteroids()
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      stopAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
       overlay?.remove()
     },
   }

@@ -23,6 +23,7 @@
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { createSpeechSession, type SpeechSession } from '../voice/SpeechHelper'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 // Oracle response templates — the void speaks in riddles
 const ORACLE_TEMPLATES = [
@@ -118,6 +119,32 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
   let clickedWisp = -1
   let clickTime = 0
 
+  // --- Audio state ---
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  let droneOsc1: OscillatorNode | null = null
+  let droneOsc2: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let tremoloGain: GainNode | null = null
+  let tremoloLfo: OscillatorNode | null = null
+  let crackleInterval: ReturnType<typeof setInterval> | null = null
+  let tapInterval: ReturnType<typeof setInterval> | null = null
+  let emiBurstInterval: ReturnType<typeof setInterval> | null = null
+
+  // --- Atmosphere visual state ---
+  let atmosCanvas: HTMLCanvasElement | null = null
+  let atmosCtx: CanvasRenderingContext2D | null = null
+  let atmosAnimFrame: number | null = null
+  let atmosActive = false
+  interface CandleParticle { x: number; y: number; vy: number; alpha: number; size: number; hue: number }
+  interface EctoplasmWisp { x: number; y: number; vx: number; vy: number; alpha: number; targetAlpha: number; size: number; phase: number; life: number }
+  interface SpiritOrb { x: number; y: number; vx: number; vy: number; alpha: number; radius: number; phase: number }
+  const candleParticles: CandleParticle[] = []
+  const ectoplasmWisps: EctoplasmWisp[] = []
+  const spiritOrbs: SpiritOrb[] = []
+  let screenShakeAmount = 0
+  let spiritActive = false  // true when a spirit response is incoming
+
   const spiritWisps: SpiritWisp[] = [
     { name: 'oracle', label: 'the oracle deck', baseX: 0.12, baseY: 0.15, currentX: 0, currentY: 0, hue: 'rgba(220, 190, 80, 0.6)', r: 220, g: 190, b: 80, glowAlpha: 0.5, driftPhase: 0, trail: [], labelReveal: 0 },
     { name: 'madeleine', label: 'the madeleine', baseX: 0.88, baseY: 0.15, currentX: 0, currentY: 0, hue: 'rgba(220, 150, 170, 0.6)', r: 220, g: 150, b: 170, glowAlpha: 0.5, driftPhase: Math.PI * 0.5, trail: [], labelReveal: 0 },
@@ -186,6 +213,13 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       y: 0,
       time: Date.now(),
     })
+
+    // Audio/visual triggers on spirit response
+    if (role === 'void') {
+      playBellChime()
+      playSpiritWhisper()
+      triggerSpiritVisuals()
+    }
 
     renderMessages()
   }
@@ -575,6 +609,514 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
     }
   }
 
+  // ============================================================
+  // AUDIO SYSTEM — Victorian séance parlor ambience
+  // ============================================================
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      // Master gain for entire séance audio
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // --- Otherworldly drone: two detuned low oscillators ---
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0
+      droneGain.connect(audioMaster)
+
+      // Tremolo via LFO modulating droneGain
+      tremoloGain = ac.createGain()
+      tremoloGain.gain.value = 0
+      tremoloGain.connect(audioMaster)
+
+      tremoloLfo = ac.createOscillator()
+      tremoloLfo.type = 'sine'
+      tremoloLfo.frequency.value = 0.3 // slow tremolo
+      const tremoloDepth = ac.createGain()
+      tremoloDepth.gain.value = 0.015 // tremolo depth
+      tremoloLfo.connect(tremoloDepth)
+      tremoloDepth.connect(droneGain.gain)
+      tremoloLfo.start()
+
+      droneOsc1 = ac.createOscillator()
+      droneOsc1.type = 'triangle'
+      droneOsc1.frequency.value = 55 // low A
+      droneOsc1.connect(droneGain)
+      droneOsc1.start()
+
+      droneOsc2 = ac.createOscillator()
+      droneOsc2.type = 'sawtooth'
+      droneOsc2.frequency.value = 55.7 // slightly detuned for beating
+      const droneOsc2Gain = ac.createGain()
+      droneOsc2Gain.gain.value = 0.4
+      droneOsc2.connect(droneOsc2Gain)
+      droneOsc2Gain.connect(droneGain)
+      droneOsc2.start()
+
+      audioInitialized = true
+
+      // Fade master in
+      const now = ac.currentTime
+      audioMaster.gain.setValueAtTime(0, now)
+      audioMaster.gain.linearRampToValueAtTime(1, now + 2)
+
+      // Fade drone in
+      droneGain.gain.setValueAtTime(0, now)
+      droneGain.gain.linearRampToValueAtTime(0.035, now + 3)
+
+      // Start candle crackle — quiet high-frequency noise bursts
+      startCandleCrackle(ac)
+
+      // Start table tapping — irregular wooden clicks
+      startTableTapping(ac)
+
+      // Start EMI bursts — occasional electromagnetic interference
+      startEmiBursts(ac)
+    } catch {
+      // Audio not available — degrade gracefully
+    }
+  }
+
+  function startCandleCrackle(ac: AudioContext) {
+    if (crackleInterval) clearInterval(crackleInterval)
+    crackleInterval = setInterval(() => {
+      if (!audioMaster || !audioInitialized) return
+      try {
+        const now = ac.currentTime
+        // Short burst of filtered noise to simulate candle crackle
+        const bufferSize = ac.sampleRate * 0.02 // 20ms
+        const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2)
+        }
+        const source = ac.createBufferSource()
+        source.buffer = buffer
+        const hpf = ac.createBiquadFilter()
+        hpf.type = 'highpass'
+        hpf.frequency.value = 4000 + Math.random() * 3000
+        hpf.Q.value = 1
+        const gain = ac.createGain()
+        gain.gain.setValueAtTime(0.008 + Math.random() * 0.006, now)
+        gain.gain.linearRampToValueAtTime(0, now + 0.025)
+        source.connect(hpf)
+        hpf.connect(gain)
+        gain.connect(audioMaster!)
+        source.start(now)
+        source.onended = () => { source.disconnect(); hpf.disconnect(); gain.disconnect() }
+      } catch { /* ignore */ }
+    }, 80 + Math.random() * 200) // irregular spacing
+  }
+
+  function startTableTapping(ac: AudioContext) {
+    if (tapInterval) clearInterval(tapInterval)
+    const scheduleTap = () => {
+      tapInterval = setTimeout(() => {
+        if (!audioMaster || !audioInitialized) { scheduleTap(); return }
+        try {
+          const now = ac.currentTime
+          // Wooden percussive click — short sine burst with fast decay
+          const osc = ac.createOscillator()
+          osc.type = 'sine'
+          osc.frequency.setValueAtTime(300 + Math.random() * 200, now)
+          osc.frequency.exponentialRampToValueAtTime(80, now + 0.05)
+          const gain = ac.createGain()
+          gain.gain.setValueAtTime(0.02 + Math.random() * 0.015, now)
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+          osc.connect(gain)
+          gain.connect(audioMaster!)
+          osc.start(now)
+          osc.stop(now + 0.1)
+          osc.onended = () => { osc.disconnect(); gain.disconnect() }
+        } catch { /* ignore */ }
+        scheduleTap()
+      }, 2000 + Math.random() * 6000) as unknown as ReturnType<typeof setInterval> // irregular intervals 2-8s
+    }
+    scheduleTap()
+  }
+
+  function startEmiBursts(ac: AudioContext) {
+    if (emiBurstInterval) clearInterval(emiBurstInterval)
+    const scheduleEmi = () => {
+      emiBurstInterval = setTimeout(() => {
+        if (!audioMaster || !audioInitialized) { scheduleEmi(); return }
+        try {
+          const now = ac.currentTime
+          // Brief burst of oscillator noise — electromagnetic interference
+          const osc = ac.createOscillator()
+          osc.type = 'sawtooth'
+          osc.frequency.setValueAtTime(60, now)
+          osc.frequency.linearRampToValueAtTime(2000 + Math.random() * 3000, now + 0.05)
+          osc.frequency.linearRampToValueAtTime(60, now + 0.12)
+          const gain = ac.createGain()
+          gain.gain.setValueAtTime(0, now)
+          gain.gain.linearRampToValueAtTime(0.01 + Math.random() * 0.008, now + 0.01)
+          gain.gain.linearRampToValueAtTime(0, now + 0.15)
+          const bpf = ac.createBiquadFilter()
+          bpf.type = 'bandpass'
+          bpf.frequency.value = 1000
+          bpf.Q.value = 5
+          osc.connect(bpf)
+          bpf.connect(gain)
+          gain.connect(audioMaster!)
+          osc.start(now)
+          osc.stop(now + 0.2)
+          osc.onended = () => { osc.disconnect(); bpf.disconnect(); gain.disconnect() }
+        } catch { /* ignore */ }
+        scheduleEmi()
+      }, 8000 + Math.random() * 15000) as unknown as ReturnType<typeof setInterval> // every 8-23s
+    }
+    scheduleEmi()
+  }
+
+  function playSpiritWhisper() {
+    if (!audioMaster || !audioInitialized) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      // Breathy filtered noise with resonance — like a whispered voice
+      const duration = 0.8 + Math.random() * 0.6
+      const bufferSize = Math.floor(ac.sampleRate * duration)
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      // Shaped noise with formant-like envelope
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / bufferSize
+        const env = Math.sin(t * Math.PI) * (1 - t * 0.3) // arch envelope, trailing off
+        data[i] = (Math.random() * 2 - 1) * env
+      }
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+      // Resonant bandpass to shape it like a whisper
+      const bpf = ac.createBiquadFilter()
+      bpf.type = 'bandpass'
+      bpf.frequency.value = 800 + Math.random() * 600 // vocal range
+      bpf.Q.value = 3 + Math.random() * 4
+      // Second formant
+      const bpf2 = ac.createBiquadFilter()
+      bpf2.type = 'bandpass'
+      bpf2.frequency.value = 2000 + Math.random() * 1500
+      bpf2.Q.value = 2
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.025, now + 0.1)
+      gain.gain.linearRampToValueAtTime(0.02, now + duration * 0.7)
+      gain.gain.linearRampToValueAtTime(0, now + duration)
+      source.connect(bpf)
+      bpf.connect(bpf2)
+      bpf2.connect(gain)
+      gain.connect(audioMaster)
+      source.start(now)
+      source.onended = () => { source.disconnect(); bpf.disconnect(); bpf2.disconnect(); gain.disconnect() }
+    } catch { /* ignore */ }
+  }
+
+  function playBellChime() {
+    if (!audioMaster || !audioInitialized) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      // Bell-like chime — sine with harmonics, long decay
+      const fundamental = 880 + Math.random() * 200
+      const harmonics = [1, 2.76, 4.07, 5.2] // bell partials
+      for (const h of harmonics) {
+        const osc = ac.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = fundamental * h
+        const gain = ac.createGain()
+        const vol = 0.015 / (h * 0.6)
+        gain.gain.setValueAtTime(vol, now)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 3 / h)
+        osc.connect(gain)
+        gain.connect(audioMaster!)
+        osc.start(now)
+        osc.stop(now + 3.5 / h)
+        osc.onended = () => { osc.disconnect(); gain.disconnect() }
+      }
+    } catch { /* ignore */ }
+  }
+
+  function playKeyTap() {
+    if (!audioMaster || !audioInitialized) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      // Subtle mechanical click — very short noise burst
+      const bufferSize = Math.floor(ac.sampleRate * 0.008)
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 4)
+      }
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+      const gain = ac.createGain()
+      gain.gain.value = 0.006 + Math.random() * 0.004
+      const hpf = ac.createBiquadFilter()
+      hpf.type = 'highpass'
+      hpf.frequency.value = 2000
+      source.connect(hpf)
+      hpf.connect(gain)
+      gain.connect(audioMaster!)
+      source.start(now)
+      source.onended = () => { source.disconnect(); hpf.disconnect(); gain.disconnect() }
+    } catch { /* ignore */ }
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    if (crackleInterval) { clearInterval(crackleInterval); crackleInterval = null }
+    if (tapInterval) { clearTimeout(tapInterval as unknown as number); tapInterval = null }
+    if (emiBurstInterval) { clearTimeout(emiBurstInterval as unknown as number); emiBurstInterval = null }
+    setTimeout(() => {
+      try { droneOsc1?.stop() } catch { /* */ }
+      try { droneOsc2?.stop() } catch { /* */ }
+      try { tremoloLfo?.stop() } catch { /* */ }
+      droneOsc1?.disconnect(); droneOsc1 = null
+      droneOsc2?.disconnect(); droneOsc2 = null
+      droneGain?.disconnect(); droneGain = null
+      tremoloGain?.disconnect(); tremoloGain = null
+      tremoloLfo?.disconnect(); tremoloLfo = null
+      audioMaster?.disconnect(); audioMaster = null
+      audioInitialized = false
+    }, 600)
+  }
+
+  // ============================================================
+  // VISUAL ATMOSPHERE — candle particles, ectoplasm, spirit orbs
+  // ============================================================
+
+  function initAtmosphere() {
+    if (atmosCanvas) return
+    atmosCanvas = document.createElement('canvas')
+    atmosCanvas.style.cssText = `
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 9998;
+    `
+    document.body.appendChild(atmosCanvas)
+    atmosCtx = atmosCanvas.getContext('2d')
+    resizeAtmosCanvas()
+    window.addEventListener('resize', resizeAtmosCanvas)
+    // Seed initial spirit orbs
+    for (let i = 0; i < 4; i++) {
+      spiritOrbs.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.2,
+        alpha: 0.03 + Math.random() * 0.04,
+        radius: 2 + Math.random() * 3,
+        phase: Math.random() * Math.PI * 2,
+      })
+    }
+  }
+
+  function resizeAtmosCanvas() {
+    if (!atmosCanvas) return
+    atmosCanvas.width = window.innerWidth
+    atmosCanvas.height = window.innerHeight
+  }
+
+  function spawnCandleParticle() {
+    const w = atmosCanvas ? atmosCanvas.width : window.innerWidth
+    const h = atmosCanvas ? atmosCanvas.height : window.innerHeight
+    // Spawn near left and right edges, mimicking candle positions
+    const side = Math.random() < 0.5 ? 0.08 + Math.random() * 0.06 : 0.86 + Math.random() * 0.06
+    candleParticles.push({
+      x: w * side + (Math.random() - 0.5) * 12,
+      y: h * (0.3 + Math.random() * 0.4),
+      vy: -(0.3 + Math.random() * 0.5),
+      alpha: 0.4 + Math.random() * 0.4,
+      size: 1 + Math.random() * 2,
+      hue: 30 + Math.random() * 20, // orange-yellow range
+    })
+  }
+
+  function spawnEctoplasm() {
+    const w = atmosCanvas ? atmosCanvas.width : window.innerWidth
+    const h = atmosCanvas ? atmosCanvas.height : window.innerHeight
+    ectoplasmWisps.push({
+      x: w * (0.2 + Math.random() * 0.6),
+      y: h * (0.3 + Math.random() * 0.4),
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: -(0.1 + Math.random() * 0.3),
+      alpha: 0,
+      targetAlpha: 0.06 + Math.random() * 0.06,
+      size: 30 + Math.random() * 50,
+      phase: Math.random() * Math.PI * 2,
+      life: 3 + Math.random() * 4, // seconds
+    })
+  }
+
+  function triggerSpiritVisuals() {
+    spiritActive = true
+    screenShakeAmount = 1.5
+    // Spawn ectoplasm wisps
+    for (let i = 0; i < 3 + Math.floor(Math.random() * 3); i++) {
+      spawnEctoplasm()
+    }
+    // Gradually stop spirit activity
+    setTimeout(() => { spiritActive = false }, 3000)
+  }
+
+  function renderAtmosphere(time: number) {
+    if (!atmosCtx || !atmosCanvas || !atmosActive) return
+    const w = atmosCanvas.width
+    const h = atmosCanvas.height
+    if (w === 0 || h === 0) { atmosAnimFrame = requestAnimationFrame(renderAtmosphere); return }
+
+    const dt = time * 0.001
+
+    // Apply screen shake
+    atmosCtx.save()
+    if (screenShakeAmount > 0.05) {
+      const sx = (Math.random() - 0.5) * screenShakeAmount * 2
+      const sy = (Math.random() - 0.5) * screenShakeAmount * 2
+      atmosCtx.translate(sx, sy)
+      screenShakeAmount *= 0.96 // decay
+    }
+
+    atmosCtx.clearRect(-5, -5, w + 10, h + 10)
+
+    // --- Deep purple-black vignette ---
+    const vigGrad = atmosCtx.createRadialGradient(w / 2, h / 2, w * 0.2, w / 2, h / 2, w * 0.75)
+    vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)')
+    vigGrad.addColorStop(0.6, 'rgba(10, 2, 20, 0.15)')
+    vigGrad.addColorStop(1, 'rgba(10, 2, 20, 0.5)')
+    atmosCtx.fillStyle = vigGrad
+    atmosCtx.fillRect(0, 0, w, h)
+
+    // --- Candle flame particles ---
+    // Spawn new particles
+    if (Math.random() < 0.3) spawnCandleParticle()
+
+    for (let i = candleParticles.length - 1; i >= 0; i--) {
+      const p = candleParticles[i]
+      p.y += p.vy
+      p.x += (Math.random() - 0.5) * 0.5 // slight horizontal jitter
+      p.alpha -= 0.006
+      if (p.alpha <= 0) { candleParticles.splice(i, 1); continue }
+
+      atmosCtx.beginPath()
+      atmosCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      const a = Math.min(1, p.alpha)
+      atmosCtx.fillStyle = `hsla(${p.hue}, 90%, 65%, ${a})`
+      atmosCtx.fill()
+
+      // Warm glow around particle
+      if (p.size > 1.5) {
+        const glow = atmosCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 4)
+        glow.addColorStop(0, `hsla(${p.hue}, 80%, 60%, ${a * 0.15})`)
+        glow.addColorStop(1, `hsla(${p.hue}, 80%, 60%, 0)`)
+        atmosCtx.beginPath()
+        atmosCtx.arc(p.x, p.y, p.size * 4, 0, Math.PI * 2)
+        atmosCtx.fillStyle = glow
+        atmosCtx.fill()
+      }
+    }
+
+    // --- Ectoplasm wisps (appear when spirits respond) ---
+    for (let i = ectoplasmWisps.length - 1; i >= 0; i--) {
+      const e = ectoplasmWisps[i]
+      e.life -= 0.016 // ~60fps
+      if (e.life <= 0) { ectoplasmWisps.splice(i, 1); continue }
+
+      // Fade in then out
+      if (e.life > 1) {
+        e.alpha += (e.targetAlpha - e.alpha) * 0.03
+      } else {
+        e.alpha *= 0.97
+      }
+      if (e.alpha < 0.002) { ectoplasmWisps.splice(i, 1); continue }
+
+      e.x += e.vx + Math.sin(dt * 0.5 + e.phase) * 0.3
+      e.y += e.vy
+      e.phase += 0.02
+
+      // Translucent white-green flowing shape
+      const grad = atmosCtx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.size)
+      grad.addColorStop(0, `rgba(200, 255, 220, ${e.alpha * 0.8})`)
+      grad.addColorStop(0.4, `rgba(160, 240, 200, ${e.alpha * 0.4})`)
+      grad.addColorStop(0.7, `rgba(120, 220, 180, ${e.alpha * 0.15})`)
+      grad.addColorStop(1, 'rgba(120, 220, 180, 0)')
+      atmosCtx.beginPath()
+      // Organic shape via ellipse
+      atmosCtx.save()
+      atmosCtx.translate(e.x, e.y)
+      atmosCtx.scale(1, 0.6 + 0.3 * Math.sin(dt + e.phase))
+      atmosCtx.arc(0, 0, e.size, 0, Math.PI * 2)
+      atmosCtx.restore()
+      atmosCtx.fillStyle = grad
+      atmosCtx.fill()
+    }
+
+    // --- Spirit orbs — slow drifting ---
+    for (const orb of spiritOrbs) {
+      orb.x += orb.vx + Math.sin(dt * 0.3 + orb.phase) * 0.15
+      orb.y += orb.vy + Math.cos(dt * 0.2 + orb.phase * 1.3) * 0.1
+      orb.phase += 0.005
+
+      // Wrap around
+      if (orb.x < -20) orb.x = w + 20
+      if (orb.x > w + 20) orb.x = -20
+      if (orb.y < -20) orb.y = h + 20
+      if (orb.y > h + 20) orb.y = -20
+
+      // Pulse alpha
+      const pulseAlpha = orb.alpha * (0.6 + 0.4 * Math.sin(dt * 0.7 + orb.phase))
+
+      // Orb glow
+      const orbGrad = atmosCtx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.radius * 6)
+      orbGrad.addColorStop(0, `rgba(180, 170, 230, ${pulseAlpha})`)
+      orbGrad.addColorStop(0.3, `rgba(160, 150, 210, ${pulseAlpha * 0.5})`)
+      orbGrad.addColorStop(1, 'rgba(160, 150, 210, 0)')
+      atmosCtx.beginPath()
+      atmosCtx.arc(orb.x, orb.y, orb.radius * 6, 0, Math.PI * 2)
+      atmosCtx.fillStyle = orbGrad
+      atmosCtx.fill()
+
+      // Core
+      atmosCtx.beginPath()
+      atmosCtx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2)
+      atmosCtx.fillStyle = `rgba(220, 215, 255, ${pulseAlpha * 1.5})`
+      atmosCtx.fill()
+    }
+
+    atmosCtx.restore()
+
+    atmosAnimFrame = requestAnimationFrame(renderAtmosphere)
+  }
+
+  function destroyAtmosphere() {
+    atmosActive = false
+    if (atmosAnimFrame) { cancelAnimationFrame(atmosAnimFrame); atmosAnimFrame = null }
+    window.removeEventListener('resize', resizeAtmosCanvas)
+    atmosCanvas?.remove()
+    atmosCanvas = null
+    atmosCtx = null
+    candleParticles.length = 0
+    ectoplasmWisps.length = 0
+    spiritOrbs.length = 0
+    screenShakeAmount = 0
+    spiritActive = false
+  }
+
   return {
     name: 'seance',
     label: 'the séance',
@@ -670,6 +1212,9 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         if (e.key === 'Enter') {
           e.preventDefault()
           handleSubmit()
+        } else if (e.key.length === 1) {
+          // Subtle key-tap sound for character input
+          playKeyTap()
         }
         // Stop propagation so void-level keyboard handlers don't fire
         e.stopPropagation()
@@ -797,7 +1342,7 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       return overlay
     },
 
-    activate() {
+    async activate() {
       // Start message fading
       fadeInterval = window.setInterval(fadeOldMessages, 5000)
       // Focus input after transition
@@ -812,6 +1357,12 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         window.addEventListener('keydown', handleSeanceKeyDown)
         window.addEventListener('keyup', handleSeanceKeyUp)
       }
+      // Initialize audio
+      await initAudio()
+      // Initialize visual atmosphere
+      initAtmosphere()
+      atmosActive = true
+      atmosAnimFrame = requestAnimationFrame(renderAtmosphere)
     },
 
     deactivate() {
@@ -829,6 +1380,14 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
           spaceHeld = false
         }
       }
+      // Fade audio out
+      fadeAudioOut()
+      if (crackleInterval) { clearInterval(crackleInterval); crackleInterval = null }
+      if (tapInterval) { clearTimeout(tapInterval as unknown as number); tapInterval = null }
+      if (emiBurstInterval) { clearTimeout(emiBurstInterval as unknown as number); emiBurstInterval = null }
+      // Stop atmosphere
+      atmosActive = false
+      if (atmosAnimFrame) { cancelAnimationFrame(atmosAnimFrame); atmosAnimFrame = null }
     },
 
     destroy() {
@@ -839,6 +1398,8 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       window.removeEventListener('keydown', handleSeanceKeyDown)
       window.removeEventListener('keyup', handleSeanceKeyUp)
       speech?.destroy()
+      destroyAudio()
+      destroyAtmosphere()
       overlay?.remove()
     },
   }
