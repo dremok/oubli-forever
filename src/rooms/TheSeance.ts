@@ -734,17 +734,17 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         const voiceHint = document.createElement('div')
         voiceHint.style.cssText = `
           font-family: 'Cormorant Garamond', serif;
-          font-weight: 300; font-size: 10px;
+          font-weight: 300; font-size: 12px;
           font-style: italic;
-          color: rgba(180, 160, 220, 0.08);
+          color: rgba(180, 160, 220, 0.12);
           margin-top: 8px;
           letter-spacing: 2px;
-          transition: opacity 6s ease;
+          transition: opacity 4s ease;
         `
-        voiceHint.textContent = 'or hold space to speak'
+        voiceHint.textContent = 'hold space to speak'
         overlay.appendChild(voiceHint)
-        // Fade in the voice hint after 15s
-        setTimeout(() => { voiceHint.style.color = 'rgba(180, 160, 220, 0.12)' }, 15000)
+        // Fade in the voice hint after 5s
+        setTimeout(() => { voiceHint.style.color = 'rgba(180, 160, 220, 0.3)' }, 5000)
       }
 
       // Hidden passage to The Between

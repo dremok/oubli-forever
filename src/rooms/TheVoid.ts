@@ -191,7 +191,7 @@ export function createVoidRoom(deps?: VoidDeps): Room {
       font-weight: 300;
       font-size: 14px;
       letter-spacing: 2px;
-      color: rgba(255, 215, 0, 0.18);
+      color: rgba(255, 215, 0, 0.3);
       font-style: italic;
       margin-bottom: 8px;
     `
@@ -206,7 +206,7 @@ export function createVoidRoom(deps?: VoidDeps): Room {
         font-weight: 300;
         font-size: 14px;
         letter-spacing: 2px;
-        color: rgba(255, 215, 0, 0.18);
+        color: rgba(255, 215, 0, 0.3);
         font-style: italic;
       `
       voiceLine.textContent = 'hold space to speak'
@@ -215,10 +215,10 @@ export function createVoidRoom(deps?: VoidDeps): Room {
 
     portalContainer.appendChild(voiceHintEl)
 
-    // Fade in after 8 seconds
+    // Fade in after 5 seconds
     voiceHintTimeout = window.setTimeout(() => {
       if (voiceHintEl) voiceHintEl.style.opacity = '1'
-    }, 8000)
+    }, 5000)
   }
 
   function addBreathingAnimation() {

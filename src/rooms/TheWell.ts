@@ -335,12 +335,12 @@ export function createWellRoom(deps: WellDeps): Room {
     ctx.textAlign = 'center'
     ctx.fillText('drop a memory. wait for the echo.', w / 2, h - 20)
 
-    // Voice hint — subtle, appears after 10s
+    // Voice hint — appears after a few seconds
     if (speech?.supported) {
-      ctx.font = '9px "Cormorant Garamond", serif'
-      ctx.fillStyle = `rgba(120, 160, 220, ${Math.min(0.06, time * 0.006)})`
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(120, 160, 220, ${Math.min(0.25, time * 0.05)})`
       ctx.textAlign = 'center'
-      ctx.fillText('or hold space to speak into the well', w / 2, h - 8)
+      ctx.fillText('hold space to speak into the well', w / 2, h - 8)
     }
 
     // Voice input rendering — spoken text materializes above the well
