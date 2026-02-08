@@ -83,6 +83,7 @@ import { RoomAmbience } from './sound/RoomAmbience'
 import { RoomAfterimage } from './effects/RoomAfterimage'
 import { SpacetimeRipple } from './effects/SpacetimeRipple'
 import { MemoryBleed } from './effects/MemoryBleed'
+import { VacuumFluctuations } from './effects/VacuumFluctuations'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -570,6 +571,10 @@ const memoryBleed = new MemoryBleed({
   getRoom: () => roomManager.getActiveRoom(),
 })
 memoryBleed.start()
+// Vacuum fluctuations — quantum twins briefly materialize from nothing
+const vacuumFluctuations = new VacuumFluctuations()
+vacuumFluctuations.setRoomCheck(() => roomManager.getActiveRoom())
+vacuumFluctuations.start()
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
