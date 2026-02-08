@@ -64,6 +64,15 @@ interface ShimmerSpot {
   brightness: number
 }
 
+interface FogWriting {
+  text: string
+  x: number         // 0..1 relative to mirror area
+  y: number         // 0..1 relative to mirror area
+  age: number       // seconds since creation
+  maxAge: number    // total lifetime (5s)
+  alpha: number     // current alpha
+}
+
 const STORAGE_KEY = 'oubli-mirror-data'
 
 interface MirrorData {
@@ -72,6 +81,36 @@ interface MirrorData {
   lastVisit: number
   visitCount: number
 }
+
+// Cultural inscriptions that cycle around the mirror frame
+const CULTURAL_INSCRIPTIONS = [
+  "dorian gray's portrait aged while he stayed young. every mirror is a portrait in reverse.",
+  "lacan's mirror stage: the moment an infant recognizes itself. identity begins with reflection.",
+  "narcissus drowned reaching for his own reflection. the mirror gives nothing back.",
+  "in many cultures, mirrors are covered when someone dies. the soul might get trapped.",
+  "the anti-AI movement: 45% of creative directors now reject generated images. the hunger for human imperfection.",
+  "klara hosnedlova makes art from living fungus. it grows and decays while you watch.",
+  "consciousness may be permanent agnosticism. we may never know if an AI is aware.",
+  "yin xiuzhen builds sculptures from used clothing. each garment carries an absent body's history.",
+]
+
+// Fog writing fragments — appear when degradation is high
+const FOG_FRAGMENTS = [
+  'who were you before this?',
+  'the face you wore yesterday',
+  'everything you forget becomes someone else',
+  'a mirror has no memory',
+  'you are the space between reflections',
+  'the glass remembers nothing',
+  'touch the surface and it ripples',
+  'your reflection blinks when you look away',
+  'what stares back is not you',
+  'the fog knows your name',
+  'behind every mirror is a wall',
+  'you left something here last time',
+]
+
+const INSCRIPTION_CYCLE_MS = 22_000  // 22 seconds per inscription
 
 export function createMirrorRoom(deps: MirrorDeps): Room {
   let overlay: HTMLElement | null = null
@@ -83,13 +122,30 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
   let portraitData: DataPoint[] = []
   let mirrorData: MirrorData
 
-  // Reflection distortion navigation zones
+  // Cultural inscription state
+  let inscriptionIndex = 0
+  let inscriptionStartTime = 0
+
+  // Reflection distortion — cursor velocity tracking
+  let prevMouseX = -1
+  let prevMouseY = -1
+  let cursorVelocity = 0           // current smoothed velocity magnitude
+  let distortionAmount = 0         // current distortion (decays over 0.5s)
+  let lastMouseMoveTime = 0
+
+  // Fog writing state
+  const fogWritings: FogWriting[] = []
+  let lastFogWriteTime = 0
+
+  // Reflection distortion navigation zones — 4 zones at mirror edges
   let hoveredZone = -1
   let shatterTime = -1  // when a shatter animation started (-1 = none)
   let shatterTarget = ''  // room to navigate to after shatter
   const navZones = [
-    { room: 'darkroom', side: 'left' as const },
-    { room: 'datepaintings', side: 'right' as const },
+    { room: 'darkroom', side: 'left' as const, color: { r: 180, g: 30, b: 20 }, label: 'warm/amber' },
+    { room: 'datepaintings', side: 'right' as const, color: { r: 60, g: 80, b: 180 }, label: 'cold/blue' },
+    { room: 'between', side: 'top' as const, color: { r: 140, g: 60, b: 180 }, label: 'violet' },
+    { room: 'projection', side: 'bottom' as const, color: { r: 40, g: 160, b: 80 }, label: 'green' },
   ]
 
   // --- Visual state ---
@@ -118,6 +174,9 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
   let humOsc1: OscillatorNode | null = null
   let humOsc2: OscillatorNode | null = null
   let humGain: GainNode | null = null
+  // Heartbeat LFO
+  let heartbeatLFO: OscillatorNode | null = null
+  let heartbeatLFOGain: GainNode | null = null
   // Fog whisper (brown noise)
   let fogNoiseNode: AudioBufferSourceNode | null = null
   let fogFilter: BiquadFilterNode | null = null
@@ -137,7 +196,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
 
       // --- Mirror hum: detuned sine pair creating 1Hz beat ---
       humGain = ac.createGain()
-      humGain.gain.value = 0.012
+      humGain.gain.value = 0.02  // base value, LFO will modulate around this
       humGain.connect(audioMaster)
 
       humOsc1 = ac.createOscillator()
@@ -151,6 +210,18 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       humOsc2.frequency.value = 181
       humOsc2.connect(humGain)
       humOsc2.start()
+
+      // --- Heartbeat LFO: 0.8Hz modulating drone gain between 0.01 and 0.03 ---
+      heartbeatLFO = ac.createOscillator()
+      heartbeatLFO.type = 'sine'
+      heartbeatLFO.frequency.value = 0.8  // 0.8 Hz heartbeat rate
+
+      heartbeatLFOGain = ac.createGain()
+      heartbeatLFOGain.gain.value = 0.01  // amplitude: +/- 0.01 around the 0.02 center
+
+      heartbeatLFO.connect(heartbeatLFOGain)
+      heartbeatLFOGain.connect(humGain.gain)  // modulates the hum gain param
+      heartbeatLFO.start()
 
       audioInitialized = true
     } catch {
@@ -353,10 +424,13 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     setTimeout(() => {
       try { humOsc1?.stop() } catch { /* already stopped */ }
       try { humOsc2?.stop() } catch { /* already stopped */ }
+      try { heartbeatLFO?.stop() } catch { /* already stopped */ }
       try { fogNoiseNode?.stop() } catch { /* already stopped */ }
       humOsc1?.disconnect()
       humOsc2?.disconnect()
       humGain?.disconnect()
+      heartbeatLFO?.disconnect()
+      heartbeatLFOGain?.disconnect()
       fogNoiseNode?.disconnect()
       fogFilter?.disconnect()
       fogGain?.disconnect()
@@ -365,6 +439,8 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       humOsc1 = null
       humOsc2 = null
       humGain = null
+      heartbeatLFO = null
+      heartbeatLFOGain = null
       fogNoiseNode = null
       fogFilter = null
       fogGain = null
@@ -489,6 +565,146 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     return px >= frameX && px <= frameX + frameW && py >= frameY && py <= frameY + frameH
   }
 
+  // Get frame geometry helper
+  function getFrameGeometry(w: number, h: number) {
+    const frameX = w * 0.2
+    const frameY = h * 0.08
+    const frameW = w * 0.6
+    const frameH = h * 0.75
+    return { frameX, frameY, frameW, frameH }
+  }
+
+  // Draw cultural inscriptions around the mirror frame
+  function drawInscriptions(c: CanvasRenderingContext2D, w: number, h: number) {
+    const { frameX, frameY, frameW, frameH } = getFrameGeometry(w, h)
+
+    // Determine current inscription based on time
+    const elapsed = Date.now() - inscriptionStartTime
+    inscriptionIndex = Math.floor(elapsed / INSCRIPTION_CYCLE_MS) % CULTURAL_INSCRIPTIONS.length
+    const text = CULTURAL_INSCRIPTIONS[inscriptionIndex]
+
+    // Fade: within each 22s cycle, fade in for 2s, hold, fade out for 2s
+    const cycleProgress = (elapsed % INSCRIPTION_CYCLE_MS) / INSCRIPTION_CYCLE_MS
+    let alpha: number
+    if (cycleProgress < 0.09) {
+      alpha = cycleProgress / 0.09  // fade in over ~2s
+    } else if (cycleProgress > 0.91) {
+      alpha = (1.0 - cycleProgress) / 0.09  // fade out over ~2s
+    } else {
+      alpha = 1.0
+    }
+    alpha *= 0.035  // very low base alpha
+
+    c.save()
+    c.font = '10px "Cormorant Garamond", serif'
+    c.fillStyle = `rgba(140, 130, 120, ${alpha})`
+    c.textAlign = 'center'
+
+    // Split text and distribute around the frame perimeter
+    const words = text.split(' ')
+    const perimeter = 2 * (frameW + frameH)
+    const margin = 20  // offset from frame edge
+
+    for (let i = 0; i < words.length; i++) {
+      const t = i / words.length
+      const dist = t * perimeter
+
+      let px: number, py: number
+      if (dist < frameW) {
+        // Top edge
+        px = frameX + dist
+        py = frameY - margin
+      } else if (dist < frameW + frameH) {
+        // Right edge
+        px = frameX + frameW + margin
+        py = frameY + (dist - frameW)
+        c.save()
+        c.translate(px, py)
+        c.rotate(Math.PI / 2)
+        c.fillText(words[i], 0, 0)
+        c.restore()
+        continue
+      } else if (dist < 2 * frameW + frameH) {
+        // Bottom edge
+        px = frameX + frameW - (dist - frameW - frameH)
+        py = frameY + frameH + margin + 10
+      } else {
+        // Left edge
+        px = frameX - margin
+        py = frameY + frameH - (dist - 2 * frameW - frameH)
+        c.save()
+        c.translate(px, py)
+        c.rotate(-Math.PI / 2)
+        c.fillText(words[i], 0, 0)
+        c.restore()
+        continue
+      }
+
+      c.fillText(words[i], px, py)
+    }
+
+    c.restore()
+  }
+
+  // Draw fog writing — faint text emerging from fog
+  function drawFogWriting(c: CanvasRenderingContext2D, mirrorInnerX: number, mirrorInnerY: number, mirrorInnerW: number, mirrorInnerH: number) {
+    // Spawn new fog writing every ~3 seconds
+    const now = time
+    if (now - lastFogWriteTime > 3.0 && fogWritings.length < 4) {
+      const fragment = FOG_FRAGMENTS[Math.floor(Math.random() * FOG_FRAGMENTS.length)]
+      fogWritings.push({
+        text: fragment,
+        x: 0.15 + Math.random() * 0.7,
+        y: 0.15 + Math.random() * 0.7,
+        age: 0,
+        maxAge: 5.0,
+        alpha: 0,
+      })
+      lastFogWriteTime = now
+    }
+
+    c.save()
+    c.beginPath()
+    c.rect(mirrorInnerX, mirrorInnerY, mirrorInnerW, mirrorInnerH)
+    c.clip()
+
+    c.font = '13px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+
+    for (let i = fogWritings.length - 1; i >= 0; i--) {
+      const fw = fogWritings[i]
+      fw.age += 0.016
+
+      if (fw.age > fw.maxAge) {
+        fogWritings.splice(i, 1)
+        continue
+      }
+
+      // Fade in for 1s, hold, fade out for 1.5s
+      const progress = fw.age / fw.maxAge
+      if (progress < 0.2) {
+        fw.alpha = progress / 0.2
+      } else if (progress > 0.7) {
+        fw.alpha = (1.0 - progress) / 0.3
+      } else {
+        fw.alpha = 1.0
+      }
+
+      const px = mirrorInnerX + fw.x * mirrorInnerW
+      const py = mirrorInnerY + fw.y * mirrorInnerH
+
+      // Finger-on-glass effect: slightly blurred, warm tone
+      c.fillStyle = `rgba(180, 170, 160, ${fw.alpha * 0.08})`
+      // Draw slightly offset for blur effect
+      c.fillText(fw.text, px - 0.5, py - 0.5)
+      c.fillText(fw.text, px + 0.5, py + 0.5)
+      c.fillStyle = `rgba(200, 190, 175, ${fw.alpha * 0.12})`
+      c.fillText(fw.text, px, py)
+    }
+
+    c.restore()
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -503,19 +719,24 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     ctx.fillStyle = 'rgba(3, 3, 8, 1)'
     ctx.fillRect(0, 0, w, h)
 
-    // Mirror frame
-    const frameX = w * 0.2
-    const frameY = h * 0.08
-    const frameW = w * 0.6
-    const frameH = h * 0.75
-    ctx.strokeStyle = 'rgba(120, 100, 80, 0.08)'
+    // --- Heartbeat breathing cycle (synced with 0.8Hz audio LFO) ---
+    const heartbeatPhase = Math.sin(time * 0.8 * Math.PI * 2)  // 0.8 Hz
+    const frameBreathe = 0.02 + heartbeatPhase * 0.015  // subtle brightness variation
+
+    // Mirror frame with heartbeat-synced brightness
+    const { frameX, frameY, frameW, frameH } = getFrameGeometry(w, h)
+    const frameAlpha = 0.08 + frameBreathe
+    ctx.strokeStyle = `rgba(120, 100, 80, ${frameAlpha})`
     ctx.lineWidth = 3
     ctx.strokeRect(frameX, frameY, frameW, frameH)
 
     // Inner frame
-    ctx.strokeStyle = 'rgba(120, 100, 80, 0.04)'
+    ctx.strokeStyle = `rgba(120, 100, 80, ${frameAlpha * 0.5})`
     ctx.lineWidth = 1
     ctx.strokeRect(frameX + 8, frameY + 8, frameW - 16, frameH - 16)
+
+    // --- Cultural inscriptions around the frame ---
+    drawInscriptions(ctx, w, h)
 
     // Mirror surface — slight gradient
     const mirrorGrad = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, h * 0.4)
@@ -558,18 +779,39 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
 
     ctx.restore()
 
+    // --- Decay distortion smoothly over 0.5s ---
+    distortionAmount *= Math.exp(-0.016 / 0.25)  // exponential decay, ~0.5s settle
+    if (distortionAmount < 0.001) distortionAmount = 0
+
     // --- Portrait breathing: synchronized alpha pulsing ---
     const breathCycle = Math.sin(time * 0.8) * 0.04 // slow rhythm
 
-    // Portrait data points
+    // Portrait data points — with cursor-velocity distortion
     if (portraitData.length > 0) {
       for (const dp of portraitData) {
         const breathe = Math.sin(time * 0.5 + dp.x * 0.01 + dp.y * 0.01) * 0.02
         const synced = breathCycle
+
+        // Apply reflection distortion based on cursor velocity
+        let drawX = dp.x
+        let drawY = dp.y
+        if (distortionAmount > 0.001) {
+          // Distance from cursor affects distortion strength
+          const dx = dp.x - mouseX
+          const dy = dp.y - mouseY
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          const influence = Math.max(0, 1 - dist / 200)  // fades over 200px
+          const wobble = Math.sin(time * 12 + dp.x * 0.05 + dp.y * 0.03)
+
+          // Stretch character spacing and skew positions
+          drawX += influence * distortionAmount * wobble * 8
+          drawY += influence * distortionAmount * Math.cos(time * 10 + dp.y * 0.04) * 4
+        }
+
         ctx.font = '12px "Cormorant Garamond", serif'
         ctx.fillStyle = `hsla(${dp.hue}, 30%, 60%, ${Math.max(0, dp.alpha + breathe + synced)})`
         ctx.textAlign = 'center'
-        ctx.fillText(dp.char, dp.x, dp.y)
+        ctx.fillText(dp.char, drawX, drawY)
       }
     } else {
       // Empty mirror
@@ -617,13 +859,19 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
 
       ctx.font = '12px "Cormorant Garamond", serif'
       ctx.fillStyle = `rgba(120, 120, 160, ${0.1 + Math.sin(time) * 0.03})`
+      ctx.textAlign = 'center'
       ctx.fillText('the mirror is forgetting your face.', w / 2, h * 0.9)
 
       // Start fog audio if not already running
       if (!fogActive) startFogAudio()
+
+      // --- Fog writing: faint text emerging from the fog ---
+      drawFogWriting(ctx, mirrorInnerX, mirrorInnerY, mirrorInnerW, mirrorInnerH)
     } else {
       // Stop fog audio if running
       if (fogActive) stopFogAudio()
+      // Clear fog writings when not fogged
+      fogWritings.length = 0
     }
 
     // --- Fog particles when fogAlpha > 0 ---
@@ -689,22 +937,33 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
     ctx.textAlign = 'center'
     ctx.fillText('the mirror', w / 2, 30)
 
-    // Reflection distortion navigation zones within the mirror frame
+    // --- 4 Navigation zones at the four edges of the mirror ---
     if (deps.switchTo) {
-      const mirrorLeft = frameX + 10
-      const mirrorRight = frameX + frameW - 10
-      const mirrorCenterY = frameY + frameH * 0.5
-      const zoneRadius = Math.min(frameW * 0.1, 50)
+      const zoneRadius = Math.min(frameW * 0.08, 40)
+
+      // Compute zone centers: left, right, top, bottom of the mirror
+      const zoneCenters = navZones.map(zone => {
+        switch (zone.side) {
+          case 'left':
+            return { x: mirrorInnerX + frameW * 0.12, y: frameY + frameH * 0.5 }
+          case 'right':
+            return { x: mirrorInnerX + mirrorInnerW - frameW * 0.12, y: frameY + frameH * 0.5 }
+          case 'top':
+            return { x: frameX + frameW * 0.5, y: mirrorInnerY + frameH * 0.1 }
+          case 'bottom':
+            return { x: frameX + frameW * 0.5, y: mirrorInnerY + mirrorInnerH - frameH * 0.1 }
+        }
+      })
 
       for (let i = 0; i < navZones.length; i++) {
         const zone = navZones[i]
-        const zx = zone.side === 'left'
-          ? mirrorLeft + frameW * 0.18
-          : mirrorRight - frameW * 0.18
-        const zy = mirrorCenterY
+        const zc = zoneCenters[i]
+        const zx = zc.x
+        const zy = zc.y
         const hovered = hoveredZone === i
         const isShatteringThis = shatterTime > 0 && shatterTarget === zone.room
         const shatterElapsed = isShatteringThis ? time - shatterTime : 0
+        const zoneColor = zone.color
 
         ctx.save()
 
@@ -734,55 +993,44 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
                 zy + Math.sin(angle) * len * frac + jitterY
               )
             }
-            ctx.strokeStyle = `rgba(200, 200, 240, ${crackAlpha * 0.6})`
+            ctx.strokeStyle = `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${crackAlpha * 0.6})`
             ctx.lineWidth = 1.5 - progress
             ctx.stroke()
           }
           // Flash at center
           const flashAlpha = Math.max(0, 0.5 - progress * 1.2)
           const flashGrad = ctx.createRadialGradient(zx, zy, 0, zx, zy, zoneRadius * progress * 2)
-          flashGrad.addColorStop(0, `rgba(200, 200, 255, ${flashAlpha})`)
-          flashGrad.addColorStop(1, 'rgba(200, 200, 255, 0)')
+          flashGrad.addColorStop(0, `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${flashAlpha})`)
+          flashGrad.addColorStop(1, `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, 0)`)
           ctx.fillStyle = flashGrad
           ctx.fillRect(zx - zoneRadius * 3, zy - zoneRadius * 3, zoneRadius * 6, zoneRadius * 6)
         } else if (!isShatteringThis) {
-          // --- Normal reflection distortion zone ---
+          // --- Normal navigation zone with themed glow ---
           const baseAlpha = hovered ? 0.18 : 0.05
           const shimmer = Math.sin(time * 2.0 + i * 3.0) * 0.02
 
-          if (zone.room === 'darkroom') {
-            // Darkroom: faint red safe-light glow with developing tray shapes
-            const redGrad = ctx.createRadialGradient(zx, zy, 0, zx, zy, zoneRadius * 1.3)
-            redGrad.addColorStop(0, `rgba(180, 30, 20, ${(baseAlpha + shimmer) * 1.5})`)
-            redGrad.addColorStop(0.6, `rgba(120, 15, 10, ${(baseAlpha + shimmer) * 0.8})`)
-            redGrad.addColorStop(1, 'rgba(80, 10, 5, 0)')
-            ctx.fillStyle = redGrad
-            ctx.fillRect(zx - zoneRadius * 1.5, zy - zoneRadius * 1.5, zoneRadius * 3, zoneRadius * 3)
+          // Themed radial glow
+          const glowGrad = ctx.createRadialGradient(zx, zy, 0, zx, zy, zoneRadius * 1.3)
+          glowGrad.addColorStop(0, `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${(baseAlpha + shimmer) * 1.5})`)
+          glowGrad.addColorStop(0.6, `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${(baseAlpha + shimmer) * 0.6})`)
+          glowGrad.addColorStop(1, `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, 0)`)
+          ctx.fillStyle = glowGrad
+          ctx.fillRect(zx - zoneRadius * 1.5, zy - zoneRadius * 1.5, zoneRadius * 3, zoneRadius * 3)
 
-            // Developing tray shapes — faint rectangles
-            ctx.strokeStyle = `rgba(160, 40, 30, ${baseAlpha * 1.8 + shimmer})`
+          // Zone-specific visual details
+          if (zone.room === 'darkroom') {
+            // Darkroom: developing tray shapes
+            ctx.strokeStyle = `rgba(${zoneColor.r}, ${Math.min(255, zoneColor.g + 20)}, ${zoneColor.b + 10}, ${baseAlpha * 1.8 + shimmer})`
             ctx.lineWidth = 0.6
             const trayW = zoneRadius * 0.7
             const trayH = zoneRadius * 0.45
             for (let t = 0; t < 3; t++) {
               const trayOffsetX = (t - 1) * trayW * 0.9
               const trayOffsetY = Math.sin(time * 0.8 + t * 1.5) * 3
-              ctx.strokeRect(
-                zx + trayOffsetX - trayW / 2,
-                zy + trayOffsetY - trayH / 2 + 8,
-                trayW, trayH
-              )
+              ctx.strokeRect(zx + trayOffsetX - trayW / 2, zy + trayOffsetY - trayH / 2 + 8, trayW, trayH)
             }
-          } else {
-            // Date paintings: faint rectangular shapes with date-like text
-            const paintGrad = ctx.createRadialGradient(zx, zy, 0, zx, zy, zoneRadius * 1.3)
-            paintGrad.addColorStop(0, `rgba(140, 130, 100, ${(baseAlpha + shimmer) * 1.2})`)
-            paintGrad.addColorStop(0.6, `rgba(100, 90, 70, ${(baseAlpha + shimmer) * 0.6})`)
-            paintGrad.addColorStop(1, 'rgba(60, 55, 40, 0)')
-            ctx.fillStyle = paintGrad
-            ctx.fillRect(zx - zoneRadius * 1.5, zy - zoneRadius * 1.5, zoneRadius * 3, zoneRadius * 3)
-
-            // Small painting frames with tiny dates
+          } else if (zone.room === 'datepaintings') {
+            // Date paintings: small frames with date text
             const pW = zoneRadius * 0.5
             const pH = zoneRadius * 0.65
             const dates = ['FEB.8', 'JAN.3', 'DEC.1', 'OCT.19']
@@ -792,14 +1040,54 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
               const px = zx + (col - 0.5) * pW * 1.4
               const py = zy + (row - 0.5) * pH * 1.2
               const drift = Math.sin(time * 0.6 + p * 2.1) * 2
-              ctx.strokeStyle = `rgba(130, 120, 90, ${baseAlpha * 1.5 + shimmer})`
+              ctx.strokeStyle = `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${baseAlpha * 1.5 + shimmer})`
               ctx.lineWidth = 0.5
               ctx.strokeRect(px - pW / 2 + drift, py - pH / 2, pW, pH)
-              // Tiny date text inside
               ctx.font = '6px monospace'
-              ctx.fillStyle = `rgba(140, 130, 100, ${baseAlpha * 2.0 + shimmer})`
+              ctx.fillStyle = `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${baseAlpha * 2.0 + shimmer})`
               ctx.textAlign = 'center'
               ctx.fillText(dates[p], px + drift, py + 2)
+            }
+          } else if (zone.room === 'between') {
+            // The Between: ghostly doorway outline, shifting violet
+            ctx.strokeStyle = `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${baseAlpha * 2.0 + shimmer})`
+            ctx.lineWidth = 0.8
+            const doorW = zoneRadius * 0.5
+            const doorH = zoneRadius * 1.2
+            const doorShift = Math.sin(time * 1.2) * 2
+            // Arched door shape
+            ctx.beginPath()
+            ctx.moveTo(zx - doorW / 2, zy + doorH / 2 + doorShift)
+            ctx.lineTo(zx - doorW / 2, zy - doorH / 4 + doorShift)
+            ctx.quadraticCurveTo(zx, zy - doorH / 2 + doorShift, zx + doorW / 2, zy - doorH / 4 + doorShift)
+            ctx.lineTo(zx + doorW / 2, zy + doorH / 2 + doorShift)
+            ctx.stroke()
+            // Small threshold line
+            ctx.beginPath()
+            ctx.moveTo(zx - doorW / 2 - 3, zy + doorH / 2 + doorShift)
+            ctx.lineTo(zx + doorW / 2 + 3, zy + doorH / 2 + doorShift)
+            ctx.stroke()
+          } else if (zone.room === 'projection') {
+            // Projection: film strip / light cone
+            ctx.strokeStyle = `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${baseAlpha * 1.8 + shimmer})`
+            ctx.lineWidth = 0.6
+            // Light cone triangle
+            const coneW = zoneRadius * 0.8
+            const coneH = zoneRadius * 1.0
+            const coneShift = Math.sin(time * 0.9) * 1.5
+            ctx.beginPath()
+            ctx.moveTo(zx, zy - coneH / 2 + coneShift)
+            ctx.lineTo(zx - coneW / 2, zy + coneH / 2 + coneShift)
+            ctx.lineTo(zx + coneW / 2, zy + coneH / 2 + coneShift)
+            ctx.closePath()
+            ctx.stroke()
+            // Film perforations (small squares along the side)
+            const perfSize = 2.5
+            for (let p = 0; p < 4; p++) {
+              const py = zy - coneH / 3 + p * (coneH / 4) + coneShift
+              ctx.fillStyle = `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${baseAlpha * 1.5})`
+              ctx.fillRect(zx - coneW / 2 - perfSize - 3, py - perfSize / 2, perfSize, perfSize)
+              ctx.fillRect(zx + coneW / 2 + 3, py - perfSize / 2, perfSize, perfSize)
             }
           }
 
@@ -812,9 +1100,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
               const rippleAlpha = Math.max(0, 0.15 * (1.0 - phase / 2.0))
               ctx.beginPath()
               ctx.arc(zx, zy, rippleRadius, 0, Math.PI * 2)
-              ctx.strokeStyle = zone.room === 'darkroom'
-                ? `rgba(180, 50, 40, ${rippleAlpha})`
-                : `rgba(150, 140, 110, ${rippleAlpha})`
+              ctx.strokeStyle = `rgba(${zoneColor.r}, ${zoneColor.g}, ${zoneColor.b}, ${rippleAlpha})`
               ctx.lineWidth = 1.0
               ctx.stroke()
             }
@@ -857,23 +1143,43 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       canvas.style.cssText = 'width: 100%; height: 100%; cursor: pointer;'
       ctx = canvas.getContext('2d')
 
-      // Reflection distortion zone click + hover
+      // Initialize inscription timer
+      inscriptionStartTime = Date.now()
+
+      // Navigation zone position calculator
       const getZonePositions = () => {
         if (!canvas) return []
         const cw = canvas.width
         const ch = canvas.height
-        const fX = cw * 0.2 + 10
-        const fW = cw * 0.6 - 20
-        const fY = ch * 0.08
-        const fH = ch * 0.75
-        const centerY = fY + fH * 0.5
-        const radius = Math.min(fW * 0.1, 50)
-        return navZones.map(zone => ({
-          x: zone.side === 'left' ? fX + fW * 0.18 : fX + fW - fW * 0.18,
-          y: centerY,
-          radius: radius * 1.3,
-          room: zone.room,
-        }))
+        const fg = getFrameGeometry(cw, ch)
+        const fInnerX = fg.frameX + 10
+        const fInnerW = fg.frameW - 20
+        const fInnerY = fg.frameY + 10
+        const fInnerH = fg.frameH - 20
+        const radius = Math.min(fg.frameW * 0.08, 40) * 1.3
+
+        return navZones.map(zone => {
+          let x: number, y: number
+          switch (zone.side) {
+            case 'left':
+              x = fInnerX + fg.frameW * 0.12
+              y = fg.frameY + fg.frameH * 0.5
+              break
+            case 'right':
+              x = fInnerX + fInnerW - fg.frameW * 0.12
+              y = fg.frameY + fg.frameH * 0.5
+              break
+            case 'top':
+              x = fg.frameX + fg.frameW * 0.5
+              y = fInnerY + fg.frameH * 0.1
+              break
+            case 'bottom':
+              x = fg.frameX + fg.frameW * 0.5
+              y = fInnerY + fInnerH - fg.frameH * 0.1
+              break
+          }
+          return { x, y, radius, room: zone.room }
+        })
       }
 
       canvas.addEventListener('click', (e) => {
@@ -900,11 +1206,32 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       })
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
+        const now = performance.now()
+
+        // Track cursor velocity for reflection distortion
+        if (prevMouseX >= 0 && prevMouseY >= 0) {
+          const dx = e.clientX - prevMouseX
+          const dy = e.clientY - prevMouseY
+          const dt = Math.max(1, now - lastMouseMoveTime) / 1000  // seconds
+          const speed = Math.sqrt(dx * dx + dy * dy) / dt  // px/sec
+
+          // Smooth velocity with exponential moving average
+          cursorVelocity = cursorVelocity * 0.7 + speed * 0.3
+
+          // Apply distortion proportional to velocity (only inside mirror)
+          if (isInMirrorArea(e.clientX, e.clientY, canvas.width, canvas.height)) {
+            const normalizedVelocity = Math.min(cursorVelocity / 2000, 1.0)  // cap at 2000 px/s
+            distortionAmount = Math.max(distortionAmount, normalizedVelocity)
+          }
+        }
+
+        prevMouseX = e.clientX
+        prevMouseY = e.clientY
+        lastMouseMoveTime = now
         mouseX = e.clientX
         mouseY = e.clientY
 
         // Mirror ripple: create ripple when mouse is over mirror area
-        const now = performance.now()
         if (now - lastRippleTime > 120 && isInMirrorArea(mouseX, mouseY, canvas.width, canvas.height)) {
           ripples.push({
             x: mouseX,
@@ -923,9 +1250,9 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
         const zones = getZonePositions()
         for (let i = 0; i < zones.length; i++) {
           const z = zones[i]
-          const dx = e.clientX - z.x
-          const dy = e.clientY - z.y
-          if (dx * dx + dy * dy < z.radius * z.radius) {
+          const ddx = e.clientX - z.x
+          const ddy = e.clientY - z.y
+          if (ddx * ddx + ddy * ddy < z.radius * z.radius) {
             hoveredZone = i
             break
           }
@@ -952,6 +1279,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       mirrorData.lastVisit = Date.now()
       saveData()
       buildPortrait()
+      inscriptionStartTime = Date.now()
       render()
 
       // Initialize and fade in audio
@@ -968,6 +1296,12 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       // Clear visual state
       ripples.length = 0
       fogParticles.length = 0
+      fogWritings.length = 0
+      // Reset distortion
+      distortionAmount = 0
+      cursorVelocity = 0
+      prevMouseX = -1
+      prevMouseY = -1
     },
 
     destroy() {
@@ -976,6 +1310,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       destroyAudio()
       ripples.length = 0
       fogParticles.length = 0
+      fogWritings.length = 0
       overlay?.remove()
     },
   }

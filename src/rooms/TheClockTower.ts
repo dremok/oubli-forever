@@ -58,6 +58,28 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
   // Track glow intensity for each position (0-1, decays over time)
   const handGlow = [0, 0, 0, 0]
 
+  // --- Cultural inscriptions ---
+  const inscriptions = [
+    "dalí's melting clocks: time is not rigid. it drapes over everything, soft and forgettable.",
+    "the doomsday clock reads 85 seconds to midnight. the closest it has ever been. january 2026.",
+    "the clock of the long now ticks once a year. its century hand advances once every 100 years.",
+    "chronobiology: every cell in your body has its own clock. trillions of tiny timekeepers, slowly drifting.",
+    "the polar vortex is splitting in two. the atmosphere's protective structure breaking apart.",
+    "365 buttons, one for each day, because i'm scared of time. — tamara, january 2026",
+    "emerald fennell's wuthering heights: cathy's ghost at the window, 20 years after death. time means nothing to obsession.",
+    "consciousness is always remembering the present. we never experience it directly.",
+  ]
+  let inscriptionIndex = 0
+  let inscriptionAlpha = 0
+  let inscriptionTimer = 0
+  const INSCRIPTION_CYCLE = 25 // seconds per inscription
+  const INSCRIPTION_FADE_IN = 2
+  const INSCRIPTION_VISIBLE = 20
+  const INSCRIPTION_FADE_OUT = 3
+
+  // --- Quarter-hour chime tracking ---
+  let lastChimeQuarter = -1
+
   // --- Pendulum trail ---
   const pendulumTrail: { x: number; y: number }[] = []
   const TRAIL_LENGTH = 8
@@ -298,6 +320,47 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       }
     } catch {
       /* ignore chime errors */
+    }
+  }
+
+  function playQuarterChime(quarter: number) {
+    if (!audioCtxRef || !audioMaster) return
+    const ac = audioCtxRef
+    try {
+      // Different pitch for each quarter: III=E5, VI=G5, IX=B5, XII=C6
+      const pitches = [659, 784, 988, 1047] // E5, G5, B5, C6
+      const freq = pitches[quarter % 4]
+      const now = ac.currentTime
+
+      const osc1 = ac.createOscillator()
+      osc1.type = 'sine'
+      osc1.frequency.value = freq
+
+      const osc2 = ac.createOscillator()
+      osc2.type = 'sine'
+      osc2.frequency.value = freq * 2 // octave harmonic
+
+      const chimeGain = ac.createGain()
+      chimeGain.gain.setValueAtTime(0, now)
+      chimeGain.gain.linearRampToValueAtTime(0.04, now + 0.01)
+      chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 1.8)
+
+      osc1.connect(chimeGain)
+      osc2.connect(chimeGain)
+      chimeGain.connect(audioMaster!)
+
+      osc1.start(now)
+      osc2.start(now)
+      osc1.stop(now + 2.0)
+      osc2.stop(now + 2.0)
+
+      osc1.onended = () => {
+        osc1.disconnect()
+        osc2.disconnect()
+        chimeGain.disconnect()
+      }
+    } catch {
+      /* ignore quarter chime errors */
     }
   }
 
@@ -687,8 +750,8 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     tickSound *= 0.95
 
     // Detect second hand crossing a new second
-    const currentSecond = Math.floor(realSeconds)
-    if (Math.abs(realSeconds - currentSecond) < 0.05) {
+    const tickSecond = Math.floor(realSeconds)
+    if (Math.abs(realSeconds - tickSecond) < 0.05) {
       tickSound = 0.5
     }
 
@@ -746,12 +809,15 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       pendulumTrail.shift()
     }
 
-    // Draw pendulum trail (faint ghost positions)
+    // Draw pendulum trail (faint afterimages with decreasing alpha: 0.06 -> 0.01)
     for (let i = 0; i < pendulumTrail.length - 1; i++) {
       const t_pos = pendulumTrail[i]
-      const trailAlpha = (i / pendulumTrail.length) * 0.06
+      // Oldest trail entry (i=0) gets lowest alpha (0.01), newest gets highest (0.06)
+      const progress = i / Math.max(1, pendulumTrail.length - 2) // 0..1
+      const trailAlpha = 0.01 + progress * 0.05 // 0.01 to 0.06
+      const trailSize = 8 + progress * 4 // smaller for older ghosts
       ctx.beginPath()
-      ctx.arc(t_pos.x, t_pos.y, 10 - (pendulumTrail.length - 1 - i) * 0.8, 0, Math.PI * 2)
+      ctx.arc(t_pos.x, t_pos.y, trailSize, 0, Math.PI * 2)
       ctx.fillStyle = `rgba(200, 180, 120, ${trailAlpha})`
       ctx.fill()
     }
@@ -911,14 +977,29 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       ctx.fillText('◄ time is running backwards', w / 2, cy + radius + 18)
     }
 
-    // Portal to The Midnight — appears when the hour changes
-    const currentHour = now.getHours()
-    if (lastHour >= 0 && currentHour !== lastHour && deps.onMidnight) {
-      portalVisible = true
-      portalAlpha = 0.4
-      // Play chime on hour change
-      playChime()
+    // Portal to The Midnight — appears every 15 minutes (much more discoverable)
+    const currentMinute = now.getMinutes()
+    const currentSecond = now.getSeconds()
+    if (currentMinute % 15 === 0 && currentSecond < 2 && deps.onMidnight) {
+      if (!portalVisible || portalAlpha < 0.05) {
+        portalVisible = true
+        portalAlpha = 0.4
+        // Play chime on portal appearance
+        playChime()
+      }
     }
+
+    // Quarter-hour chimes — different pitch at III, VI, IX, XII positions
+    const quarterIndex = Math.floor(currentMinute / 15) // 0=XII, 1=III, 2=VI, 3=IX
+    if (currentMinute % 15 === 0 && currentSecond < 2 && quarterIndex !== lastChimeQuarter) {
+      lastChimeQuarter = quarterIndex
+      playQuarterChime(quarterIndex)
+    }
+    if (currentMinute % 15 !== 0) {
+      lastChimeQuarter = -1 // reset so next quarter triggers
+    }
+
+    const currentHour = now.getHours()
     lastHour = currentHour
 
     if (portalVisible && portalAlpha > 0.02) {
@@ -927,6 +1008,62 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       ctx.fillStyle = `rgba(180, 160, 220, ${portalAlpha})`
       ctx.textAlign = 'center'
       ctx.fillText('▸ the hour has changed. step through.', w / 2, h - 60)
+    }
+
+    // === CULTURAL INSCRIPTIONS ===
+    inscriptionTimer += 0.016
+    const cyclePos = inscriptionTimer % INSCRIPTION_CYCLE
+    if (cyclePos < 0.016) {
+      // Advance to next inscription at the start of each cycle
+      inscriptionIndex = (inscriptionIndex + 1) % inscriptions.length
+    }
+    // Compute alpha based on fade in/visible/fade out phases
+    if (cyclePos < INSCRIPTION_FADE_IN) {
+      inscriptionAlpha = (cyclePos / INSCRIPTION_FADE_IN) * 0.09
+    } else if (cyclePos < INSCRIPTION_FADE_IN + INSCRIPTION_VISIBLE) {
+      inscriptionAlpha = 0.09
+    } else if (cyclePos < INSCRIPTION_CYCLE) {
+      const fadeProgress = (cyclePos - INSCRIPTION_FADE_IN - INSCRIPTION_VISIBLE) / INSCRIPTION_FADE_OUT
+      inscriptionAlpha = 0.09 * (1 - fadeProgress)
+    } else {
+      inscriptionAlpha = 0
+    }
+
+    if (inscriptionAlpha > 0.005) {
+      const inscY = cy + radius + 22
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(180, 160, 120, ${inscriptionAlpha})`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'alphabetic'
+      ctx.fillText(inscriptions[inscriptionIndex], w / 2, inscY)
+    }
+
+    // === MEMORY EROSION TICKER ===
+    if (memories.length > 0) {
+      // Find the most degraded memory
+      let worstMem = memories[0]
+      for (const m of memories) {
+        if (m.degradation > worstMem.degradation) worstMem = m
+      }
+      const dissolvedPct = Math.floor(worstMem.degradation * 100)
+      // Estimate visits until fully forgotten (rough: each visit degrades ~2%)
+      const remaining = worstMem.degradation < 1
+        ? Math.max(1, Math.ceil((1 - worstMem.degradation) / 0.02))
+        : 0
+      const erosionText = remaining > 0
+        ? `most degraded memory: ${dissolvedPct}% dissolved — estimated ${remaining} visits until fully forgotten`
+        : `most degraded memory: ${dissolvedPct}% dissolved — nearly gone`
+      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.fillStyle = 'rgba(180, 160, 120, 0.06)'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'alphabetic'
+      ctx.fillText(erosionText, w / 2, h - 48)
+    } else {
+      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.fillStyle = 'rgba(180, 160, 120, 0.05)'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'alphabetic'
+      ctx.fillText('no memories to erode', w / 2, h - 48)
     }
   }
 
@@ -988,6 +1125,8 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       pendulumVelocity = 0
       pendulumTrail.length = 0
       dustParticles.length = 0
+      inscriptionTimer = 0
+      lastChimeQuarter = -1
       initAudio()
       render()
     },

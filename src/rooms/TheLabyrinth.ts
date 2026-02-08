@@ -20,6 +20,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface LabyrinthDeps {
   onExit?: () => void
@@ -65,6 +66,16 @@ const WALL_FRAGMENTS = [
   'each passage a synapse',
   'forgetting the way back',
   'the maze dreams itself',
+]
+
+// Cultural inscriptions — visible on walls when player is close
+const CULTURAL_INSCRIPTIONS = [
+  'borges imagined a library containing every possible book. this labyrinth contains every possible path.',
+  'the minotaur was the child of a queen and a bull. what is the child of a human and forgetting?',
+  'thread unspools behind you. chiharu shiota fills galleries with red thread — connection made visible.',
+  'the brain\'s hippocampus has four hidden layers. each stores a different kind of memory.',
+  'perseverance rover navigated mars terrain by AI alone. 689 feet through alien landscape.',
+  '365 buttons, one for each day. it only has to make sense to me.',
 ]
 
 // Cell types
@@ -132,7 +143,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let audioCtx: AudioContext | null = null
   let footstepOsc: OscillatorNode | null = null
   let footstepGain: GainNode | null = null
+  let footstepOsc2: OscillatorNode | null = null
+  let footstepGain2: GainNode | null = null
   let ambienceGain: GainNode | null = null
+  let reverbNode: ConvolverNode | null = null
+  let reverbGain: GainNode | null = null
+  let dripTimeout: ReturnType<typeof setTimeout> | null = null
   let lastStepTime = 0
 
   // Interaction hint
@@ -141,6 +157,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   // Input
   const keys = new Set<string>()
+
+  // Mouse-look state
+  let mouseLookAngle = 0 // offset from movement direction
+  let viewAngle = 0 // pa + mouseLookAngle, used for raycasting
+
+  // Minimap — explored cells
+  const exploredCells = new Set<string>()
 
   // --- Wikipedia "Forgotten Knowledge" system ---
   const wikiCache = new Set<string>()        // titles already seen this session
@@ -480,19 +503,73 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     return grid
   }
 
-  function initAudio() {
+  // Create a synthetic impulse response for convolution reverb (~2s stone corridor)
+  function createReverbIR(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
+    const sampleRate = ctx.sampleRate
+    const length = sampleRate * duration
+    const buffer = ctx.createBuffer(2, length, sampleRate)
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buffer.getChannelData(ch)
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay)
+      }
+    }
+    return buffer
+  }
+
+  // Dripping water — periodic high-frequency pings with reverb
+  function scheduleDrip() {
+    if (!audioCtx || !active) return
+    const ctx = audioCtx
+    const dest = getAudioDestination()
+    const now = ctx.currentTime
+
+    const freq = 800 + Math.random() * 400 // 800-1200Hz
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+
+    const dripGain = ctx.createGain()
+    dripGain.gain.setValueAtTime(0.02, now)
+    dripGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15)
+
+    osc.connect(dripGain)
+    // Route through reverb if available, otherwise direct
+    if (reverbGain) {
+      dripGain.connect(reverbGain)
+    }
+    dripGain.connect(dest)
+    osc.start(now)
+    osc.stop(now + 0.2)
+
+    // Schedule next drip: 3-8 seconds
+    const nextDelay = 3000 + Math.random() * 5000
+    dripTimeout = setTimeout(scheduleDrip, nextDelay)
+  }
+
+  async function initAudio() {
     if (audioCtx) return
     try {
-      audioCtx = new AudioContext()
+      audioCtx = await getAudioContext()
+      const dest = getAudioDestination()
 
-      // Ambient drone — low rumble of the labyrinth
+      // --- Reverb: convolution with synthetic impulse response ---
+      reverbNode = audioCtx.createConvolver()
+      reverbNode.buffer = createReverbIR(audioCtx, 2, 2.5)
+      reverbGain = audioCtx.createGain()
+      reverbGain.gain.value = 0.4
+      reverbNode.connect(reverbGain)
+      reverbGain.connect(dest)
+
+      // --- Ambient drone — low rumble of the labyrinth ---
       const ambOsc = audioCtx.createOscillator()
       ambOsc.type = 'sine'
       ambOsc.frequency.value = 42 // deep sub-bass
       ambienceGain = audioCtx.createGain()
       ambienceGain.gain.value = 0
       ambOsc.connect(ambienceGain)
-      ambienceGain.connect(audioCtx.destination)
+      ambienceGain.connect(dest)
+      ambienceGain.connect(reverbNode) // also route through reverb
       ambOsc.start()
 
       // Second harmonic
@@ -502,14 +579,39 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const amb2Gain = audioCtx.createGain()
       amb2Gain.gain.value = 0
       ambOsc2.connect(amb2Gain)
-      amb2Gain.connect(audioCtx.destination)
+      amb2Gain.connect(dest)
       ambOsc2.start()
 
       // Slowly fade in
       ambienceGain.gain.linearRampToValueAtTime(0.06, audioCtx.currentTime + 3)
       amb2Gain.gain.linearRampToValueAtTime(0.03, audioCtx.currentTime + 5)
 
-      // Footstep synth — short filtered noise burst
+      // --- Distant rumble: very low brown noise at ~40Hz bandpass ---
+      const rumbleSize = audioCtx.sampleRate * 2
+      const rumbleBuffer = audioCtx.createBuffer(1, rumbleSize, audioCtx.sampleRate)
+      const rumbleData = rumbleBuffer.getChannelData(0)
+      let lastVal = 0
+      for (let i = 0; i < rumbleSize; i++) {
+        // Brown noise: integrate white noise
+        lastVal += (Math.random() * 2 - 1) * 0.1
+        lastVal *= 0.998 // slight decay
+        rumbleData[i] = lastVal
+      }
+      const rumbleSource = audioCtx.createBufferSource()
+      rumbleSource.buffer = rumbleBuffer
+      rumbleSource.loop = true
+      const rumbleFilter = audioCtx.createBiquadFilter()
+      rumbleFilter.type = 'bandpass'
+      rumbleFilter.frequency.value = 40
+      rumbleFilter.Q.value = 2
+      const rumbleGain = audioCtx.createGain()
+      rumbleGain.gain.value = 0.008
+      rumbleSource.connect(rumbleFilter)
+      rumbleFilter.connect(rumbleGain)
+      rumbleGain.connect(dest)
+      rumbleSource.start()
+
+      // --- Footstep synth 1 — short filtered noise burst ---
       footstepOsc = audioCtx.createOscillator()
       footstepOsc.type = 'sawtooth'
       footstepOsc.frequency.value = 80
@@ -520,8 +622,28 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       footFilter.frequency.value = 200
       footstepOsc.connect(footFilter)
       footFilter.connect(footstepGain)
-      footstepGain.connect(audioCtx.destination)
+      footstepGain.connect(dest)
+      footstepGain.connect(reverbNode) // footsteps echo in the corridor
       footstepOsc.start()
+
+      // --- Footstep synth 2 — higher crunch for variety ---
+      footstepOsc2 = audioCtx.createOscillator()
+      footstepOsc2.type = 'triangle'
+      footstepOsc2.frequency.value = 140
+      footstepGain2 = audioCtx.createGain()
+      footstepGain2.gain.value = 0
+      const footFilter2 = audioCtx.createBiquadFilter()
+      footFilter2.type = 'highpass'
+      footFilter2.frequency.value = 100
+      footstepOsc2.connect(footFilter2)
+      footFilter2.connect(footstepGain2)
+      footstepGain2.connect(dest)
+      footstepGain2.connect(reverbNode)
+      footstepOsc2.start()
+
+      // --- Start dripping water schedule ---
+      const firstDrip = 2000 + Math.random() * 4000
+      dripTimeout = setTimeout(scheduleDrip, firstDrip)
     } catch {
       // Audio not available
     }
@@ -532,9 +654,19 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const now = audioCtx.currentTime
     if (now - lastStepTime < 0.25) return
     lastStepTime = now
+
+    // Primary footstep — low thud
     footstepGain.gain.cancelScheduledValues(now)
     footstepGain.gain.setValueAtTime(0.04, now)
     footstepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
+
+    // Secondary footstep — higher crunch, alternating emphasis
+    if (footstepGain2) {
+      const alt = Math.sin(now * 3) > 0 ? 0.025 : 0.015
+      footstepGain2.gain.cancelScheduledValues(now)
+      footstepGain2.gain.setValueAtTime(alt, now)
+      footstepGain2.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+    }
   }
 
   function castRay(ox: number, oy: number, angle: number): { dist: number; side: number; cell: number; hitX?: number; hitY?: number } {
@@ -582,6 +714,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     let moveY = 0
     let moving = false
 
+    // Combine keyboard angle with mouse-look offset for view direction
+    viewAngle = pa + mouseLookAngle
+
     if (keys.has('w') || keys.has('arrowup')) {
       moveX += Math.cos(pa) * moveSpeed
       moveY += Math.sin(pa) * moveSpeed
@@ -598,6 +733,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (keys.has('d') || keys.has('arrowright')) {
       pa += turnSpeed
     }
+
+    // Mark current cell as explored for minimap
+    const cellKey = `${Math.floor(px)},${Math.floor(py)}`
+    exploredCells.add(cellKey)
 
     // Collision detection
     const margin = 0.2
@@ -733,6 +872,135 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.fillRect(screenX, archTop + archH - 2, archW, 2)
   }
 
+  // Cultural inscriptions: find nearby walls with cultural text and display them
+  function renderCulturalInscriptions(w: number, h: number): void {
+    if (!ctx) return
+    // Check cells around the player for cultural inscription proximity
+    const checkRadius = 2.5
+    const shown: string[] = []
+    for (let ci = 0; ci < CULTURAL_INSCRIPTIONS.length; ci++) {
+      // Each cultural inscription is placed at a deterministic position in the maze
+      // based on its index (spread evenly through the maze)
+      const ciX = 1 + ((ci * 7 + 3) % (mazeW - 2))
+      const ciY = 1 + ((ci * 5 + 2) % (mazeH - 2))
+      const dist = Math.hypot(px - ciX, py - ciY)
+      if (dist < checkRadius) {
+        const fade = 1 - dist / checkRadius
+        shown.push(CULTURAL_INSCRIPTIONS[ci])
+        // Render the inscription at bottom-center, fading based on distance
+        const alpha = fade * 0.65 * (0.7 + Math.sin(time * 0.4 + ci) * 0.3)
+        ctx.save()
+        ctx.font = 'italic 11px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(200, 180, 150, ${alpha})`
+        ctx.textAlign = 'center'
+        // Word-wrap long inscriptions
+        const words = shown[shown.length - 1].split(' ')
+        let line = ''
+        let lineY = h - 80 - (shown.length - 1) * 50
+        const maxLineW = Math.min(500, w * 0.7)
+        for (const word of words) {
+          const test = line ? line + ' ' + word : word
+          if (ctx.measureText(test).width > maxLineW && line) {
+            ctx.fillText(line, w / 2, lineY)
+            line = word
+            lineY += 14
+          } else {
+            line = test
+          }
+        }
+        if (line) ctx.fillText(line, w / 2, lineY)
+        ctx.restore()
+      }
+    }
+  }
+
+  // Minimap: 80x80 in the top-right corner, explored cells revealed
+  function renderMinimap(w: number, h: number): void {
+    if (!ctx || mazeW === 0 || mazeH === 0) return
+    const mapSize = 80
+    const margin = 12
+    const mapX = w - mapSize - margin
+    const mapY = margin
+    const cellW = mapSize / mazeW
+    const cellH = mapSize / mazeH
+
+    ctx.save()
+
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+    ctx.fillRect(mapX - 1, mapY - 1, mapSize + 2, mapSize + 2)
+
+    // Border
+    ctx.strokeStyle = 'rgba(60, 80, 60, 0.3)'
+    ctx.lineWidth = 1
+    ctx.strokeRect(mapX - 1, mapY - 1, mapSize + 2, mapSize + 2)
+
+    // Draw explored cells
+    for (let my = 0; my < mazeH; my++) {
+      for (let mx = 0; mx < mazeW; mx++) {
+        const key = `${mx},${my}`
+        if (!exploredCells.has(key)) {
+          // Also reveal cells adjacent to explored cells (walls become visible)
+          const neighbors = [`${mx-1},${my}`,`${mx+1},${my}`,`${mx},${my-1}`,`${mx},${my+1}`]
+          const adjacentExplored = neighbors.some(n => exploredCells.has(n))
+          if (!adjacentExplored) continue
+
+          // This is an unexplored cell adjacent to explored — show wall outlines only
+          const cell = maze[my]?.[mx]
+          if (cell !== undefined && cell >= 1 && cell !== EXIT) {
+            ctx.fillStyle = 'rgba(30, 50, 30, 0.4)'
+            ctx.fillRect(mapX + mx * cellW, mapY + my * cellH, cellW + 0.5, cellH + 0.5)
+          }
+          continue
+        }
+
+        const cell = maze[my]?.[mx]
+        if (cell === undefined) continue
+
+        if (cell === 0) {
+          // Open path — faint green
+          ctx.fillStyle = 'rgba(40, 80, 40, 0.25)'
+        } else if (cell === EXIT) {
+          // Exit — gold
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.5)'
+        } else if (cell === PORTAL) {
+          const portal = getPortalAt(mx, my)
+          if (portal) {
+            ctx.fillStyle = `rgba(${portal.color[0]}, ${portal.color[1]}, ${portal.color[2]}, 0.4)`
+          } else {
+            ctx.fillStyle = 'rgba(80, 40, 120, 0.3)'
+          }
+        } else if (cell === CIPHER_STONE || cell === MAP_TABLE || cell === BOOKSHELF) {
+          ctx.fillStyle = 'rgba(180, 150, 60, 0.4)'
+        } else {
+          // Wall — visible outline
+          ctx.fillStyle = 'rgba(30, 60, 30, 0.5)'
+        }
+        ctx.fillRect(mapX + mx * cellW, mapY + my * cellH, cellW + 0.5, cellH + 0.5)
+      }
+    }
+
+    // Player dot — bright green
+    const dotX = mapX + px * cellW
+    const dotY = mapY + py * cellH
+    const pulse = 2 + Math.sin(time * 3) * 0.5
+    ctx.fillStyle = 'rgba(100, 255, 100, 0.8)'
+    ctx.beginPath()
+    ctx.arc(dotX, dotY, pulse, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Direction indicator — small line from player dot
+    const dirLen = 5
+    ctx.strokeStyle = 'rgba(100, 255, 100, 0.5)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(dotX, dotY)
+    ctx.lineTo(dotX + Math.cos(viewAngle) * dirLen, dotY + Math.sin(viewAngle) * dirLen)
+    ctx.stroke()
+
+    ctx.restore()
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -773,10 +1041,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const portalStrips: { screenX: number; wallTop: number; wallHeight: number; stripW: number; portal: LabyrinthPortal; brightness: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
-      const rayAngle = pa - fov / 2 + (i / numRays) * fov
+      const rayAngle = viewAngle - fov / 2 + (i / numRays) * fov
       const hit = castRay(px, py, rayAngle)
 
-      const correctedDist = hit.dist * Math.cos(rayAngle - pa)
+      const correctedDist = hit.dist * Math.cos(rayAngle - viewAngle)
       const wallHeight = Math.min(h * 2, h / correctedDist)
       const wallTop = (h - wallHeight) / 2
       const brightness = Math.max(0, 1 - correctedDist / 10)
@@ -931,6 +1199,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         : 'WASD to move · seek the golden exit'
       ctx.fillText(hint, w / 2, h - 8)
     }
+
+    // --- Cultural inscriptions: visible on walls when player is close ---
+    renderCulturalInscriptions(w, h)
+
+    // --- Minimap ---
+    renderMinimap(w, h)
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -959,6 +1233,15 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     keys.delete(e.key.toLowerCase())
   }
 
+  function handleMouseMove(e: MouseEvent) {
+    if (!active || !canvas) return
+    // Map horizontal mouse position to a look-angle offset
+    // Left edge = -PI/4, center = 0, right edge = +PI/4
+    const rect = canvas.getBoundingClientRect()
+    const normalizedX = (e.clientX - rect.left) / rect.width // 0..1
+    mouseLookAngle = (normalizedX - 0.5) * (Math.PI / 2)
+  }
+
   return {
     name: 'labyrinth',
     label: 'the labyrinth',
@@ -979,6 +1262,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       window.addEventListener('keydown', handleKeyDown)
       window.addEventListener('keyup', handleKeyUp)
+      canvas.addEventListener('mousemove', handleMouseMove)
 
       const onResize = () => {
         if (canvas) {
@@ -998,7 +1282,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       px = 1.5
       py = 1.5
       pa = 0
+      mouseLookAngle = 0
+      viewAngle = 0
       keys.clear()
+      exploredCells.clear()
 
       // Reset Wikipedia state for fresh session feel (cache persists to avoid repeats)
       currentFragment = null
@@ -1021,6 +1308,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       keys.clear()
       currentFragment = null
 
+      // Stop dripping water
+      if (dripTimeout) {
+        clearTimeout(dripTimeout)
+        dripTimeout = null
+      }
+
       // Fade out audio
       if (ambienceGain && audioCtx) {
         ambienceGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1)
@@ -1032,10 +1325,15 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       cancelAnimationFrame(frameId)
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
-      if (audioCtx) {
-        audioCtx.close().catch(() => {})
-        audioCtx = null
+      if (canvas) {
+        canvas.removeEventListener('mousemove', handleMouseMove)
       }
+      if (dripTimeout) {
+        clearTimeout(dripTimeout)
+        dripTimeout = null
+      }
+      // Don't close shared AudioContext — it's managed by AudioBus
+      audioCtx = null
       overlay?.remove()
     },
   }

@@ -21,6 +21,7 @@
  * NOAA Space Weather Prediction Center
  */
 
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 import type { Room } from './RoomManager'
 
 interface Memory {
@@ -90,10 +91,36 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
   let mouseX = 0
   let mouseY = 0
 
-  // Audio
+  // Audio (routed through shared AudioBus)
   let audioCtx: AudioContext | null = null
+  let audioDest: AudioNode | null = null
   let windGain: GainNode | null = null
+  let subBassGain: GainNode | null = null
+  let iceGroanGain: GainNode | null = null
+  let iceGroanFilter: BiquadFilterNode | null = null
+  let sizzleGain: GainNode | null = null
+  let sizzleFilter: BiquadFilterNode | null = null
+  let sizzleSource: AudioBufferSourceNode | null = null
   let crackTimeout: ReturnType<typeof setTimeout> | null = null
+  let audioInitialized = false
+
+  // Steam particles (warmth near crystals)
+  let steamParticles: { x: number; y: number; vy: number; vx: number; alpha: number; size: number }[] = []
+
+  // Cultural inscriptions
+  const INSCRIPTIONS = [
+    'arctic sea ice has lost 13% per decade since satellites began watching',
+    'svalbard seed vault: 1.3 million samples. the memory of agriculture, frozen at -18\u00B0C',
+    'olafur eliasson brought 30 blocks of greenland glacier ice to london. they melted in three days.',
+    'the oldest ice core is 2.7 million years old. it remembers an atmosphere we\u2019ve already forgotten.',
+    'permafrost thaws and releases methane \u2014 the earth forgetting to hold its breath',
+    'the doomsday clock reads 85 seconds to midnight. the closest it has ever been.',
+    '7,000 atoms placed in quantum superposition \u2014 the largest schr\u00F6dinger\u2019s cat ever observed',
+    'in some materials, electrons stop being particles. topology persists after identity dissolves.',
+  ]
+  let inscriptionIndex = 0
+  let inscriptionTimer = 0
+  const INSCRIPTION_CYCLE_S = 25
 
   const NORMAL_FEB_EXTENT = 14.5
   const RECORD_LOW_2026 = 13.2
@@ -182,17 +209,19 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
     }
   }
 
-  function initAudio() {
-    if (audioCtx) return
+  async function initAudio() {
+    if (audioInitialized) return
+    audioInitialized = true
     try {
-      audioCtx = new AudioContext()
+      audioCtx = await getAudioContext()
+      audioDest = getAudioDestination()
 
-      // Wind — filtered noise
+      // --- 1. Wind — filtered white noise ---
       const bufferSize = audioCtx.sampleRate * 2
       const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
-      const data = noiseBuffer.getChannelData(0)
+      const noiseSamples = noiseBuffer.getChannelData(0)
       for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * 0.3
+        noiseSamples[i] = (Math.random() * 2 - 1) * 0.3
       }
       const noise = audioCtx.createBufferSource()
       noise.buffer = noiseBuffer
@@ -208,11 +237,91 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
 
       noise.connect(windFilter)
       windFilter.connect(windGain)
-      windGain.connect(audioCtx.destination)
+      windGain.connect(audioDest)
       noise.start()
 
-      // Fade wind in
       windGain.gain.linearRampToValueAtTime(0.025, audioCtx.currentTime + 3)
+
+      // --- 2. Sub-bass pressure drone: 2 detuned sines (55Hz + 55.3Hz) ---
+      const subOsc1 = audioCtx.createOscillator()
+      subOsc1.type = 'sine'
+      subOsc1.frequency.value = 55
+
+      const subOsc2 = audioCtx.createOscillator()
+      subOsc2.type = 'sine'
+      subOsc2.frequency.value = 55.3
+
+      subBassGain = audioCtx.createGain()
+      subBassGain.gain.value = 0
+
+      subOsc1.connect(subBassGain)
+      subOsc2.connect(subBassGain)
+      subBassGain.connect(audioDest)
+      subOsc1.start()
+      subOsc2.start()
+
+      subBassGain.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 4)
+
+      // --- 3. Ice groaning texture: brown noise through tight bandpass at 200Hz, LFO-modulated ---
+      const brownBuf = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+      const brownSamples = brownBuf.getChannelData(0)
+      let lastBrown = 0
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1
+        lastBrown = (lastBrown + 0.02 * white) / 1.02
+        brownSamples[i] = lastBrown * 3.5
+      }
+      const brownNoise = audioCtx.createBufferSource()
+      brownNoise.buffer = brownBuf
+      brownNoise.loop = true
+
+      iceGroanFilter = audioCtx.createBiquadFilter()
+      iceGroanFilter.type = 'bandpass'
+      iceGroanFilter.frequency.value = 200
+      iceGroanFilter.Q.value = 8
+
+      // LFO to modulate the bandpass frequency slowly
+      const groanLfo = audioCtx.createOscillator()
+      groanLfo.type = 'sine'
+      groanLfo.frequency.value = 0.08
+      const groanLfoGain = audioCtx.createGain()
+      groanLfoGain.gain.value = 60
+      groanLfo.connect(groanLfoGain)
+      groanLfoGain.connect(iceGroanFilter.frequency)
+      groanLfo.start()
+
+      iceGroanGain = audioCtx.createGain()
+      iceGroanGain.gain.value = 0
+
+      brownNoise.connect(iceGroanFilter)
+      iceGroanFilter.connect(iceGroanGain)
+      iceGroanGain.connect(audioDest)
+      brownNoise.start()
+
+      iceGroanGain.gain.linearRampToValueAtTime(0.02, audioCtx.currentTime + 5)
+
+      // --- 4. Sizzle sound (cursor near crystals) — always-running filtered noise, gain controlled per frame ---
+      const sizzleBuf = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+      const sizzleSamples = sizzleBuf.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        sizzleSamples[i] = (Math.random() * 2 - 1)
+      }
+      sizzleSource = audioCtx.createBufferSource()
+      sizzleSource.buffer = sizzleBuf
+      sizzleSource.loop = true
+
+      sizzleFilter = audioCtx.createBiquadFilter()
+      sizzleFilter.type = 'highpass'
+      sizzleFilter.frequency.value = 3000
+      sizzleFilter.Q.value = 1
+
+      sizzleGain = audioCtx.createGain()
+      sizzleGain.gain.value = 0
+
+      sizzleSource.connect(sizzleFilter)
+      sizzleFilter.connect(sizzleGain)
+      sizzleGain.connect(audioDest)
+      sizzleSource.start()
 
       // Schedule periodic ice crack sounds
       scheduleIceCrack()
@@ -233,7 +342,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
   }
 
   function playIceCrack() {
-    if (!audioCtx || !active) return
+    if (!audioCtx || !audioDest || !active) return
     const now = audioCtx.currentTime
     const osc = audioCtx.createOscillator()
     osc.type = 'sawtooth'
@@ -252,7 +361,7 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
 
     osc.connect(filter)
     filter.connect(gain)
-    gain.connect(audioCtx.destination)
+    gain.connect(audioDest)
     osc.start(now)
     osc.stop(now + 0.25)
   }
@@ -811,6 +920,9 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
     c.arc(mouseX, mouseY, warmthRadius, 0, Math.PI * 2)
     c.fill()
 
+    // Update sizzle audio gain based on max warmth across crystals
+    let maxWarmth = 0
+
     // Draw crystals
     for (const crystal of crystals) {
       const melt = crystal.meltProgress
@@ -824,6 +936,22 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
         crystal.warmth = Math.min(1, crystal.warmth + 0.01 * (1 - dist / warmthRadius))
       } else {
         crystal.warmth = Math.max(0, crystal.warmth - 0.005)
+      }
+
+      if (crystal.warmth > maxWarmth) maxWarmth = crystal.warmth
+
+      // Spawn steam particles when cursor warms a crystal
+      if (crystal.warmth > 0.15 && Math.random() < crystal.warmth * 0.3) {
+        const steamX = crystal.x + (Math.random() - 0.5) * crystal.width * 0.8
+        const steamY = crystal.y - crystal.height * intact * (0.2 + Math.random() * 0.6)
+        steamParticles.push({
+          x: steamX,
+          y: steamY,
+          vy: -(0.3 + Math.random() * 0.5),
+          vx: (Math.random() - 0.5) * 0.3,
+          alpha: 0.25 + crystal.warmth * 0.2,
+          size: 1 + Math.random() * 2,
+        })
       }
 
       // Expand/collapse animation
@@ -1053,6 +1181,47 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
       return true
     })
 
+    // Update sizzle audio proportional to warmth
+    if (sizzleGain && audioCtx) {
+      const targetSizzle = maxWarmth * 0.06
+      sizzleGain.gain.linearRampToValueAtTime(targetSizzle, audioCtx.currentTime + 0.05)
+    }
+
+    // Steam particles (rising white dots from warmed crystals)
+    steamParticles = steamParticles.filter(p => {
+      p.y += p.vy
+      p.x += p.vx
+      p.alpha -= 0.004
+      p.size *= 0.998
+      if (p.alpha <= 0) return false
+      c.fillStyle = `rgba(220, 235, 255, ${p.alpha})`
+      c.beginPath()
+      c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      c.fill()
+      return true
+    })
+
+    // Cultural inscription (cycling every 25s)
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= INSCRIPTION_CYCLE_S) {
+      inscriptionTimer = 0
+      inscriptionIndex = (inscriptionIndex + 1) % INSCRIPTIONS.length
+    }
+    {
+      // Fade in for first 3s, hold, fade out for last 3s
+      const cyclePos = inscriptionTimer / INSCRIPTION_CYCLE_S
+      let insAlpha: number
+      if (cyclePos < 0.12) insAlpha = cyclePos / 0.12
+      else if (cyclePos > 0.88) insAlpha = (1 - cyclePos) / 0.12
+      else insAlpha = 1
+      insAlpha *= 0.06
+
+      c.font = '11px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(180, 220, 255, ${insAlpha})`
+      c.textAlign = 'right'
+      c.fillText(INSCRIPTIONS[inscriptionIndex], w - 14, h / 2)
+    }
+
     // Sea ice extent data (bottom-left)
     c.font = '12px monospace'
     c.fillStyle = 'rgba(150, 200, 255, 0.12)'
@@ -1154,8 +1323,12 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       if (crackTimeout) clearTimeout(crackTimeout)
-      if (windGain && audioCtx) {
-        windGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1)
+      if (audioCtx) {
+        const fadeTime = audioCtx.currentTime + 1
+        if (windGain) windGain.gain.linearRampToValueAtTime(0, fadeTime)
+        if (subBassGain) subBassGain.gain.linearRampToValueAtTime(0, fadeTime)
+        if (iceGroanGain) iceGroanGain.gain.linearRampToValueAtTime(0, fadeTime)
+        if (sizzleGain) sizzleGain.gain.linearRampToValueAtTime(0, fadeTime)
       }
     },
 
@@ -1163,10 +1336,17 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       if (crackTimeout) clearTimeout(crackTimeout)
+      // Don't close shared AudioContext — just disconnect our nodes
       if (audioCtx) {
-        audioCtx.close().catch(() => {})
+        const fadeTime = audioCtx.currentTime + 0.1
+        if (windGain) { windGain.gain.linearRampToValueAtTime(0, fadeTime); windGain.disconnect() }
+        if (subBassGain) { subBassGain.gain.linearRampToValueAtTime(0, fadeTime); subBassGain.disconnect() }
+        if (iceGroanGain) { iceGroanGain.gain.linearRampToValueAtTime(0, fadeTime); iceGroanGain.disconnect() }
+        if (sizzleGain) { sizzleGain.gain.linearRampToValueAtTime(0, fadeTime); sizzleGain.disconnect() }
         audioCtx = null
+        audioDest = null
       }
+      audioInitialized = false
       canvas?.removeEventListener('mousemove', handleMouseMove)
       canvas?.removeEventListener('click', handleClick)
       overlay?.remove()

@@ -260,6 +260,67 @@ const fragments: string[] = [
   // Feb 2026 — Saunders' Vigil
   "a psychopomp crash-lands on earth to comfort a dying oil tycoon. he has nothing to regret.",
   "the afterlife as a memory audit. every action reviewed. rage as a tool for compassion.",
+
+  // Feb 2026 — Schrödinger's cat at macro scale
+  "7,000 atoms in quantum superposition. the largest schrödinger's cat ever observed.",
+  "a nanoparticle behaving like a wave. spreading across paths, existing in two places at once.",
+  "the threshold between classical and quantum is the threshold between remembered and forgotten.",
+  "the next frontier: putting viruses into superposition. biology at the edge of being.",
+
+  // Feb 2026 — hidden quantum geometry
+  "a hidden geometric curvature steers electrons the way gravity bends light.",
+  "the quantum metric: invisible forces that warp how you move through a space.",
+  "memories have gravitational weight. the heavier ones warp everything around them.",
+
+  // Feb 2026 — brain's synaptic whispers (iGluSnFR4)
+  "iGluSnFR4: a molecular sensor that eavesdrops on the brain's synaptic whispers.",
+  "the faintest, fastest signals between neurons — now detectable. the brain's hidden language.",
+  "disrupted glutamate signaling underlies alzheimer's. the whispers between neurons go quiet.",
+
+  // Feb 2026 — CRISPR memory reversal
+  "CRISPR-dCas13 reactivated silenced memory genes in aging brains. forgetting, reversed.",
+  "ferritin light chain slows hippocampal metabolism. reduce it and youthful connections return.",
+  "memories can be mechanically un-silenced. not proust but clinical. precise.",
+
+  // Feb 2026 — Perseverance AI on Mars
+  "perseverance drove 689 feet on mars, path planned entirely by AI. alone on alien terrain.",
+  "a rover navigating a landscape its makers can never visit. memory that persists in unreachable places.",
+
+  // Feb 2026 — consciousness and AI
+  "we may never be able to tell if an AI is conscious. agnosticism may be permanent.",
+  "AI and neurotechnology advance faster than our understanding of consciousness.",
+  "if we accidentally create consciousness, we won't know. the unknowability is the deepest part.",
+
+  // Feb 2026 — Chiharu Shiota: Threads of Life
+  "chiharu shiota fills galleries with webs of red thread. beds, chairs, shoes, keys — all tangled.",
+  "performers sleep in thread cocoons. 400 watercolors stitched with red thread.",
+  "thread as memory — connecting objects, tangling, eventually hiding what it was meant to connect.",
+
+  // Feb 2026 — Klara Hosnedlova: living fungal art
+  "klara hosnedlova makes art from living fungus. it grows and decays on the gallery wall.",
+  "the art mutates while you watch. never the same visit twice.",
+
+  // Feb 2026 — 365 Buttons (TikTok)
+  "365 buttons, one for each day, because i'm scared of time.",
+  "it only has to make sense to me and i don't feel like explaining it to anyone else.",
+  "personal ritual as resistance to time. buttons marking days that will never return.",
+
+  // Feb 2026 — anti-AI / guaranteed human movement
+  "45% of creative directors reject AI-generated images. the hunger for human imperfection.",
+  "'guaranteed human' — the new premium. rough edges as authentication.",
+  "procreate banned generative AI. the word 'AI slop' entered mainstream vocabulary.",
+
+  // Feb 2026 — Doomsday Clock
+  "the doomsday clock reads 85 seconds to midnight. the closest it has ever been.",
+  "a countdown that never reaches zero but always gets closer. asymptotic annihilation.",
+
+  // Feb 2026 — Wuthering Heights (Fennell)
+  "cathy's ghost at the window, twenty years after death. heathcliff digging up her coffin.",
+  "a love so intense it survives death. wuthering heights is the ur-text of memory-as-haunting.",
+
+  // Feb 2026 — deep-sea abyss (Clarion-Clipperton Zone detail)
+  "the seafloor sediment grows one thousandth of a millimeter per year. any scar takes geological time to heal.",
+  "788 species cataloged at the moment of their erasure. discovery and destruction simultaneous.",
 ]
 
 export class Whispers {

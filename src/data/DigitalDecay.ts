@@ -123,6 +123,16 @@ const DECAY_MEDITATIONS = [
   'betelgeuse has a hidden companion star. known only by the wake it leaves in the atmosphere.',
   'alerce trees can live 3,600 years. this winter in patagonia, they burned.',
   'we are always remembering the present. we never experience it directly.',
+  '7,000 atoms in superposition. the boundary between quantum and classical is the boundary between forgotten and remembered.',
+  'a hidden geometry bends electrons like gravity bends light. invisible forces warping the space of memory.',
+  'iGluSnFR4 eavesdrops on synaptic whispers. the brain talks to itself and now we can hear it.',
+  'CRISPR reactivated silenced memory genes. forgetting is reversible at the molecular level.',
+  'perseverance drove 689 feet on mars, path planned by AI. memories persisting in places we cannot reach.',
+  'chiharu shiota fills galleries with red thread. connection as art. entanglement as beauty.',
+  '365 buttons, one for each day. personal ritual against time. it only has to make sense to you.',
+  'the doomsday clock reads 85 seconds. a countdown that asymptotically approaches zero.',
+  'we may never know if an AI is conscious. the unknowability is not a failure. it is the condition.',
+  'the anti-AI movement: rough edges as authentication. imperfection as proof of humanity.',
 ]
 
 export class DigitalDecay {

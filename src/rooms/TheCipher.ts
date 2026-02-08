@@ -27,6 +27,17 @@ interface CipherDeps {
 
 const STORAGE_KEY = 'oubli-cipher-progress'
 
+const CULTURAL_INSCRIPTIONS = [
+  'the enigma machine had 158,962,555,217,826,360,000 possible settings. bletchley park tried them all.',
+  'the voynich manuscript has resisted decryption for 600 years. some codes are meant to stay locked.',
+  "the zodiac killer's 340 cipher took 51 years to crack. the answer was disappointingly banal.",
+  'edward snowden proved that every message is being read. encryption is the last privacy.',
+  'quantum computers will break RSA encryption. post-quantum cryptography is already being deployed.',
+  "iGluSnFR4: a molecular sensor that eavesdrops on the brain's synaptic whispers in real time",
+  "the brain's memory center has four hidden layers. 330,000 RNA molecules map the architecture of remembering.",
+  'CRISPR can now silence genes without cutting them. memories can be mechanically un-silenced.',
+]
+
 interface CipherPuzzle {
   plaintext: string
   shift: number
@@ -161,6 +172,34 @@ export function createCipherRoom(deps?: CipherDeps): Room {
   // Track which characters have pinged (to avoid re-triggering)
   let pingedChars: Set<string> = new Set() // key: "puzzleIdx-charIdx"
 
+  // Mouse position for ghost label proximity glow
+  let mouseX = 0
+  let mouseY = 0
+
+  // Ghost label effective alpha (for smooth transitions)
+  let ghostLabelAlphas: number[] = ghostLabels.map(() => 0.05)
+
+  // Cultural inscription cycling
+  let currentInscriptionIdx = 0
+  let inscriptionTimer = 0
+
+  // Decryption particle burst
+  interface DecryptionParticle {
+    x: number
+    y: number
+    life: number // 0..1, starts at 1
+    vx: number
+    vy: number
+    size: number
+  }
+  let decryptionParticles: DecryptionParticle[] = []
+
+  // Enhanced audio nodes
+  let enigmaOsc2: OscillatorNode | null = null
+  let enigmaGain2: GainNode | null = null
+  let noiseSource: AudioBufferSourceNode | null = null
+  let noiseGain: GainNode | null = null
+
   // --- Visual: ink fade-in ---
   let inkFadeStartTime = 0 // time when current puzzle started
   let lastRenderedPuzzle = -1
@@ -194,6 +233,37 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       enigmaGain.connect(audioMaster)
       enigmaOsc.start()
 
+      // Second oscillator detuned by 0.5Hz for beating effect
+      enigmaOsc2 = ac.createOscillator()
+      enigmaOsc2.type = 'triangle'
+      enigmaOsc2.frequency.value = 100.5
+      enigmaGain2 = ac.createGain()
+      enigmaGain2.gain.value = 0.01
+      enigmaOsc2.connect(enigmaGain2)
+      enigmaGain2.connect(audioMaster)
+      enigmaOsc2.start()
+
+      // Filtered noise layer — mechanical hum texture
+      const noiseLen = 2 * ac.sampleRate
+      const noiseBuffer = ac.createBuffer(1, noiseLen, ac.sampleRate)
+      const noiseData = noiseBuffer.getChannelData(0)
+      for (let i = 0; i < noiseLen; i++) {
+        noiseData[i] = Math.random() * 2 - 1
+      }
+      noiseSource = ac.createBufferSource()
+      noiseSource.buffer = noiseBuffer
+      noiseSource.loop = true
+      const noiseBP = ac.createBiquadFilter()
+      noiseBP.type = 'bandpass'
+      noiseBP.frequency.value = 400
+      noiseBP.Q.value = 3
+      noiseGain = ac.createGain()
+      noiseGain.gain.value = 0.006
+      noiseSource.connect(noiseBP)
+      noiseBP.connect(noiseGain)
+      noiseGain.connect(audioMaster)
+      noiseSource.start()
+
       audioInitialized = true
     } catch {
       // Audio not available — silent fallback
@@ -222,42 +292,76 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     fadeAudioOut()
     setTimeout(() => {
       try { enigmaOsc?.stop() } catch { /* already stopped */ }
+      try { enigmaOsc2?.stop() } catch { /* already stopped */ }
+      try { noiseSource?.stop() } catch { /* already stopped */ }
       enigmaGain?.disconnect()
       enigmaOsc?.disconnect()
+      enigmaGain2?.disconnect()
+      enigmaOsc2?.disconnect()
+      noiseGain?.disconnect()
+      noiseSource?.disconnect()
       audioMaster?.disconnect()
       enigmaOsc = null
       enigmaGain = null
+      enigmaOsc2 = null
+      enigmaGain2 = null
+      noiseSource = null
+      noiseGain = null
       audioMaster = null
       audioInitialized = false
     }, 600)
   }
 
-  /** Shift click: mechanical rotor sound — 5ms noise burst through bandpass */
+  /** Shift click: mechanical ratchet sound — layered noise burst like a gear clicking into position */
   function playShiftClick() {
     if (!audioInitialized || !audioMaster) return
     try {
-      const ac = audioMaster.context
+      const ac = audioMaster.context as AudioContext
       const now = ac.currentTime
-      const bufferSize = Math.max(1, Math.round(ac.sampleRate * 0.005))
-      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
-      const data = buffer.getChannelData(0)
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1
+
+      // Layer 1: sharp high click (very short, bandpass at 2500Hz)
+      const clickLen = Math.max(1, Math.round(ac.sampleRate * 0.004))
+      const clickBuf = ac.createBuffer(1, clickLen, ac.sampleRate)
+      const clickData = clickBuf.getChannelData(0)
+      for (let i = 0; i < clickLen; i++) {
+        clickData[i] = Math.random() * 2 - 1
       }
-      const src = ac.createBufferSource()
-      src.buffer = buffer
-      const bp = ac.createBiquadFilter()
-      bp.type = 'bandpass'
-      bp.frequency.value = 1500
-      bp.Q.value = 2
-      const g = ac.createGain()
-      g.gain.setValueAtTime(0.04, now)
-      g.gain.exponentialRampToValueAtTime(0.001, now + 0.02)
-      src.connect(bp)
-      bp.connect(g)
-      g.connect(audioMaster)
-      src.start(now)
-      src.stop(now + 0.02)
+      const clickSrc = ac.createBufferSource()
+      clickSrc.buffer = clickBuf
+      const clickBP = ac.createBiquadFilter()
+      clickBP.type = 'bandpass'
+      clickBP.frequency.value = 2500
+      clickBP.Q.value = 4
+      const clickG = ac.createGain()
+      clickG.gain.setValueAtTime(0.06, now)
+      clickG.gain.exponentialRampToValueAtTime(0.001, now + 0.015)
+      clickSrc.connect(clickBP)
+      clickBP.connect(clickG)
+      clickG.connect(audioMaster!)
+      clickSrc.start(now)
+      clickSrc.stop(now + 0.02)
+
+      // Layer 2: low thunk (mechanical body resonance, bandpass at 300Hz)
+      const thunkLen = Math.max(1, Math.round(ac.sampleRate * 0.02))
+      const thunkBuf = ac.createBuffer(1, thunkLen, ac.sampleRate)
+      const thunkData = thunkBuf.getChannelData(0)
+      for (let i = 0; i < thunkLen; i++) {
+        thunkData[i] = Math.random() * 2 - 1
+      }
+      const thunkSrc = ac.createBufferSource()
+      thunkSrc.buffer = thunkBuf
+      const thunkBP = ac.createBiquadFilter()
+      thunkBP.type = 'bandpass'
+      thunkBP.frequency.value = 300
+      thunkBP.Q.value = 2
+      const thunkG = ac.createGain()
+      thunkG.gain.setValueAtTime(0.03, now)
+      thunkG.gain.exponentialRampToValueAtTime(0.001, now + 0.04)
+      thunkSrc.connect(thunkBP)
+      thunkBP.connect(thunkG)
+      thunkG.connect(audioMaster!)
+      thunkSrc.start(now)
+      thunkSrc.stop(now + 0.05)
     } catch { /* ignore */ }
   }
 
@@ -441,6 +545,71 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     grad.addColorStop(1, 'rgba(100, 200, 100, 0)')
     c.fillStyle = grad
     c.fillRect(x - 10, y - 10, 20, 20)
+  }
+
+  /** Spawn a burst of green particles at (x, y). Count scales with proximity to solution. */
+  function spawnDecryptionParticles(x: number, y: number, count: number) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 0.3 + Math.random() * 1.2
+      decryptionParticles.push({
+        x,
+        y,
+        life: 1,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 0.5, // slight upward bias
+        size: 2 + Math.random() * 2,
+      })
+    }
+  }
+
+  function updateAndDrawParticles(c: CanvasRenderingContext2D) {
+    for (let i = decryptionParticles.length - 1; i >= 0; i--) {
+      const p = decryptionParticles[i]
+      p.x += p.vx
+      p.y += p.vy
+      p.life -= 0.03
+      if (p.life <= 0) {
+        decryptionParticles.splice(i, 1)
+        continue
+      }
+      const alpha = p.life * 0.6
+      c.fillStyle = `rgba(80, 220, 80, ${alpha})`
+      c.beginPath()
+      c.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2)
+      c.fill()
+    }
+  }
+
+  function drawCulturalInscription(c: CanvasRenderingContext2D, w: number, h: number) {
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 20) {
+      inscriptionTimer = 0
+      currentInscriptionIdx = (currentInscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    const text = CULTURAL_INSCRIPTIONS[currentInscriptionIdx]
+    c.font = '11px "Cormorant Garamond", serif'
+    c.textAlign = 'center'
+    c.fillStyle = 'rgba(200, 180, 140, 0.045)'
+    // Wrap long inscriptions
+    const maxW = w * 0.8
+    const words = text.split(' ')
+    const lines: string[] = []
+    let current = ''
+    for (const word of words) {
+      const test = current ? current + ' ' + word : word
+      if (c.measureText(test).width > maxW) {
+        lines.push(current)
+        current = word
+      } else {
+        current = test
+      }
+    }
+    if (current) lines.push(current)
+    const baseY = h - 55
+    for (let i = 0; i < lines.length; i++) {
+      c.fillText(lines[i], w / 2, baseY + i * 14)
+    }
   }
 
   // --- Core ---
@@ -639,11 +808,19 @@ export function createCipherRoom(deps?: CipherDeps): Room {
             drawCharGlow(ctx, charX + 6, y - 5)
             ctx.fillStyle = 'rgba(100, 200, 100, 0.4)'
 
-            // Audio ping for newly matched characters
+            // Audio ping + particle burst for newly matched characters
             const pingKey = `${currentPuzzle}-${globalIdx}`
             if (!pingedChars.has(pingKey)) {
               pingedChars.add(pingKey)
               playCharPing()
+              // Particle burst — count scales with proximity to solution
+              const shiftDist = Math.min(
+                Math.abs(currentShift - puzzle.shift),
+                26 - Math.abs(currentShift - puzzle.shift)
+              )
+              // Closer to solution = more particles (1-5 range)
+              const particleCount = shiftDist <= 2 ? 5 : shiftDist <= 5 ? 3 : 1
+              spawnDecryptionParticles(charX + 6, y - 5, particleCount)
             }
           } else {
             ctx.fillStyle = 'rgba(200, 100, 80, 0.25)'
@@ -655,6 +832,9 @@ export function createCipherRoom(deps?: CipherDeps): Room {
         ctx.fillText(line[ci], charX + 6, y)
       }
     }
+
+    // Draw decryption particles
+    updateAndDrawParticles(ctx)
 
     // Hint
     ctx.font = '13px "Cormorant Garamond", serif'
@@ -677,11 +857,19 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       }
     }
 
-    // Ghost labels — barely visible room names scattered at edges
+    // Ghost labels — room names scattered at edges with proximity glow
     if (deps?.switchTo) {
-      for (const gl of ghostLabels) {
+      for (let gi = 0; gi < ghostLabels.length; gi++) {
+        const gl = ghostLabels[gi]
         const gx = w * gl.xFrac
         const gy = h * gl.yFrac
+
+        // Proximity glow: brighten when cursor is within 100px
+        const dist = Math.sqrt((mouseX - gx) ** 2 + (mouseY - gy) ** 2)
+        const targetAlpha = dist < 100 ? 0.12 : 0.05
+        // Smooth ease: lerp toward target (~0.5s at 60fps)
+        ghostLabelAlphas[gi] += (targetAlpha - ghostLabelAlphas[gi]) * 0.04
+
         ctx.save()
         ctx.translate(gx, gy)
         ctx.rotate(gl.angle)
@@ -689,7 +877,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
         const ghostShift = Math.floor(time * 0.3) % 26
         const encryptedGhost = encrypt(gl.text, ghostShift)
         ctx.font = '12px monospace'
-        ctx.fillStyle = 'rgba(200, 180, 140, 0.02)'
+        ctx.fillStyle = `rgba(200, 180, 140, ${ghostLabelAlphas[gi]})`
         ctx.textAlign = gl.xFrac < 0.5 ? 'left' : 'right'
         ctx.fillText(encryptedGhost, 0, 0)
         ctx.restore()
@@ -745,6 +933,9 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       ctx.textAlign = 'center'
       ctx.fillText('type a destination...', w / 2, h - 22)
     }
+
+    // Cultural inscription — cycling every 20 seconds near bottom
+    drawCulturalInscription(ctx, w, h)
 
     // Controls hint
     ctx.font = '12px "Cormorant Garamond", serif'
@@ -874,6 +1065,10 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       ctx = canvas.getContext('2d')
 
       canvas.addEventListener('click', handleClick)
+      canvas.addEventListener('mousemove', (e: MouseEvent) => {
+        mouseX = e.clientX
+        mouseY = e.clientY
+      })
 
       window.addEventListener('keydown', handleKey)
 
@@ -900,6 +1095,10 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       lastRenderedPuzzle = -1
       inkFadeStartTime = 0
       wheelAngle = 0
+      decryptionParticles = []
+      inscriptionTimer = 0
+      currentInscriptionIdx = 0
+      ghostLabelAlphas = ghostLabels.map(() => 0.05)
       loadProgress()
       initCodeColumns()
       initAudio().then(() => fadeAudioIn())

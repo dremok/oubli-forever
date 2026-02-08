@@ -137,7 +137,7 @@ export const ROOM_GRAPH: RoomNode[] = [
   { name: 'midnight', label: 'the midnight', hidden: true,
     connections: ['clocktower'] },
   { name: 'mirror', label: 'the mirror', hidden: true,
-    connections: ['darkroom', 'datepaintings'] },
+    connections: ['darkroom', 'datepaintings', 'between', 'projection'] },
 ]
 
 // Lookup helpers
