@@ -20,6 +20,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface Creature {
   x: number
@@ -67,6 +68,18 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let gardenLink: HTMLElement | null = null
   let gardenLinkVisible = false
 
+  // Audio state
+  let ac: AudioContext | null = null
+  let audioReady = false
+  let ambientNoiseSource: AudioBufferSourceNode | null = null
+  let ambientGain: GainNode | null = null
+  let pulseOsc: OscillatorNode | null = null
+  let pulseGain: GainNode | null = null
+  let pulseInterval: ReturnType<typeof setInterval> | null = null
+
+  // Creature trails: map from creature index to array of past positions
+  let creatureTrails: Map<Creature, { x: number; y: number }[]> = new Map()
+
   // Swarm migration zones — creatures discover the exits
   const migrationZones = [
     { wall: 'left', room: 'garden', hint: 'they sense the garden beyond...' },
@@ -85,11 +98,191 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let shatterTime = 0
   let shatterParticles: { x: number; y: number; vx: number; vy: number; life: number; size: number }[] = []
 
+  // --- Audio functions ---
+
+  function initAudio() {
+    getAudioContext().then((context) => {
+      if (!active) return
+      ac = context
+      audioReady = true
+      try {
+        const dest = getAudioDestination()
+
+        // Ambient hum: filtered noise (glass enclosure sound)
+        const bufferSize = ac.sampleRate * 2
+        const noiseBuffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+        const noiseData = noiseBuffer.getChannelData(0)
+        for (let i = 0; i < bufferSize; i++) {
+          noiseData[i] = (Math.random() * 2 - 1)
+        }
+        ambientNoiseSource = ac.createBufferSource()
+        ambientNoiseSource.buffer = noiseBuffer
+        ambientNoiseSource.loop = true
+
+        const bandpass = ac.createBiquadFilter()
+        bandpass.type = 'bandpass'
+        bandpass.frequency.value = 400
+        bandpass.Q.value = 1.5
+
+        ambientGain = ac.createGain()
+        ambientGain.gain.value = 0
+        ambientGain.gain.setTargetAtTime(0.008, ac.currentTime, 2.0)
+
+        ambientNoiseSource.connect(bandpass)
+        bandpass.connect(ambientGain)
+        ambientGain.connect(dest)
+        ambientNoiseSource.start(ac.currentTime)
+
+        // Population pulse oscillator
+        pulseOsc = ac.createOscillator()
+        pulseOsc.type = 'sine'
+        pulseOsc.frequency.value = 80
+        pulseGain = ac.createGain()
+        pulseGain.gain.value = 0
+        pulseOsc.connect(pulseGain)
+        pulseGain.connect(dest)
+        pulseOsc.start(ac.currentTime)
+
+        // Pulse scheduler — pulses based on population
+        startPopulationPulse()
+      } catch (_) { /* audio node creation can fail */ }
+    }).catch(() => { /* audio init failed, room still works silently */ })
+  }
+
+  function startPopulationPulse() {
+    if (pulseInterval) clearInterval(pulseInterval)
+    pulseInterval = setInterval(() => {
+      if (!ac || !pulseGain || !audioReady) return
+      try {
+        const pop = creatures.length
+        if (pop === 0) return
+        // Pulse rate: more creatures = faster pulse (200ms to 800ms interval)
+        const now = ac.currentTime
+        pulseGain.gain.setTargetAtTime(0.005, now, 0.005)
+        pulseGain.gain.setTargetAtTime(0, now + 0.01, 0.005)
+      } catch (_) { /* */ }
+    }, 400) // base interval, adjusted dynamically below
+  }
+
+  function updatePulseRate() {
+    if (!pulseInterval) return
+    clearInterval(pulseInterval)
+    const pop = creatures.length
+    // Map population 0-80 to interval 800ms-200ms
+    const interval = Math.max(200, 800 - pop * 8)
+    pulseInterval = setInterval(() => {
+      if (!ac || !pulseGain || !audioReady) return
+      try {
+        if (creatures.length === 0) return
+        const now = ac.currentTime
+        pulseGain.gain.setTargetAtTime(0.005, now, 0.005)
+        pulseGain.gain.setTargetAtTime(0, now + 0.01, 0.005)
+      } catch (_) { /* */ }
+    }, interval)
+  }
+
+  function playChirp(hue: number) {
+    if (!ac || !audioReady) return
+    try {
+      const dest = getAudioDestination()
+      const osc = ac.createOscillator()
+      const gain = ac.createGain()
+      osc.type = 'sine'
+      // Map hue 0-360 to frequency 200-800Hz
+      osc.frequency.value = 200 + (hue / 360) * 600
+      gain.gain.value = 0.01
+      osc.connect(gain)
+      gain.connect(dest)
+      const now = ac.currentTime
+      osc.start(now)
+      gain.gain.setTargetAtTime(0, now + 0.015, 0.005)
+      osc.stop(now + 0.05)
+    } catch (_) { /* */ }
+  }
+
+  function playReproductionPop() {
+    if (!ac || !audioReady) return
+    try {
+      const dest = getAudioDestination()
+      const osc = ac.createOscillator()
+      const gain = ac.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = 440
+      gain.gain.value = 0.015
+      osc.connect(gain)
+      gain.connect(dest)
+      const now = ac.currentTime
+      osc.start(now)
+      osc.frequency.setValueAtTime(660, now + 0.005)
+      gain.gain.setTargetAtTime(0, now + 0.008, 0.002)
+      osc.stop(now + 0.03)
+    } catch (_) { /* */ }
+  }
+
+  function playDeathSigh() {
+    if (!ac || !audioReady) return
+    try {
+      const dest = getAudioDestination()
+      const osc = ac.createOscillator()
+      const gain = ac.createGain()
+      const lowpass = ac.createBiquadFilter()
+      lowpass.type = 'lowpass'
+      lowpass.frequency.value = 400
+      osc.type = 'sine'
+      osc.frequency.value = 300
+      gain.gain.value = 0.008
+      osc.connect(lowpass)
+      lowpass.connect(gain)
+      gain.connect(dest)
+      const now = ac.currentTime
+      osc.start(now)
+      osc.frequency.linearRampToValueAtTime(100, now + 0.2)
+      gain.gain.setTargetAtTime(0, now + 0.15, 0.03)
+      osc.stop(now + 0.3)
+    } catch (_) { /* */ }
+  }
+
+  function cleanupAudio(fadeTime = 0.5) {
+    audioReady = false
+    if (pulseInterval) {
+      clearInterval(pulseInterval)
+      pulseInterval = null
+    }
+    if (!ac) return
+    const now = ac.currentTime
+    if (ambientGain) {
+      try { ambientGain.gain.setTargetAtTime(0, now, fadeTime * 0.3) } catch (_) { /* */ }
+    }
+    if (ambientNoiseSource) {
+      try { ambientNoiseSource.stop(now + fadeTime + 0.1) } catch (_) { /* */ }
+    }
+    if (pulseGain) {
+      try { pulseGain.gain.setTargetAtTime(0, now, fadeTime * 0.3) } catch (_) { /* */ }
+    }
+    if (pulseOsc) {
+      try { pulseOsc.stop(now + fadeTime + 0.1) } catch (_) { /* */ }
+    }
+  }
+
+  function destroyAudio() {
+    cleanupAudio(0)
+    try { ambientNoiseSource?.disconnect() } catch (_) { /* */ }
+    try { ambientGain?.disconnect() } catch (_) { /* */ }
+    try { pulseOsc?.disconnect() } catch (_) { /* */ }
+    try { pulseGain?.disconnect() } catch (_) { /* */ }
+    ambientNoiseSource = null
+    ambientGain = null
+    pulseOsc = null
+    pulseGain = null
+    ac = null
+  }
+
   function init() {
     if (!canvas) return
     creatures = []
     food = []
     deathParticles = []
+    creatureTrails = new Map()
     totalBorn = 0
     totalDied = 0
     maxGeneration = 0
@@ -192,6 +385,7 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
         if (dist < c.size + nearestFood.size) {
           c.energy += nearestFood.energy
           food.splice(food.indexOf(nearestFood), 1)
+          playChirp(c.hue)
         }
       } else {
         // Wander
@@ -239,7 +433,17 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
           c.generation + 1,
           c.hue,
         ))
+        playReproductionPop()
       }
+
+      // Update creature trail
+      let trail = creatureTrails.get(c)
+      if (!trail) {
+        trail = []
+        creatureTrails.set(c, trail)
+      }
+      trail.push({ x: c.x, y: c.y })
+      if (trail.length > 8) trail.shift()
     }
 
     creatures.push(...newCreatures)
@@ -248,6 +452,8 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     creatures = creatures.filter(c => {
       if (c.energy <= 0 || c.age > c.maxAge) {
         totalDied++
+        playDeathSigh()
+        creatureTrails.delete(c)
         // Death particles
         for (let i = 0; i < 5; i++) {
           deathParticles.push({
@@ -381,6 +587,11 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
         if (deps.switchTo) deps.switchTo(targetRoom)
       }
     }
+
+    // Update population pulse rate every ~60 frames
+    if (Math.round(time * 60) % 60 === 0) {
+      updatePulseRate()
+    }
   }
 
   function render() {
@@ -407,13 +618,48 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     ctx.lineWidth = 1
     ctx.strokeRect(18, 18, w - 36, h - 36)
 
+    // Glass reflection stripes — diagonal light catching
+    ctx.save()
+    const reflectionAlpha = 0.015 + Math.sin(time * 0.2) * 0.005
+    for (let stripe = 0; stripe < 3; stripe++) {
+      const offset = w * 0.2 + stripe * w * 0.25
+      const grad = ctx.createLinearGradient(
+        offset - 30, 0,
+        offset + 30, 0,
+      )
+      grad.addColorStop(0, 'transparent')
+      grad.addColorStop(0.5, `rgba(180, 220, 180, ${reflectionAlpha})`)
+      grad.addColorStop(1, 'transparent')
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.moveTo(offset - 15, 15)
+      ctx.lineTo(offset + 15, 15)
+      ctx.lineTo(offset - 25 + 15, h - 15)
+      ctx.lineTo(offset - 25 - 15, h - 15)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.restore()
+
     // Soil line
     ctx.fillStyle = 'rgba(40, 30, 20, 0.15)'
     ctx.fillRect(20, h * 0.85, w - 40, h * 0.15 - 15)
 
-    // Draw food
+    // Draw food with warm glow
     for (const f of food) {
       const alpha = 0.3 * f.growth
+
+      // Outer warm glow
+      const warmGlow = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size * 4)
+      warmGlow.addColorStop(0, `rgba(140, 200, 60, ${alpha * 0.3})`)
+      warmGlow.addColorStop(0.5, `rgba(100, 180, 40, ${alpha * 0.1})`)
+      warmGlow.addColorStop(1, 'transparent')
+      ctx.fillStyle = warmGlow
+      ctx.beginPath()
+      ctx.arc(f.x, f.y, f.size * 4, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Inner glow
       const glow = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size * 2)
       glow.addColorStop(0, `rgba(80, 200, 60, ${alpha})`)
       glow.addColorStop(1, 'transparent')
@@ -422,10 +668,27 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       ctx.arc(f.x, f.y, f.size * 2, 0, Math.PI * 2)
       ctx.fill()
 
+      // Core
       ctx.fillStyle = `rgba(80, 200, 60, ${alpha * 1.5})`
       ctx.beginPath()
       ctx.arc(f.x, f.y, f.size * f.growth, 0, Math.PI * 2)
       ctx.fill()
+    }
+
+    // Draw creature trails
+    for (const c of creatures) {
+      const trail = creatureTrails.get(c)
+      if (trail && trail.length > 1) {
+        const ageRatio = c.age / c.maxAge
+        const sat = Math.max(20, 60 - ageRatio * 40)
+        for (let i = 0; i < trail.length - 1; i++) {
+          const trailAlpha = (i / trail.length) * 0.08
+          ctx.fillStyle = `hsla(${c.hue}, ${sat}%, 55%, ${trailAlpha})`
+          ctx.beginPath()
+          ctx.arc(trail[i].x, trail[i].y, c.size * 0.4, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
     }
 
     // Draw creatures
@@ -750,17 +1013,20 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
         gardenLink.style.pointerEvents = 'none'
       }
       init()
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      cleanupAudio(0.5)
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
       overlay?.remove()
     },
   }

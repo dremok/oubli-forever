@@ -22,6 +22,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface DarkroomDeps {
   getMemories: () => StoredMemory[]
@@ -39,11 +40,41 @@ interface DevelopedPrint {
 const STORAGE_KEY = 'oubli-darkroom-prints'
 const MAX_PRINTS = 12
 
+interface DustMote {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  size: number
+  alpha: number
+}
+
 export function createDarkroomRoom(deps: DarkroomDeps): Room {
   let overlay: HTMLElement | null = null
   let active = false
   let developing = false
   let prints: DevelopedPrint[] = loadPrints()
+
+  // --- Audio state ---
+  let audioInitialized = false
+  let audioMaster: GainNode | null = null
+  let droneOsc: OscillatorNode | null = null
+  let droneFilter: BiquadFilterNode | null = null
+  let droneGain: GainNode | null = null
+  let dripInterval: ReturnType<typeof setTimeout> | null = null
+  let tickInterval: ReturnType<typeof setInterval> | null = null
+  let revealOsc: OscillatorNode | null = null
+  let revealGain: GainNode | null = null
+
+  // --- Visual state ---
+  let safelightEl: HTMLElement | null = null
+  let rippleCanvas: HTMLCanvasElement | null = null
+  let rippleCtx: CanvasRenderingContext2D | null = null
+  let dustCanvas: HTMLCanvasElement | null = null
+  let dustCtx: CanvasRenderingContext2D | null = null
+  let dustMotes: DustMote[] = []
+  let ripples: { x: number; y: number; r: number; maxR: number; alpha: number }[] = []
+  let animFrameId = 0
 
   function loadPrints(): DevelopedPrint[] {
     try {
@@ -66,6 +97,355 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(prints))
     } catch { /* */ }
+  }
+
+  // === AUDIO SYSTEM ===
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // Darkroom ambience: triangle wave 50Hz through lowpass 100Hz
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'triangle'
+      droneOsc.frequency.value = 50
+
+      droneFilter = ac.createBiquadFilter()
+      droneFilter.type = 'lowpass'
+      droneFilter.frequency.value = 100
+      droneFilter.Q.value = 0.7
+
+      droneGain = ac.createGain()
+      droneGain.gain.value = 0
+
+      droneOsc.connect(droneFilter)
+      droneFilter.connect(droneGain)
+      droneGain.connect(audioMaster)
+      droneOsc.start()
+
+      audioInitialized = true
+
+      // Fade master in
+      const now = ac.currentTime
+      audioMaster.gain.setValueAtTime(0, now)
+      audioMaster.gain.linearRampToValueAtTime(1, now + 2)
+
+      // Fade drone in
+      droneGain.gain.setValueAtTime(0, now)
+      droneGain.gain.linearRampToValueAtTime(0.01, now + 3)
+
+      // Start water drip loop
+      scheduleDrip()
+    } catch {
+      // Audio not available — degrade gracefully
+    }
+  }
+
+  function scheduleDrip() {
+    if (!active) return
+    const delay = 4000 + Math.random() * 6000 // 4-10 seconds
+    dripInterval = setTimeout(() => {
+      playDrip()
+      scheduleDrip()
+    }, delay)
+  }
+
+  function playDrip() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+
+      // Short filtered noise burst — bandpass 2000Hz
+      const bufferSize = Math.floor(ac.sampleRate * 0.01) // 10ms
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize) // decaying noise
+      }
+
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+
+      const filter = ac.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.value = 2000
+      filter.Q.value = 2
+
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0.02, now)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15)
+
+      // Simple reverb tail via delay + feedback
+      const delay = ac.createDelay(0.3)
+      delay.delayTime.value = 0.12 + Math.random() * 0.08
+      const fbGain = ac.createGain()
+      fbGain.gain.value = 0.25
+      const wetGain = ac.createGain()
+      wetGain.gain.value = 0.015
+
+      source.connect(filter)
+      filter.connect(gain)
+      gain.connect(audioMaster)
+
+      // Wet path
+      gain.connect(delay)
+      delay.connect(fbGain)
+      fbGain.connect(delay)
+      delay.connect(wetGain)
+      wetGain.connect(audioMaster)
+
+      source.start(now)
+      source.onended = () => {
+        source.disconnect()
+        filter.disconnect()
+        gain.disconnect()
+        // Let reverb tail ring out then disconnect
+        setTimeout(() => {
+          delay.disconnect()
+          fbGain.disconnect()
+          wetGain.disconnect()
+        }, 500)
+      }
+
+      // Spawn a visual ripple in the tray area
+      if (rippleCanvas) {
+        ripples.push({
+          x: rippleCanvas.width * (0.3 + Math.random() * 0.4),
+          y: rippleCanvas.height * (0.3 + Math.random() * 0.4),
+          r: 0,
+          maxR: 20 + Math.random() * 30,
+          alpha: 0.25,
+        })
+      }
+    } catch { /* ignore */ }
+  }
+
+  function startTimerTick() {
+    if (tickInterval || !audioInitialized || !audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    tickInterval = setInterval(() => {
+      if (!audioMaster || !active) return
+      try {
+        const now = ac.currentTime
+        // 3ms noise burst
+        const bufferSize = Math.floor(ac.sampleRate * 0.003)
+        const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1)
+        }
+        const source = ac.createBufferSource()
+        source.buffer = buffer
+        const gain = ac.createGain()
+        gain.gain.setValueAtTime(0.03, now)
+        gain.gain.linearRampToValueAtTime(0, now + 0.02)
+        source.connect(gain)
+        gain.connect(audioMaster)
+        source.start(now)
+        source.onended = () => { source.disconnect(); gain.disconnect() }
+      } catch { /* ignore */ }
+    }, 1000)
+  }
+
+  function stopTimerTick() {
+    if (tickInterval) {
+      clearInterval(tickInterval)
+      tickInterval = null
+    }
+  }
+
+  function playChemicalSplash() {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+
+      // 200ms filtered noise — bandpass sweep 500-1500Hz
+      const bufferSize = Math.floor(ac.sampleRate * 0.2)
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+
+      const filter = ac.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.setValueAtTime(500, now)
+      filter.frequency.linearRampToValueAtTime(1500, now + 0.1)
+      filter.frequency.linearRampToValueAtTime(800, now + 0.2)
+      filter.Q.value = 1.5
+
+      const gain = ac.createGain()
+      // Quick attack, slow decay
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.02, now + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4)
+
+      source.connect(filter)
+      filter.connect(gain)
+      gain.connect(audioMaster)
+      source.start(now)
+      source.onended = () => {
+        source.disconnect()
+        filter.disconnect()
+        gain.disconnect()
+      }
+    } catch { /* ignore */ }
+  }
+
+  function startRevealTone(durationMs: number) {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      const dur = durationMs / 1000
+
+      revealOsc = ac.createOscillator()
+      revealOsc.type = 'sine'
+      revealOsc.frequency.setValueAtTime(100, now)
+      revealOsc.frequency.linearRampToValueAtTime(200, now + dur)
+
+      revealGain = ac.createGain()
+      revealGain.gain.setValueAtTime(0, now)
+      revealGain.gain.linearRampToValueAtTime(0.01, now + dur * 0.2)
+      revealGain.gain.setValueAtTime(0.01, now + dur * 0.8)
+      revealGain.gain.linearRampToValueAtTime(0, now + dur)
+
+      revealOsc.connect(revealGain)
+      revealGain.connect(audioMaster)
+      revealOsc.start(now)
+      revealOsc.stop(now + dur + 0.1)
+      revealOsc.onended = () => {
+        revealOsc?.disconnect()
+        revealGain?.disconnect()
+        revealOsc = null
+        revealGain = null
+      }
+    } catch { /* ignore */ }
+  }
+
+  function stopRevealTone() {
+    if (revealOsc && revealGain) {
+      try {
+        const ac = revealOsc.context as AudioContext
+        const now = ac.currentTime
+        revealGain.gain.cancelScheduledValues(now)
+        revealGain.gain.setValueAtTime(revealGain.gain.value, now)
+        revealGain.gain.linearRampToValueAtTime(0, now + 0.2)
+        revealOsc.stop(now + 0.3)
+      } catch { /* ignore */ }
+    }
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+    stopTimerTick()
+    if (dripInterval) { clearTimeout(dripInterval); dripInterval = null }
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    stopRevealTone()
+    setTimeout(() => {
+      try { droneOsc?.stop() } catch { /* */ }
+      droneOsc?.disconnect()
+      droneFilter?.disconnect()
+      droneGain?.disconnect()
+      audioMaster?.disconnect()
+      droneOsc = null
+      droneFilter = null
+      droneGain = null
+      audioMaster = null
+      audioInitialized = false
+    }, 600)
+  }
+
+  // === VISUAL EFFECTS ===
+
+  function initDustMotes() {
+    dustMotes = []
+    for (let i = 0; i < 6; i++) {
+      dustMotes.push({
+        x: Math.random(),
+        y: Math.random(),
+        vx: (Math.random() - 0.5) * 0.0003,
+        vy: -0.0001 - Math.random() * 0.0002, // drift upward
+        size: 1 + Math.random() * 1.5,
+        alpha: 0.15 + Math.random() * 0.25,
+      })
+    }
+  }
+
+  function renderVisualEffects() {
+    if (!active) return
+    animFrameId = requestAnimationFrame(renderVisualEffects)
+
+    // Safelight flicker: 1-2% chance per frame
+    if (safelightEl && Math.random() < 0.015) {
+      const brightness = 0.6 + Math.random() * 0.8
+      safelightEl.style.opacity = String(brightness)
+      setTimeout(() => {
+        if (safelightEl) safelightEl.style.opacity = '1'
+      }, 50 + Math.random() * 100)
+    }
+
+    // Dust motes
+    if (dustCtx && dustCanvas) {
+      const dw = dustCanvas.width
+      const dh = dustCanvas.height
+      dustCtx.clearRect(0, 0, dw, dh)
+      for (const mote of dustMotes) {
+        mote.x += mote.vx
+        mote.y += mote.vy
+        // Wrap around
+        if (mote.y < -0.02) mote.y = 1.02
+        if (mote.x < -0.02) mote.x = 1.02
+        if (mote.x > 1.02) mote.x = -0.02
+
+        const px = mote.x * dw
+        const py = mote.y * dh
+        dustCtx.beginPath()
+        dustCtx.arc(px, py, mote.size, 0, Math.PI * 2)
+        dustCtx.fillStyle = `rgba(200, 80, 60, ${mote.alpha})`
+        dustCtx.fill()
+      }
+    }
+
+    // Chemical ripples
+    if (rippleCtx && rippleCanvas) {
+      const rw = rippleCanvas.width
+      const rh = rippleCanvas.height
+      rippleCtx.clearRect(0, 0, rw, rh)
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rip = ripples[i]
+        rip.r += 0.4
+        rip.alpha *= 0.985
+        if (rip.alpha < 0.01 || rip.r > rip.maxR) {
+          ripples.splice(i, 1)
+          continue
+        }
+        rippleCtx.beginPath()
+        rippleCtx.arc(rip.x, rip.y, rip.r, 0, Math.PI * 2)
+        rippleCtx.strokeStyle = `rgba(200, 80, 60, ${rip.alpha})`
+        rippleCtx.lineWidth = 0.5
+        rippleCtx.stroke()
+      }
+    }
   }
 
   function getRandomMemoryPrompt(): string {
@@ -334,6 +714,9 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     if (developing) return
     developing = true
 
+    // Chemical splash sound — print enters the tray
+    playChemicalSplash()
+
     // Phase 1: Darkness
     statusEl.textContent = 'exposing...'
     statusEl.style.color = 'rgba(200, 100, 100, 0.4)'
@@ -363,11 +746,15 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     await new Promise(r => setTimeout(r, 1500))
     statusEl.textContent = 'developing...'
 
+    // Start timer tick during development
+    startTimerTick()
+
     const imageUrl = generateProceduralPrint(prompt)
 
-    // Phase 3: Image slowly appears
+    // Phase 3: Image slowly appears — start reveal tone (~6.6s total reveal time)
     await new Promise(r => setTimeout(r, 500))
     statusEl.textContent = 'image emerging...'
+    startRevealTone(6600)
 
     const img = new Image()
     img.src = imageUrl
@@ -394,6 +781,10 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     img.style.opacity = '1'
     img.style.filter = 'contrast(100%) brightness(100%) blur(0px)'
     statusEl.textContent = 'print developed'
+
+    // Stop timer tick and reveal tone — development complete
+    stopTimerTick()
+    stopRevealTone()
 
     // Save to gallery
     const print: DevelopedPrint = {
@@ -465,15 +856,28 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       overlay.classList.add('darkroom-scroll')
 
       // Safelight glow — red ambient light at top
-      const safelight = document.createElement('div')
-      safelight.style.cssText = `
+      safelightEl = document.createElement('div')
+      safelightEl.style.cssText = `
         position: absolute; top: -50px; left: 50%;
         transform: translateX(-50%);
         width: 300px; height: 200px;
         background: radial-gradient(ellipse, rgba(180, 40, 30, 0.08) 0%, transparent 70%);
         pointer-events: none;
+        transition: opacity 0.05s ease;
       `
-      overlay.appendChild(safelight)
+      overlay.appendChild(safelightEl)
+
+      // Dust motes canvas — fullscreen overlay for floating particles
+      dustCanvas = document.createElement('canvas')
+      dustCanvas.width = 400
+      dustCanvas.height = 800
+      dustCanvas.style.cssText = `
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none; z-index: 1;
+      `
+      dustCtx = dustCanvas.getContext('2d')
+      overlay.appendChild(dustCanvas)
 
       // Title
       const title = document.createElement('div')
@@ -503,8 +907,22 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
         display: flex; align-items: center; justify-content: center;
         min-height: 120px;
         margin-bottom: 20px;
+        position: relative;
       `
       overlay.appendChild(tray)
+
+      // Chemical ripple canvas overlaid on the tray area
+      rippleCanvas = document.createElement('canvas')
+      rippleCanvas.width = 280
+      rippleCanvas.height = 280
+      rippleCanvas.style.cssText = `
+        position: absolute; top: 0; left: 50%;
+        transform: translateX(-50%);
+        width: 280px; height: 280px; max-width: 70vw;
+        pointer-events: none; z-index: 2;
+      `
+      rippleCtx = rippleCanvas.getContext('2d')
+      tray.appendChild(rippleCanvas)
 
       // Status text
       const status = document.createElement('div')
@@ -779,13 +1197,28 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
 
     activate() {
       active = true
+      initAudio()
+      initDustMotes()
+      renderVisualEffects()
     },
 
     deactivate() {
       active = false
+      cancelAnimationFrame(animFrameId)
+      fadeAudioOut()
     },
 
     destroy() {
+      active = false
+      cancelAnimationFrame(animFrameId)
+      destroyAudio()
+      safelightEl = null
+      rippleCanvas = null
+      rippleCtx = null
+      dustCanvas = null
+      dustCtx = null
+      dustMotes = []
+      ripples = []
       overlay?.remove()
     },
   }

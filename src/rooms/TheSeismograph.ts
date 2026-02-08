@@ -21,6 +21,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface SeismographDeps {
   switchTo?: (name: string) => void
@@ -80,6 +81,194 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
   let fadingLabels: FadingLabel[] = []
   let screenShake = 0  // decaying screen-shake intensity from large quakes
   let isFetching = false
+  let needleWobble = 0 // micro-vibration phase for seismograph needle
+
+  // --- Audio state ---
+  let audioCtxRef: AudioContext | null = null
+  let audioInitialized = false
+  let masterVol: GainNode | null = null
+
+  // Earth drone (continuous low hum)
+  let droneOsc: OscillatorNode | null = null
+  let droneGain: GainNode | null = null
+  let droneLowpass: BiquadFilterNode | null = null
+
+  // Seismograph scratch (continuous needle-on-paper noise)
+  let scratchSource: AudioBufferSourceNode | null = null
+  let scratchGain: GainNode | null = null
+  let scratchBandpass: BiquadFilterNode | null = null
+
+  // Pending rumble timeouts (for cleanup)
+  const rumbleTimeouts: number[] = []
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+      audioCtxRef = ac
+      audioInitialized = true
+
+      // Master volume for this room
+      masterVol = ac.createGain()
+      masterVol.gain.setValueAtTime(0, ac.currentTime)
+      masterVol.gain.linearRampToValueAtTime(1, ac.currentTime + 1)
+      masterVol.connect(dest)
+
+      // --- Earth drone: sine at 25Hz, lowpass 60Hz ---
+      droneOsc = ac.createOscillator()
+      droneOsc.type = 'sine'
+      droneOsc.frequency.setValueAtTime(25, ac.currentTime)
+
+      droneLowpass = ac.createBiquadFilter()
+      droneLowpass.type = 'lowpass'
+      droneLowpass.frequency.setValueAtTime(60, ac.currentTime)
+
+      droneGain = ac.createGain()
+      droneGain.gain.setValueAtTime(0.01, ac.currentTime)
+
+      droneOsc.connect(droneLowpass)
+      droneLowpass.connect(droneGain)
+      droneGain.connect(masterVol)
+      droneOsc.start(ac.currentTime)
+
+      // --- Seismograph scratch: filtered noise ---
+      const scratchBufferLength = ac.sampleRate * 2
+      const scratchBuffer = ac.createBuffer(1, scratchBufferLength, ac.sampleRate)
+      const scratchData = scratchBuffer.getChannelData(0)
+      for (let i = 0; i < scratchBufferLength; i++) {
+        scratchData[i] = Math.random() * 2 - 1
+      }
+
+      scratchSource = ac.createBufferSource()
+      scratchSource.buffer = scratchBuffer
+      scratchSource.loop = true
+
+      scratchBandpass = ac.createBiquadFilter()
+      scratchBandpass.type = 'bandpass'
+      scratchBandpass.frequency.setValueAtTime(2000, ac.currentTime) // center of 1500-3000
+      scratchBandpass.Q.setValueAtTime(0.5, ac.currentTime)
+
+      scratchGain = ac.createGain()
+      scratchGain.gain.setValueAtTime(0.005, ac.currentTime)
+
+      scratchSource.connect(scratchBandpass)
+      scratchBandpass.connect(scratchGain)
+      scratchGain.connect(masterVol)
+      scratchSource.start(ac.currentTime)
+    } catch {
+      // Audio not ready yet — user hasn't interacted
+    }
+  }
+
+  /** Play a rumble when an earthquake ring expands — proportional to magnitude */
+  function playQuakeRumble(mag: number) {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+
+      // Brown noise (random walk) via buffer
+      const duration = mag * 0.2 // magnitude * 200ms
+      const sampleLen = Math.max(1, Math.floor(ac.sampleRate * duration))
+      const buffer = ac.createBuffer(1, sampleLen, ac.sampleRate)
+      const data = buffer.getChannelData(0)
+      let last = 0
+      for (let i = 0; i < sampleLen; i++) {
+        const white = Math.random() * 2 - 1
+        last = (last + (0.02 * white)) / 1.02
+        data[i] = last * 3.5 // normalize brown noise amplitude
+      }
+
+      const source = ac.createBufferSource()
+      source.buffer = buffer
+
+      const lowpass = ac.createBiquadFilter()
+      lowpass.type = 'lowpass'
+      lowpass.frequency.setValueAtTime(mag * 50 + 100, ac.currentTime)
+
+      // Gain scales with magnitude: 0.005 at M1, up to 0.04 at M9
+      const gain = ac.createGain()
+      const vol = Math.min(0.04, Math.max(0.005, 0.005 + (mag - 1) * 0.00438))
+      gain.gain.setValueAtTime(0, ac.currentTime)
+      gain.gain.linearRampToValueAtTime(vol, ac.currentTime + 0.02)
+      gain.gain.linearRampToValueAtTime(0, ac.currentTime + duration)
+
+      source.connect(lowpass)
+      lowpass.connect(gain)
+      gain.connect(masterVol)
+
+      source.start(ac.currentTime)
+      source.stop(ac.currentTime + duration + 0.05)
+
+      // Cleanup nodes after playback
+      const tid = window.setTimeout(() => {
+        try {
+          source.disconnect()
+          lowpass.disconnect()
+          gain.disconnect()
+        } catch { /* already disconnected */ }
+      }, (duration + 0.5) * 1000)
+      rumbleTimeouts.push(tid)
+    } catch { /* audio error */ }
+  }
+
+  /** Play a sonar ping when new earthquake data arrives */
+  function playDataPing() {
+    if (!audioCtxRef || !masterVol) return
+    try {
+      const ac = audioCtxRef
+
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(800, ac.currentTime)
+
+      const gain = ac.createGain()
+      gain.gain.setValueAtTime(0, ac.currentTime)
+      gain.gain.linearRampToValueAtTime(0.02, ac.currentTime + 0.005)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.1)
+
+      osc.connect(gain)
+      gain.connect(masterVol)
+
+      osc.start(ac.currentTime)
+      osc.stop(ac.currentTime + 0.15)
+    } catch { /* audio error */ }
+  }
+
+  function stopAudio() {
+    if (masterVol && audioCtxRef) {
+      masterVol.gain.setTargetAtTime(0, audioCtxRef.currentTime, 0.3)
+    }
+  }
+
+  function destroyAudio() {
+    stopAudio()
+    // Clear rumble timeouts
+    for (const tid of rumbleTimeouts) clearTimeout(tid)
+    rumbleTimeouts.length = 0
+    try {
+      droneOsc?.stop()
+      scratchSource?.stop()
+    } catch { /* already stopped */ }
+    try {
+      droneOsc?.disconnect()
+      droneLowpass?.disconnect()
+      droneGain?.disconnect()
+      scratchSource?.disconnect()
+      scratchBandpass?.disconnect()
+      scratchGain?.disconnect()
+      masterVol?.disconnect()
+    } catch { /* already disconnected */ }
+    droneOsc = null
+    droneLowpass = null
+    droneGain = null
+    scratchSource = null
+    scratchBandpass = null
+    scratchGain = null
+    masterVol = null
+    audioCtxRef = null
+    audioInitialized = false
+  }
 
   // Earthquake epicenter navigation stations — placed at real-world coordinates
   const stations = [
@@ -159,6 +348,14 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     if (maxMag >= 4) {
       screenShake = Math.min((maxMag - 3) * 2, 12)
     }
+
+    // Play rumbles for significant quakes (staggered)
+    for (let i = 0; i < significant.length; i++) {
+      const q = significant[i]
+      const delay = i * 300 // stagger rumbles 300ms apart
+      const tid = window.setTimeout(() => playQuakeRumble(q.mag), delay)
+      rumbleTimeouts.push(tid)
+    }
   }
 
   async function fetchQuakes() {
@@ -204,6 +401,8 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
       // Build trace from magnitudes (simulate seismograph needle)
       traceData = quakes.slice(0, 100).map(q => q.mag).reverse()
       lastFetch = Date.now()
+      // Sonar ping: new data received
+      playDataPing()
     }
 
     loading = false
@@ -252,7 +451,9 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     ctx.strokeRect(mapX, mapY, mapW, mapH)
 
     // Tectonic plate boundaries (approximate major ones as polylines)
-    ctx.strokeStyle = 'rgba(120, 40, 30, 0.06)'
+    // Very faint — alpha 0.02-0.03, suggesting hidden structure
+    const plateAlpha = 0.02 + Math.sin(time * 0.2) * 0.005
+    ctx.strokeStyle = `rgba(120, 40, 30, ${plateAlpha})`
     ctx.lineWidth = 1
     const plates: [number, number][][] = [
       // Pacific Ring of Fire (simplified)
@@ -264,6 +465,10 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
        [-15, -13], [-30, -14], [-45, -15], [-55, -5]],
       // Alpine-Himalayan belt
       [[35, -5], [37, 20], [38, 40], [35, 55], [28, 65], [28, 80], [30, 90]],
+      // East African Rift
+      [[12, 42], [8, 38], [2, 36], [-4, 35], [-10, 34], [-15, 35]],
+      // San Andreas / North American west coast
+      [[62, -150], [58, -136], [50, -130], [42, -125], [37, -122], [32, -117]],
     ]
 
     for (const plate of plates) {
@@ -301,21 +506,41 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     // Draw trace
     if (traceData.length < 2) return
 
-    ctx.strokeStyle = 'rgba(40, 255, 80, 0.5)'
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
+    // Update needle micro-wobble (the earth is never truly still)
+    needleWobble += 0.016
 
     const step = traceW / traceData.length
+
+    // Build trace path points once, reuse for glow + crisp passes
+    const tracePoints: { x: number; y: number }[] = []
     for (let i = 0; i < traceData.length; i++) {
       const x = traceX + i * step
       const mag = traceData[i]
-      // Add some jitter/noise to make it look like a real seismograph
+      // Jitter/noise + constant micro-vibration (earth is never still)
       const noise = Math.sin(time * 3 + i * 0.5) * 2 + Math.sin(time * 7.3 + i * 1.2) * 1
-      const deflection = (mag / 9) * (traceH * 0.45) + noise
-      const y = centerY - deflection
+      const wobble = Math.sin(needleWobble * 11.3 + i * 0.3) * 0.6
+        + Math.sin(needleWobble * 17.7 + i * 0.7) * 0.3
+      const deflection = (mag / 9) * (traceH * 0.45) + noise + wobble
+      tracePoints.push({ x, y: centerY - deflection })
+    }
 
-      if (i === 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
+    // Pass 1: Phosphor glow (wider, lower alpha, amber-green)
+    ctx.strokeStyle = 'rgba(60, 255, 100, 0.12)'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    for (let i = 0; i < tracePoints.length; i++) {
+      if (i === 0) ctx.moveTo(tracePoints[i].x, tracePoints[i].y)
+      else ctx.lineTo(tracePoints[i].x, tracePoints[i].y)
+    }
+    ctx.stroke()
+
+    // Pass 2: Crisp trace on top
+    ctx.strokeStyle = 'rgba(40, 255, 80, 0.5)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    for (let i = 0; i < tracePoints.length; i++) {
+      if (i === 0) ctx.moveTo(tracePoints[i].x, tracePoints[i].y)
+      else ctx.lineTo(tracePoints[i].x, tracePoints[i].y)
     }
     ctx.stroke()
 
@@ -777,17 +1002,20 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
       active = true
       // fetchQuakes respects the 5-min cache internally, safe to call every activate
       fetchQuakes()
+      initAudio()
       render()
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      stopAudio()
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
       overlay?.remove()
     },
   }

@@ -20,6 +20,7 @@
 
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 
 interface GardenDeps {
   getMemories: () => StoredMemory[]
@@ -162,6 +163,15 @@ function generatePlant(memory: StoredMemory, baseX: number, groundY: number): Pl
   }
 }
 
+interface Pollen {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  alpha: number
+  size: number
+}
+
 interface WaterDrop {
   x: number
   y: number
@@ -196,6 +206,243 @@ export function createGardenRoom(deps: GardenDeps): Room {
   let tooltip: PlantTooltip | null = null
   let mouseX = 0
   let mouseY = 0
+  let pollenParticles: Pollen[] = []
+
+  // Audio state
+  let audioMaster: GainNode | null = null
+  let windNoiseNode: AudioBufferSourceNode | null = null
+  let windFilter: BiquadFilterNode | null = null
+  let windGain: GainNode | null = null
+  let windLfoOsc: OscillatorNode | null = null
+  let windLfoGain: GainNode | null = null
+  let rustleLfoInterval: ReturnType<typeof setInterval> | null = null
+  let witherInterval: ReturnType<typeof setInterval> | null = null
+  let audioInitialized = false
+
+  // ─── Audio functions ───
+
+  async function initAudio() {
+    if (audioInitialized) return
+    try {
+      const ac = await getAudioContext()
+      const dest = getAudioDestination()
+
+      audioMaster = ac.createGain()
+      audioMaster.gain.value = 0
+      audioMaster.connect(dest)
+
+      // ── Wind ambience: brown noise → bandpass 300-800Hz → LFO-modulated gain ──
+      const bufferLen = ac.sampleRate * 2
+      const noiseBuf = ac.createBuffer(1, bufferLen, ac.sampleRate)
+      const noiseData = noiseBuf.getChannelData(0)
+      let lastOut = 0
+      for (let i = 0; i < bufferLen; i++) {
+        const white = Math.random() * 2 - 1
+        lastOut = (lastOut + 0.02 * white) / 1.02
+        noiseData[i] = lastOut * 3.5
+      }
+
+      windNoiseNode = ac.createBufferSource()
+      windNoiseNode.buffer = noiseBuf
+      windNoiseNode.loop = true
+
+      windFilter = ac.createBiquadFilter()
+      windFilter.type = 'bandpass'
+      windFilter.frequency.value = 550 // center of 300-800Hz
+      windFilter.Q.value = 0.8
+
+      windGain = ac.createGain()
+      windGain.gain.value = 0.01 // midpoint of 0.005-0.015
+
+      // LFO for wind gain modulation (0.1Hz, range 0.005-0.015)
+      windLfoOsc = ac.createOscillator()
+      windLfoOsc.type = 'sine'
+      windLfoOsc.frequency.value = 0.1
+
+      windLfoGain = ac.createGain()
+      windLfoGain.gain.value = 0.005 // amplitude: ±0.005 around the 0.01 center
+
+      windLfoOsc.connect(windLfoGain)
+      windLfoGain.connect(windGain.gain)
+
+      windNoiseNode.connect(windFilter)
+      windFilter.connect(windGain)
+      windGain.connect(audioMaster)
+
+      windNoiseNode.start()
+      windLfoOsc.start()
+
+      // ── Leaf rustle: periodic high-frequency noise bursts at LFO peaks ──
+      rustleLfoInterval = setInterval(() => {
+        if (!active || !audioMaster) return
+        try {
+          const now = ac.currentTime
+          // Check if we're near an LFO peak (sine ≈ 1 at peaks every 10s)
+          const lfoPhase = (now * 0.1 * Math.PI * 2) % (Math.PI * 2)
+          if (Math.sin(lfoPhase) > 0.7) {
+            playRustle(ac)
+          }
+        } catch { /* silent */ }
+      }, 800)
+
+      // ── Wither crackle: periodic dry noise for degraded plants ──
+      witherInterval = setInterval(() => {
+        if (!active || !audioMaster || plants.length === 0) return
+        try {
+          const witheredPlants = plants.filter(p => p.memory.degradation > 0.7)
+          if (witheredPlants.length > 0 && Math.random() < 0.3) {
+            playCrackle(ac)
+          }
+        } catch { /* silent */ }
+      }, 2000)
+
+      audioInitialized = true
+    } catch {
+      // silent fallback — audio not critical
+    }
+  }
+
+  function playRustle(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const duration = 0.05
+      const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * duration), ac.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < data.length; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+
+      const src = ac.createBufferSource()
+      src.buffer = buf
+
+      const hp = ac.createBiquadFilter()
+      hp.type = 'highpass'
+      hp.frequency.value = 3000
+
+      const g = ac.createGain()
+      const now = ac.currentTime
+      g.gain.setValueAtTime(0.008, now)
+      g.gain.linearRampToValueAtTime(0, now + duration)
+
+      src.connect(hp)
+      hp.connect(g)
+      g.connect(audioMaster)
+      src.start(now)
+      src.stop(now + duration)
+
+      src.onended = () => {
+        src.disconnect()
+        hp.disconnect()
+        g.disconnect()
+      }
+    } catch { /* silent */ }
+  }
+
+  function playCrackle(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const duration = 0.003
+      const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * duration), ac.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < data.length; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+
+      const src = ac.createBufferSource()
+      src.buffer = buf
+
+      const hp = ac.createBiquadFilter()
+      hp.type = 'highpass'
+      hp.frequency.value = 4000
+
+      const g = ac.createGain()
+      const now = ac.currentTime
+      g.gain.setValueAtTime(0.005, now)
+      g.gain.linearRampToValueAtTime(0, now + 0.02)
+
+      src.connect(hp)
+      hp.connect(g)
+      g.connect(audioMaster)
+      src.start(now)
+      src.stop(now + 0.02)
+
+      src.onended = () => {
+        src.disconnect()
+        hp.disconnect()
+        g.disconnect()
+      }
+    } catch { /* silent */ }
+  }
+
+  function playGrowthTone(ac: AudioContext) {
+    if (!audioMaster) return
+    try {
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      const now = ac.currentTime
+      osc.frequency.setValueAtTime(200, now)
+      osc.frequency.linearRampToValueAtTime(250, now + 0.1)
+
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.005, now)
+      g.gain.linearRampToValueAtTime(0, now + 0.1)
+
+      osc.connect(g)
+      g.connect(audioMaster)
+      osc.start(now)
+      osc.stop(now + 0.1)
+
+      osc.onended = () => {
+        osc.disconnect()
+        g.disconnect()
+      }
+    } catch { /* silent */ }
+  }
+
+  function fadeAudioIn() {
+    if (!audioMaster) return
+    const ac = audioMaster.context as AudioContext
+    const now = ac.currentTime
+    audioMaster.gain.cancelScheduledValues(now)
+    audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+    audioMaster.gain.linearRampToValueAtTime(1.0, now + 1.0)
+  }
+
+  function fadeAudioOut() {
+    if (!audioMaster) return
+    try {
+      const ac = audioMaster.context as AudioContext
+      const now = ac.currentTime
+      audioMaster.gain.cancelScheduledValues(now)
+      audioMaster.gain.setValueAtTime(audioMaster.gain.value, now)
+      audioMaster.gain.linearRampToValueAtTime(0, now + 0.5)
+    } catch { /* silent */ }
+  }
+
+  function destroyAudio() {
+    fadeAudioOut()
+    if (rustleLfoInterval) { clearInterval(rustleLfoInterval); rustleLfoInterval = null }
+    if (witherInterval) { clearInterval(witherInterval); witherInterval = null }
+
+    setTimeout(() => {
+      try { windNoiseNode?.stop() } catch { /* already stopped */ }
+      try { windLfoOsc?.stop() } catch { /* already stopped */ }
+      windNoiseNode?.disconnect()
+      windFilter?.disconnect()
+      windGain?.disconnect()
+      windLfoOsc?.disconnect()
+      windLfoGain?.disconnect()
+      audioMaster?.disconnect()
+
+      windNoiseNode = null
+      windFilter = null
+      windGain = null
+      windLfoOsc = null
+      windLfoGain = null
+      audioMaster = null
+      audioInitialized = false
+    }, 600)
+  }
 
   const gardenPortals: GardenPortal[] = [
     { name: 'terrarium', label: 'the terrarium', corner: 'top-right', hovered: false, clickFlash: 0 },
@@ -432,6 +679,8 @@ export function createGardenRoom(deps: GardenDeps): Room {
     }
   }
 
+  let prevPlantCount = 0
+
   function buildGarden() {
     const memories = deps.getMemories()
     if (!canvas) return
@@ -441,7 +690,7 @@ export function createGardenRoom(deps: GardenDeps): Room {
 
     plants = []
 
-    if (memories.length === 0) return
+    if (memories.length === 0) { prevPlantCount = 0; return }
 
     // Space plants evenly across the ground
     const spacing = Math.min(80, (w - 80) / memories.length)
@@ -451,6 +700,14 @@ export function createGardenRoom(deps: GardenDeps): Room {
       const x = startX + i * spacing
       plants.push(generatePlant(memories[i], x, groundY))
     }
+
+    // Growth tone — play when new plants appear
+    if (audioInitialized && plants.length > prevPlantCount) {
+      getAudioContext().then(ac => {
+        if (active) playGrowthTone(ac)
+      }).catch(() => { /* silent */ })
+    }
+    prevPlantCount = plants.length
   }
 
   function render() {
@@ -488,6 +745,17 @@ export function createGardenRoom(deps: GardenDeps): Room {
     ctx.lineTo(w, groundY)
     ctx.stroke()
 
+    // Soil texture — subtle noise grain across the ground
+    const soilSeed = seededRandom(77)
+    for (let i = 0; i < 200; i++) {
+      const sx = soilSeed() * w
+      const sy = groundY + soilSeed() * (h - groundY)
+      const brightness = 15 + soilSeed() * 20
+      const a = 0.03 + soilSeed() * 0.06
+      ctx.fillStyle = `rgba(${brightness + 10}, ${brightness}, ${brightness - 5}, ${a})`
+      ctx.fillRect(sx, sy, 1 + soilSeed() * 2, 1)
+    }
+
     // Stars — subtle background
     const starSeed = seededRandom(42)
     ctx.fillStyle = 'rgba(255, 215, 0, 0.15)'
@@ -505,6 +773,47 @@ export function createGardenRoom(deps: GardenDeps): Room {
 
     // Wind
     const wind = Math.sin(time * 0.3) * 0.02
+
+    // Draw plant shadows (rendered first, behind plants)
+    for (const plant of plants) {
+      const sway = Math.sin(time * plant.swaySpeed + plant.swayPhase) * 3 + wind * 20
+      const shadowOffsetX = 4
+      const shadowOffsetY = 2
+
+      for (const seg of plant.segments) {
+        const swayFactor1 = Math.max(0, (groundY - seg.y1) / (groundY * 0.5))
+        const swayFactor2 = Math.max(0, (groundY - seg.y2) / (groundY * 0.5))
+        const sx1 = seg.x1 + sway * swayFactor1 + shadowOffsetX
+        const sy1 = seg.y1 + shadowOffsetY
+        const sx2 = seg.x2 + sway * swayFactor2 + shadowOffsetX
+        const sy2 = seg.y2 + shadowOffsetY
+
+        if (seg.isFlower) {
+          ctx.beginPath()
+          ctx.arc(sx2, sy2, seg.thickness, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.04)'
+          ctx.fill()
+        } else if (seg.isLeaf) {
+          ctx.save()
+          ctx.translate(sx2, sy2)
+          ctx.rotate(Math.atan2(sy2 - sy1, sx2 - sx1))
+          ctx.scale(1, 0.5)
+          ctx.beginPath()
+          ctx.arc(0, 0, seg.thickness, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.03)'
+          ctx.fill()
+          ctx.restore()
+        } else {
+          ctx.beginPath()
+          ctx.moveTo(sx1, sy1)
+          ctx.lineTo(sx2, sy2)
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.03)'
+          ctx.lineWidth = seg.thickness
+          ctx.lineCap = 'round'
+          ctx.stroke()
+        }
+      }
+    }
 
     // Draw plants
     for (const plant of plants) {
@@ -554,6 +863,42 @@ export function createGardenRoom(deps: GardenDeps): Room {
           ctx.stroke()
         }
       }
+    }
+
+    // Pollen / spore particles — float upward from healthy (blooming) plants
+    const bloomingPlants = plants.filter(p => p.memory.degradation < 0.3)
+    // Spawn new pollen from blooming plants
+    if (bloomingPlants.length > 0 && pollenParticles.length < 10 && Math.random() < 0.05) {
+      const srcPlant = bloomingPlants[Math.floor(Math.random() * bloomingPlants.length)]
+      const sway = Math.sin(time * srcPlant.swaySpeed + srcPlant.swayPhase) * 3 + wind * 20
+      pollenParticles.push({
+        x: srcPlant.x + sway + (Math.random() - 0.5) * 20,
+        y: groundY - 20 - Math.random() * 60,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -0.15 - Math.random() * 0.2,
+        alpha: 0.3 + Math.random() * 0.3,
+        size: 0.8 + Math.random() * 1.2,
+      })
+    }
+    // Update and draw pollen
+    for (let i = pollenParticles.length - 1; i >= 0; i--) {
+      const p = pollenParticles[i]
+      p.x += p.vx + wind * 5
+      p.y += p.vy
+      p.alpha -= 0.002
+      if (p.alpha <= 0 || p.y < 0) {
+        pollenParticles.splice(i, 1)
+        continue
+      }
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(255, 215, 100, ${p.alpha})`
+      ctx.fill()
+      // Tiny glow
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(255, 215, 100, ${p.alpha * 0.15})`
+      ctx.fill()
     }
 
     // Labels — memory fragments below plants
@@ -770,16 +1115,27 @@ export function createGardenRoom(deps: GardenDeps): Room {
       active = true
       buildGarden()
       render()
+
+      // Initialize and fade in audio
+      initAudio().then(() => {
+        if (active) fadeAudioIn()
+      })
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(frameId)
+      fadeAudioOut()
+      if (rustleLfoInterval) { clearInterval(rustleLfoInterval); rustleLfoInterval = null }
+      if (witherInterval) { clearInterval(witherInterval); witherInterval = null }
+      pollenParticles.length = 0
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
+      destroyAudio()
+      pollenParticles.length = 0
       overlay?.remove()
     },
   }
