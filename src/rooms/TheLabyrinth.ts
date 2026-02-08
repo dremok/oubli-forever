@@ -183,6 +183,47 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let inscriptionText = ''
   let inscriptionAlpha = 0
 
+  // ===== INSANITY ESCALATION SYSTEM =====
+  // The labyrinth slowly drives you mad the longer you stay
+  let insanity = 0        // 0-1 scale, gradually increases
+  let cameraTilt = 0      // gradual tilt
+  let fovWarp = 0         // FOV distortion
+  let moveDrift = 0       // involuntary movement drift angle
+  let colorShift = 0      // hue rotation
+  let breathePhase = 0    // wall breathing
+  let corridorStretch = 0 // corridors appear longer
+  let horizonShift = 0    // horizon moves
+  let glitchChance = 0    // chance of random visual glitch per frame
+  let stepDelayMod = 1    // footstep timing distortion
+  let phantomSoundTimer = 0 // timer for ambient phantom sounds
+
+  // Wall objects — specific things on walls you can click
+  const WALL_OBJECTS = [
+    { name: 'rusty_handle', icon: '⬮', desc: 'a rusty door handle', w: 8, h: 14 },
+    { name: 'crack', icon: '╱', desc: 'a crack with light', w: 12, h: 20 },
+    { name: 'eye_hole', icon: '◉', desc: 'something watches', w: 6, h: 6 },
+    { name: 'carved_symbol', icon: '✧', desc: 'a carved symbol', w: 10, h: 10 },
+    { name: 'small_mirror', icon: '◻', desc: 'a small mirror', w: 8, h: 12 },
+    { name: 'bloodstain', icon: '●', desc: 'a dark stain', w: 14, h: 10 },
+    { name: 'keyhole', icon: '⚿', desc: 'a keyhole', w: 4, h: 8 },
+    { name: 'handprint', icon: '✋', desc: 'a handprint', w: 12, h: 14 },
+    { name: 'fungus', icon: '❋', desc: 'strange growth', w: 16, h: 10 },
+    { name: 'candle', icon: '🕯', desc: 'a flickering candle', w: 4, h: 12 },
+    { name: 'scratches', icon: '≡', desc: 'deep scratches', w: 16, h: 8 },
+    { name: 'face_relief', icon: '☹', desc: 'a face in the stone', w: 12, h: 14 },
+  ]
+
+  function getWallObject(wx: number, wy: number): typeof WALL_OBJECTS[0] | null {
+    if (getWorldCell(wx, wy) !== ANOMALY) return null
+    const h = cellHash2(wx + 17, wy + 31)
+    return WALL_OBJECTS[Math.floor(h * WALL_OBJECTS.length)]
+  }
+
+  function getObjectYPos(wx: number, wy: number): number {
+    // Vertical position on the wall (0-1, 0=top, 1=bottom)
+    return 0.3 + cellHash2(wx + 7, wy + 13) * 0.4
+  }
+
   // ===== HASH-BASED INFINITE MAZE =====
 
   function regionKey(wx: number, wy: number): string {
@@ -516,9 +557,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       img.onload = () => scareImages.push(img)
     }
 
-    // Load sounds (up to 12)
+    // Load sounds (up to 24 — tries to load all, skips missing)
     if (!audioCtx) return
-    for (let i = 1; i <= 12; i++) {
+    for (let i = 1; i <= 24; i++) {
       try {
         const resp = await fetch(`/assets/labyrinth/labyrinth-sound-${i}.mp3`)
         if (resp.ok) {
@@ -895,29 +936,217 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (age > 18) currentFragment = null
   }
 
+  // ===== PHANTOM SOUND SYSTEM =====
+  // Ambient horror sounds that play randomly, more often at higher insanity
+
+  function playPhantomSound() {
+    if (!audioCtx) return
+    const dest = getAudioDestination()
+    const now = audioCtx.currentTime
+    const roll = Math.random()
+
+    if (roll < 0.2) {
+      // Distant knocking — 3 sharp knocks
+      for (let i = 0; i < 3; i++) {
+        const knock = audioCtx.createOscillator()
+        knock.frequency.value = 200 + Math.random() * 100
+        knock.type = 'square'
+        const kg = audioCtx.createGain()
+        const t = now + i * 0.18
+        kg.gain.setValueAtTime(0.03 + insanity * 0.04, t)
+        kg.gain.exponentialRampToValueAtTime(0.001, t + 0.08)
+        knock.connect(kg); kg.connect(dest)
+        if (reverbNode) kg.connect(reverbNode)
+        knock.start(t); knock.stop(t + 0.1)
+      }
+    } else if (roll < 0.35) {
+      // Metal bang — sharp broadband hit
+      const bangLen = audioCtx.sampleRate * 0.15
+      const bangBuf = audioCtx.createBuffer(1, bangLen, audioCtx.sampleRate)
+      const bd = bangBuf.getChannelData(0)
+      for (let i = 0; i < bangLen; i++) {
+        bd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bangLen * 0.1))
+      }
+      const bangSrc = audioCtx.createBufferSource()
+      bangSrc.buffer = bangBuf
+      const bangFilter = audioCtx.createBiquadFilter()
+      bangFilter.type = 'bandpass'
+      bangFilter.frequency.value = 800 + Math.random() * 600
+      bangFilter.Q.value = 3
+      const bangGain = audioCtx.createGain()
+      bangGain.gain.value = 0.06 + insanity * 0.06
+      bangSrc.connect(bangFilter); bangFilter.connect(bangGain)
+      bangGain.connect(dest)
+      if (reverbNode) bangGain.connect(reverbNode)
+      bangSrc.start(now)
+    } else if (roll < 0.5) {
+      // Haunting whisper — filtered noise with resonance
+      const whisperLen = audioCtx.sampleRate * 1.5
+      const wBuf = audioCtx.createBuffer(1, whisperLen, audioCtx.sampleRate)
+      const wd = wBuf.getChannelData(0)
+      for (let i = 0; i < whisperLen; i++) {
+        const env = Math.sin((i / whisperLen) * Math.PI) // fade in/out
+        wd[i] = (Math.random() * 2 - 1) * env * 0.5
+      }
+      const wSrc = audioCtx.createBufferSource()
+      wSrc.buffer = wBuf
+      const wFilter = audioCtx.createBiquadFilter()
+      wFilter.type = 'bandpass'
+      wFilter.frequency.value = 1500 + Math.random() * 1000
+      wFilter.Q.value = 10
+      const wGain = audioCtx.createGain()
+      wGain.gain.value = 0.02 + insanity * 0.03
+      wSrc.connect(wFilter); wFilter.connect(wGain)
+      wGain.connect(dest)
+      if (reverbNode) wGain.connect(reverbNode)
+      wSrc.start(now)
+    } else if (roll < 0.65) {
+      // Low sinister laugh — descending glissando
+      const laugh = audioCtx.createOscillator()
+      laugh.type = 'sawtooth'
+      laugh.frequency.setValueAtTime(180, now)
+      laugh.frequency.exponentialRampToValueAtTime(80, now + 1.5)
+      const lFilter = audioCtx.createBiquadFilter()
+      lFilter.type = 'lowpass'
+      lFilter.frequency.value = 400
+      const lGain = audioCtx.createGain()
+      // Pulsing volume for "ha ha ha" effect
+      for (let i = 0; i < 6; i++) {
+        const t = now + i * 0.25
+        lGain.gain.setValueAtTime(0.025 + insanity * 0.02, t)
+        lGain.gain.exponentialRampToValueAtTime(0.002, t + 0.12)
+      }
+      laugh.connect(lFilter); lFilter.connect(lGain)
+      lGain.connect(dest)
+      if (reverbNode) lGain.connect(reverbNode)
+      laugh.start(now); laugh.stop(now + 1.8)
+    } else if (roll < 0.8) {
+      // Scraping sound — filtered noise sweep
+      const scrapeLen = audioCtx.sampleRate * 0.8
+      const sBuf = audioCtx.createBuffer(1, scrapeLen, audioCtx.sampleRate)
+      const sd = sBuf.getChannelData(0)
+      for (let i = 0; i < scrapeLen; i++) {
+        sd[i] = (Math.random() * 2 - 1) * (1 - i / scrapeLen)
+      }
+      const sSrc = audioCtx.createBufferSource()
+      sSrc.buffer = sBuf
+      const sFilter = audioCtx.createBiquadFilter()
+      sFilter.type = 'bandpass'
+      sFilter.frequency.setValueAtTime(300, now)
+      sFilter.frequency.linearRampToValueAtTime(2000, now + 0.8)
+      sFilter.Q.value = 5
+      const sGain = audioCtx.createGain()
+      sGain.gain.value = 0.04 + insanity * 0.04
+      sSrc.connect(sFilter); sFilter.connect(sGain)
+      sGain.connect(dest)
+      if (reverbNode) sGain.connect(reverbNode)
+      sSrc.start(now)
+    } else {
+      // Play a pre-recorded sound if available
+      if (scareBuffers.length > 0) {
+        const buf = scareBuffers[Math.floor(Math.random() * scareBuffers.length)]
+        const src = audioCtx.createBufferSource()
+        src.buffer = buf
+        const g = audioCtx.createGain()
+        g.gain.value = 0.12 + insanity * 0.1
+        src.connect(g); g.connect(dest)
+        if (reverbNode) g.connect(reverbNode)
+        src.start(now)
+      }
+    }
+  }
+
+  // ===== INSANITY UPDATE =====
+
+  function updateInsanity() {
+    // Insanity increases slowly but relentlessly
+    // ~0.1 per minute at start, accelerating
+    const baseRate = 0.00003
+    const accel = 1 + insanity * 2 // accelerates as it gets worse
+    insanity = Math.min(1, insanity + baseRate * accel)
+
+    // Derive all madness parameters from insanity level
+    // Stage 1 (0-0.15): Subtle unease — slight breathing, occasional phantom sounds
+    // Stage 2 (0.15-0.3): Disorientation — FOV pulses, movement drifts slightly
+    // Stage 3 (0.3-0.5): Reality bending — camera tilts, colors shift, corridors stretch
+    // Stage 4 (0.5-0.7): Alien geometry — walls breathe hard, horizon shifts, glitches
+    // Stage 5 (0.7-0.85): Losing control — severe drift, inverted controls moments, narrowing
+    // Stage 6 (0.85-1.0): Full madness — everything wrong, impossible geometry, constant horror
+
+    // Camera tilt — slowly tilts to one side
+    const tiltTarget = insanity > 0.3 ? Math.sin(time * 0.15) * insanity * 0.15 : 0
+    cameraTilt += (tiltTarget - cameraTilt) * 0.01
+
+    // FOV warping — pulsing wider, creating fisheye feeling
+    fovWarp = insanity > 0.15 ? Math.sin(time * 0.3) * (insanity - 0.15) * 0.4 : 0
+
+    // Movement drift — you don't go quite where you intend
+    moveDrift = insanity > 0.2 ? Math.sin(time * 0.7) * (insanity - 0.2) * 0.02 : 0
+
+    // Color shift — hue rotation increasing
+    colorShift = insanity > 0.25 ? (insanity - 0.25) * 80 : 0
+
+    // Wall breathing — walls expand and contract
+    breathePhase = insanity > 0.1 ? Math.sin(time * 0.8) * insanity * 0.15 : 0
+
+    // Corridor stretch — distant walls appear further
+    corridorStretch = insanity > 0.35 ? 1 + (insanity - 0.35) * 0.8 : 1
+
+    // Horizon shift — the ground plane moves
+    horizonShift = insanity > 0.4 ? Math.sin(time * 0.25) * (insanity - 0.4) * 40 : 0
+
+    // Visual glitch chance per frame
+    glitchChance = insanity > 0.3 ? (insanity - 0.3) * 0.05 : 0
+
+    // Footstep timing distortion
+    stepDelayMod = insanity > 0.5 ? 1 + Math.sin(time * 2) * (insanity - 0.5) * 0.6 : 1
+
+    // Phantom sounds — interval decreases with insanity
+    phantomSoundTimer -= 0.016
+    if (phantomSoundTimer <= 0 && insanity > 0.05) {
+      const interval = Math.max(3, 25 - insanity * 25)
+      phantomSoundTimer = interval + Math.random() * interval
+      playPhantomSound()
+    }
+  }
+
   // ===== UPDATE =====
 
   function update() {
+    // Update insanity before everything else
+    updateInsanity()
+
     let moveX = 0
     let moveY = 0
     let moving = false
 
-    // Keyboard only — no mouse
+    // Movement with insanity-induced drift
+    const effectiveAngle = pa + moveDrift
     if (keys.has('w') || keys.has('arrowup')) {
-      moveX += Math.cos(pa) * moveSpeed
-      moveY += Math.sin(pa) * moveSpeed
+      moveX += Math.cos(effectiveAngle) * moveSpeed
+      moveY += Math.sin(effectiveAngle) * moveSpeed
       moving = true
     }
     if (keys.has('s') || keys.has('arrowdown')) {
-      moveX -= Math.cos(pa) * moveSpeed
-      moveY -= Math.sin(pa) * moveSpeed
+      moveX -= Math.cos(effectiveAngle) * moveSpeed
+      moveY -= Math.sin(effectiveAngle) * moveSpeed
       moving = true
     }
+
+    // Turn speed affected by insanity — sometimes sluggish, sometimes too fast
+    const effectiveTurnSpeed = turnSpeed * (1 + (insanity > 0.4 ? Math.sin(time * 3) * (insanity - 0.4) * 0.8 : 0))
     if (keys.has('a') || keys.has('arrowleft')) {
-      pa -= turnSpeed
+      pa -= effectiveTurnSpeed
     }
     if (keys.has('d') || keys.has('arrowright')) {
-      pa += turnSpeed
+      pa += effectiveTurnSpeed
+    }
+
+    // At high insanity, involuntary micro-movements
+    if (insanity > 0.6 && !moving) {
+      const driftAmount = (insanity - 0.6) * 0.008
+      px += Math.cos(time * 1.3) * driftAmount
+      py += Math.sin(time * 1.7) * driftAmount
     }
 
     // Collision detection against world cells
@@ -981,9 +1210,17 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // Update tension/scare
     checkScare()
 
-    // Update ambient drone pitch with tension
+    // Update ambient drone pitch with tension + insanity
     if (ambOsc && audioCtx) {
-      ambOsc.frequency.value = 42 - tension * 10
+      // Drone drops lower with tension, warps with insanity
+      const basePitch = 42 - tension * 10 - insanity * 8
+      const wobble = insanity > 0.3 ? Math.sin(time * 1.5) * insanity * 3 : 0
+      ambOsc.frequency.value = Math.max(20, basePitch + wobble)
+    }
+    if (ambienceGain && audioCtx) {
+      // Drone gets louder with insanity
+      const targetVol = 0.06 + insanity * 0.08
+      ambienceGain.gain.value += (targetVol - ambienceGain.gain.value) * 0.01
     }
 
     // Wikipedia
@@ -1017,26 +1254,35 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const tensionR = tension * 15
     const tensionG = -tension * 5
 
+    // Insanity color shift — sickly green/yellow at mid, blood red at high
+    const insanityR = insanity > 0.5 ? (insanity - 0.5) * 30 : 0
+    const insanityG = insanity > 0.25 ? Math.sin(time * 0.4 + colorShift * 0.01) * insanity * 12 : 0
+    const insanityB = insanity > 0.4 ? -insanity * 10 : 0
+
     if (cell === ANOMALY) {
       // Anomaly walls shimmer with a subtle otherworldly glow
       const shimmer = 0.5 + Math.sin(time * 2.5) * 0.3
       return [
-        (45 + tensionR + shimmer * 15) * brightness * sideDim,
-        (32 + tensionG + shimmer * 8) * brightness * sideDim,
-        (70 + shimmer * 20) * brightness * sideDim,
+        (45 + tensionR + insanityR + shimmer * 15) * brightness * sideDim,
+        (32 + tensionG + insanityG + shimmer * 8) * brightness * sideDim,
+        (70 + insanityB + shimmer * 20) * brightness * sideDim,
       ]
     }
     if (cell === INSCRIPTION) {
       return [
-        (50 + tensionR) * brightness * sideDim,
-        (38 + tensionG) * brightness * sideDim,
-        65 * brightness * sideDim,
+        (50 + tensionR + insanityR) * brightness * sideDim,
+        (38 + tensionG + insanityG) * brightness * sideDim,
+        (65 + insanityB) * brightness * sideDim,
       ]
     }
+
+    // Wall breathing — brightness modulation
+    const breathMod = 1 + breathePhase * 0.3
+
     return [
-      (40 + tensionR) * brightness * sideDim,
-      (30 + tensionG) * brightness * sideDim,
-      60 * brightness * sideDim,
+      (40 + tensionR + insanityR) * brightness * sideDim * breathMod,
+      (30 + tensionG + insanityG) * brightness * sideDim * breathMod,
+      (60 + insanityB) * brightness * sideDim * breathMod,
     ]
   }
 
@@ -1698,49 +1944,80 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const w = canvas.width
     const h = canvas.height
     const numRays = Math.min(w, 400)
-    const fov = Math.PI / 3
+    // FOV warps with insanity — gets wider, more fisheye
+    const baseFov = Math.PI / 3
+    const fov = baseFov + fovWarp * 0.3
+
+    // Apply camera tilt at high insanity
+    ctx.save()
+    if (Math.abs(cameraTilt) > 0.001) {
+      ctx.translate(w / 2, h / 2)
+      ctx.rotate(cameraTilt)
+      ctx.translate(-w / 2, -h / 2)
+    }
 
     // Clear
     ctx.fillStyle = 'rgba(3, 2, 6, 1)'
-    ctx.fillRect(0, 0, w, h)
+    ctx.fillRect(-20, -20, w + 40, h + 40)
 
-    // Ceiling with tension-affected breathing
+    // Horizon shifts with insanity
+    const midLine = h / 2 + horizonShift
+
+    // Ceiling with tension + insanity
     const breathe = Math.sin(time * 0.2) * 2
     const tensionFlicker = tension > 0.3 ? Math.random() * tension * 3 : 0
-    const ceilGrad = ctx.createLinearGradient(0, 0, 0, h / 2)
-    ceilGrad.addColorStop(0, `rgba(${5 + breathe + tensionFlicker}, 3, ${10 + breathe}, 1)`)
-    ceilGrad.addColorStop(1, `rgba(${10 + breathe + tensionFlicker}, 8, ${18 + breathe}, 1)`)
+    const insanityFlicker = insanity > 0.5 ? Math.random() * (insanity - 0.5) * 8 : 0
+    const ceilGrad = ctx.createLinearGradient(0, 0, 0, midLine)
+    const ceilR = Math.floor(5 + breathe + tensionFlicker + insanityFlicker + colorShift * 0.1)
+    const ceilG = Math.floor(3 + insanity * 5)
+    const ceilB = Math.floor(10 + breathe - insanity * 4)
+    ceilGrad.addColorStop(0, `rgba(${ceilR}, ${ceilG}, ${ceilB}, 1)`)
+    ceilGrad.addColorStop(1, `rgba(${ceilR + 5}, ${ceilG + 5}, ${ceilB + 8}, 1)`)
     ctx.fillStyle = ceilGrad
-    ctx.fillRect(0, 0, w, h / 2)
+    ctx.fillRect(0, 0, w, midLine)
 
-    // Floor
-    const floorGrad = ctx.createLinearGradient(0, h / 2, 0, h)
-    floorGrad.addColorStop(0, 'rgba(8, 6, 12, 1)')
-    floorGrad.addColorStop(1, 'rgba(3, 2, 6, 1)')
+    // Floor — gets sickly with insanity
+    const floorGrad = ctx.createLinearGradient(0, midLine, 0, h)
+    const floorR = Math.floor(8 + insanity * 8)
+    const floorG = Math.floor(6 + insanity * 4)
+    floorGrad.addColorStop(0, `rgba(${floorR}, ${floorG}, 12, 1)`)
+    floorGrad.addColorStop(1, `rgba(3, 2, 6, 1)`)
     ctx.fillStyle = floorGrad
-    ctx.fillRect(0, h / 2, w, h / 2)
+    ctx.fillRect(0, midLine, w, h - midLine)
 
     // Raycasting
     const stripW = w / numRays
     const visibleInscriptions: { text: string; screenX: number; dist: number; brightness: number }[] = []
+    const visibleObjects: { obj: typeof WALL_OBJECTS[0]; screenX: number; wallTop: number; wallHeight: number; dist: number; brightness: number; wx: number; wy: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
       const rayAngle = pa - fov / 2 + (i / numRays) * fov
       const hit = castRay(px, py, rayAngle)
 
-      const correctedDist = hit.dist * Math.cos(rayAngle - pa)
-      const wallHeight = Math.min(h * 2, h / correctedDist)
-      const wallTop = (h - wallHeight) / 2
+      // Corridor stretch at high insanity — distant walls appear further
+      let correctedDist = hit.dist * Math.cos(rayAngle - pa)
+      if (corridorStretch > 1 && correctedDist > 3) {
+        correctedDist *= 1 + (corridorStretch - 1) * (correctedDist - 3) * 0.1
+      }
+
+      // Wall height compression at very high insanity — ceiling closing in
+      const heightMod = insanity > 0.6 ? 1 + (insanity - 0.6) * 0.5 : 1
+      const wallHeight = Math.min(h * 2, (h / correctedDist) * heightMod)
+      const wallTop = (midLine - wallHeight / 2)
       const brightness = Math.max(0, 1 - correctedDist / 10)
       const sideDim = hit.side ? 0.7 : 1.0
 
-      // Tension flicker on distant walls
-      const flicker = tension > 0.4 && correctedDist > 4
-        ? 1 - Math.random() * tension * 0.15
-        : 1
+      // Tension + insanity flicker
+      let flicker = 1
+      if (tension > 0.4 && correctedDist > 4) {
+        flicker -= Math.random() * tension * 0.15
+      }
+      if (insanity > 0.5 && Math.random() < 0.02) {
+        flicker *= 0.3 // random dark flash on individual strips
+      }
 
       const [r, g, b] = getCellColor(hit.cell, brightness * flicker, sideDim)
-      ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`
+      ctx.fillStyle = `rgb(${Math.floor(Math.max(0, r))}, ${Math.floor(Math.max(0, g))}, ${Math.floor(Math.max(0, b))})`
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
       // Collect inscription text from nearby walls
@@ -1751,6 +2028,23 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           dist: correctedDist,
           brightness,
         })
+      }
+
+      // Collect wall objects on anomaly walls
+      if (hit.cell === ANOMALY && correctedDist < 5) {
+        const obj = getWallObject(hit.hitX, hit.hitY)
+        if (obj) {
+          visibleObjects.push({
+            obj,
+            screenX: i * stripW + stripW / 2,
+            wallTop,
+            wallHeight,
+            dist: correctedDist,
+            brightness,
+            wx: hit.hitX,
+            wy: hit.hitY,
+          })
+        }
       }
     }
 
@@ -1767,19 +2061,74 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.textAlign = 'center'
 
       ctx.save()
-      ctx.translate(insc.screenX, h / 2)
+      ctx.translate(insc.screenX, midLine)
       ctx.rotate(-Math.PI / 2)
       ctx.fillText(insc.text.substring(0, 20), 0, 0)
       ctx.restore()
     }
 
-    // Fog overlay
-    const fogGrad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.6)
+    // Render wall objects — specific clickable things on anomaly walls
+    const shownObjects = new Set<string>()
+    for (const vo of visibleObjects) {
+      const key = `${vo.wx},${vo.wy}`
+      if (shownObjects.has(key)) continue
+      shownObjects.add(key)
+
+      const yPos = getObjectYPos(vo.wx, vo.wy)
+      const objY = vo.wallTop + vo.wallHeight * yPos
+      const scale = Math.max(0.3, 1 - vo.dist / 5)
+      const objW = vo.obj.w * scale
+      const objH = vo.obj.h * scale
+      const alpha = vo.brightness * (0.4 + Math.sin(time * 2 + vo.wx * 3.7) * 0.2)
+
+      // Glow behind the object
+      const glowR = 6 * scale
+      const glowGrad = ctx.createRadialGradient(vo.screenX, objY, 0, vo.screenX, objY, glowR * 3)
+      glowGrad.addColorStop(0, `rgba(140, 100, 200, ${alpha * 0.25})`)
+      glowGrad.addColorStop(1, 'rgba(140, 100, 200, 0)')
+      ctx.fillStyle = glowGrad
+      ctx.fillRect(vo.screenX - glowR * 3, objY - glowR * 3, glowR * 6, glowR * 6)
+
+      // Draw the object symbol
+      const fontSize = Math.max(6, Math.floor(12 * scale))
+      ctx.font = `${fontSize}px sans-serif`
+      ctx.fillStyle = `rgba(200, 170, 240, ${alpha})`
+      ctx.textAlign = 'center'
+      ctx.fillText(vo.obj.icon, vo.screenX, objY + fontSize * 0.3)
+
+      // At close range, show description
+      if (vo.dist < 2.5) {
+        ctx.font = `${Math.floor(9 * scale)}px "Cormorant Garamond", serif`
+        ctx.fillStyle = `rgba(180, 160, 200, ${alpha * 0.5})`
+        ctx.fillText(vo.obj.desc, vo.screenX, objY + fontSize + 8 * scale)
+      }
+    }
+
+    // Fog overlay — tightens with insanity (vision narrows)
+    const fogRadius = w * (0.6 - insanity * 0.15)
+    const fogGrad = ctx.createRadialGradient(w / 2, midLine, 0, w / 2, midLine, fogRadius)
     fogGrad.addColorStop(0, 'rgba(3, 2, 6, 0)')
-    fogGrad.addColorStop(0.7, 'rgba(3, 2, 6, 0.1)')
-    fogGrad.addColorStop(1, `rgba(${3 + tension * 15}, 2, 6, ${0.4 + tension * 0.15})`)
+    fogGrad.addColorStop(0.6, `rgba(3, 2, 6, ${insanity * 0.1})`)
+    fogGrad.addColorStop(1, `rgba(${3 + tension * 15 + insanity * 10}, 2, 6, ${0.4 + tension * 0.15 + insanity * 0.2})`)
     ctx.fillStyle = fogGrad
-    ctx.fillRect(0, 0, w, h)
+    ctx.fillRect(-20, -20, w + 40, h + 40)
+
+    // Random visual glitch frames at high insanity
+    if (Math.random() < glitchChance) {
+      // Horizontal tear
+      const tearY = Math.random() * h
+      const tearH = 2 + Math.random() * 15
+      const tearOffset = (Math.random() - 0.5) * 40
+      const imgData = ctx.getImageData(0, Math.floor(tearY), w, Math.floor(tearH))
+      ctx.putImageData(imgData, Math.floor(tearOffset), Math.floor(tearY))
+    }
+    if (insanity > 0.7 && Math.random() < 0.01) {
+      // Brief color inversion flash
+      ctx.globalCompositeOperation = 'difference'
+      ctx.fillStyle = `rgba(255, 255, 255, ${(insanity - 0.7) * 0.5})`
+      ctx.fillRect(0, 0, w, h)
+      ctx.globalCompositeOperation = 'source-over'
+    }
 
     // Portal room glow
     if (nearbyPortal) {
@@ -1868,6 +2217,18 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Jump scare overlay (on top of everything)
     renderJumpScare(w, h)
+
+    // Close camera tilt transform
+    ctx.restore()
+
+    // Insanity indicator (very subtle)
+    if (insanity > 0.15) {
+      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(140, 80, 80, ${Math.min(0.3, insanity * 0.3)})`
+      ctx.textAlign = 'right'
+      const sanityPct = Math.floor((1 - insanity) * 100)
+      ctx.fillText(`sanity: ${sanityPct}%`, w - 15, h - 8)
+    }
   }
 
   // ===== INPUT =====
@@ -1987,6 +2348,17 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       currentEffect = null
       lastScareTime = -999
       scareCount = 0
+      insanity = 0
+      cameraTilt = 0
+      fovWarp = 0
+      moveDrift = 0
+      colorShift = 0
+      breathePhase = 0
+      corridorStretch = 0
+      horizonShift = 0
+      glitchChance = 0
+      stepDelayMod = 1
+      phantomSoundTimer = 10 + Math.random() * 15
       nearbyPortal = null
       inscriptionText = ''
       inscriptionAlpha = 0
