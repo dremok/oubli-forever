@@ -120,9 +120,16 @@ export class MemoryBleed {
     const driftX = (Math.random() - 0.5) * 20 // px over full lifetime
     const driftY = -5 - Math.random() * 15 // mostly upward, like rising
 
-    // Hue from memory
-    const hue = Math.floor(selected.hue * 360)
-    const alpha = 0.08 + selected.degradation * 0.07 // more degraded = slightly more visible
+    // Golden fruit: highly degraded memories ripen into oubli fruit
+    const isGolden = selected.degradation > 0.7 && Math.random() < 0.3
+
+    // Hue from memory (or golden amber for ripened memories)
+    const hue = isGolden ? 42 : Math.floor(selected.hue * 360)
+    const sat = isGolden ? 80 : 30
+    const light = isGolden ? 65 : 70
+    const alpha = isGolden
+      ? 0.12 + selected.degradation * 0.05
+      : 0.08 + selected.degradation * 0.07
 
     const el = document.createElement('div')
     el.style.cssText = `
@@ -134,13 +141,13 @@ export class MemoryBleed {
       font-style: italic;
       font-size: ${14 + Math.random() * 4}px;
       letter-spacing: 1.5px;
-      color: hsla(${hue}, 30%, 70%, 0);
+      color: hsla(${hue}, ${sat}%, ${light}%, 0);
       max-width: 300px;
       white-space: nowrap;
       pointer-events: none;
       transition: color 3s ease, transform 12s linear;
       transform: translate(0, 0);
-      text-shadow: 0 0 8px hsla(${hue}, 30%, 70%, ${alpha * 0.5});
+      text-shadow: 0 0 ${isGolden ? 14 : 8}px hsla(${hue}, ${sat}%, ${light}%, ${alpha * 0.5});
     `
     el.textContent = fragment
 
@@ -149,14 +156,14 @@ export class MemoryBleed {
 
     // Fade in
     requestAnimationFrame(() => {
-      el.style.color = `hsla(${hue}, 30%, 70%, ${alpha})`
+      el.style.color = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`
       el.style.transform = `translate(${driftX}px, ${driftY}px)`
     })
 
     // Fade out after 8 seconds
     setTimeout(() => {
       el.style.transition = 'color 4s ease, transform 12s linear'
-      el.style.color = `hsla(${hue}, 30%, 70%, 0)`
+      el.style.color = `hsla(${hue}, ${sat}%, ${light}%, 0)`
     }, 8000)
 
     // Remove after fade completes

@@ -141,6 +141,9 @@ const DECAY_MEDITATIONS = [
   'the alerce trees of patagonia: 3,600 years of ring-memory. burning.',
   'a frozen earth discovered in kepler\'s archives. a world that existed in data nobody examined.',
   'transcranial focused ultrasound can now probe consciousness. sound waves testing what it means to be aware.',
+  'oubli: a sweet golden fruit from west africa. in the language of forgetting, something nourishes.',
+  'the oubli fruit ripens in the shade. what decays feeds the soil for what comes next.',
+  'every dead link is a seed. the internet forgets so the next thing can grow.',
 ]
 
 export class DigitalDecay {
