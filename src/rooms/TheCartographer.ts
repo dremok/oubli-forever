@@ -18,6 +18,7 @@
 import type { Room } from './RoomManager'
 import { ROOM_GRAPH as SHARED_GRAPH } from '../navigation/RoomGraph'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { threadTrail } from '../navigation/ThreadTrail'
 
 interface MapNode {
   name: string
@@ -478,6 +479,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
     const lineItems = [
       { solid: true, color: `rgba(255, 215, 0, ${0.12})`, label: 'visited path' },
       { solid: false, color: `rgba(120, 100, 140, ${0.1})`, label: 'undiscovered path' },
+      { solid: true, color: `rgba(180, 50, 50, ${0.15})`, label: 'your thread' },
     ]
 
     for (let i = 0; i < lineItems.length; i++) {
@@ -503,7 +505,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
 
   function drawDetailPanel(c: CanvasRenderingContext2D, node: MapNode, w: number, h: number) {
     const panelW = 170
-    const panelH = 90
+    const panelH = 104
     // Position near cursor but clamped to canvas
     let px = mouseX + 18
     let py = mouseY - panelH / 2
@@ -550,6 +552,18 @@ export function createCartographerRoom(deps: MapDeps): Room {
     c.fillText(`memories: ${usesMemory ? 'yes' : 'no'}`, tx, ty)
     ty += 12
 
+    // Thread count for this room
+    const threadEdges = threadTrail.getEdges()
+    const roomThreads = threadEdges.filter(
+      e => e.from === node.name || e.to === node.name
+    )
+    if (roomThreads.length > 0) {
+      const totalPasses = roomThreads.reduce((s, e) => s + e.count, 0)
+      c.fillStyle = `rgba(180, 60, 60, ${textAlpha * 0.6})`
+      c.fillText(`threads: ${roomThreads.length} (${totalPasses} passes)`, tx, ty)
+      ty += 12
+    }
+
     // Connected rooms (truncated)
     const connLabels = node.connections
       .map(n => {
@@ -561,6 +575,79 @@ export function createCartographerRoom(deps: MapDeps): Room {
     c.fillStyle = `rgba(200, 190, 180, ${textAlpha * 0.5})`
     c.font = '7px monospace'
     c.fillText(`links: ${connStr}`, tx, ty)
+  }
+
+  // ═══════════════════════════════════════
+  // THREAD TRAIL (Shiota-inspired)
+  // ═══════════════════════════════════════
+
+  function drawThreadTrail(c: CanvasRenderingContext2D) {
+    const edges = threadTrail.getEdges()
+    if (edges.length === 0) return
+
+    // Find max traversal count for normalization
+    let maxCount = 1
+    for (const edge of edges) {
+      if (edge.count > maxCount) maxCount = edge.count
+    }
+
+    for (const edge of edges) {
+      const fromNode = findNode(edge.from)
+      const toNode = findNode(edge.to)
+      if (!fromNode || !toNode) continue
+
+      const intensity = Math.min(1, edge.count / Math.max(maxCount, 5))
+      const alpha = 0.04 + intensity * 0.18
+      const width = 0.5 + intensity * 2.5
+
+      // Catenary-like curve — threads sag slightly
+      const midX = (fromNode.x + toNode.x) / 2
+      const midY = (fromNode.y + toNode.y) / 2
+      const dx = toNode.x - fromNode.x
+      const dy = toNode.y - fromNode.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const sag = Math.min(dist * 0.15, 30) // sag proportional to distance
+
+      // Perpendicular offset for the sag + slight time-based sway
+      const perpX = -dy / (dist || 1)
+      const perpY = dx / (dist || 1)
+      const sway = Math.sin(time * 0.4 + fromNode.x * 0.01 + toNode.y * 0.01) * 3
+      const cpX = midX + perpX * (sag + sway)
+      const cpY = midY + perpY * (sag + sway)
+
+      // Red thread with slight variation
+      const hue = 0 + Math.sin(edge.count * 0.7) * 8 // 352-8 range (reds)
+      const sat = 70 + intensity * 20
+
+      c.beginPath()
+      c.moveTo(fromNode.x, fromNode.y)
+      c.quadraticCurveTo(cpX, cpY, toNode.x, toNode.y)
+      c.strokeStyle = `hsla(${hue}, ${sat}%, 45%, ${alpha})`
+      c.lineWidth = width
+      c.stroke()
+
+      // Faint glow for thick threads
+      if (intensity > 0.3) {
+        c.beginPath()
+        c.moveTo(fromNode.x, fromNode.y)
+        c.quadraticCurveTo(cpX, cpY, toNode.x, toNode.y)
+        c.strokeStyle = `hsla(${hue}, ${sat}%, 55%, ${alpha * 0.3})`
+        c.lineWidth = width + 3
+        c.stroke()
+      }
+    }
+
+    // Thread trail stats in legend area
+    const totalEdges = threadTrail.getUniqueEdgeCount()
+    const totalTraversals = threadTrail.getTotalTraversals()
+    if (totalEdges > 0) {
+      c.font = '11px monospace'
+      c.fillStyle = 'rgba(180, 60, 60, 0.08)'
+      c.textAlign = 'left'
+      const w = canvas?.width || 1200
+      const h = canvas?.height || 800
+      c.fillText(`${totalEdges} threads woven`, 12, h - 6)
+    }
   }
 
   // ═══════════════════════════════════════
@@ -662,6 +749,9 @@ export function createCartographerRoom(deps: MapDeps): Room {
         ctx.setLineDash([])
       }
     }
+
+    // Draw thread trail (Shiota-inspired red threads)
+    drawThreadTrail(ctx)
 
     // Draw nodes
     for (const node of nodes) {

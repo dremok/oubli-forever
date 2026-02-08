@@ -11,6 +11,7 @@
  */
 
 import { getConnections, getRoomLabel } from '../navigation/RoomGraph'
+import { threadTrail } from '../navigation/ThreadTrail'
 
 export interface Room {
   name: string
@@ -119,6 +120,10 @@ export class RoomManager {
     const room = this.rooms.get(name)
     if (!room) return
 
+    // Record thread trail (Shiota-inspired navigation memory)
+    threadTrail.record(this.activeRoom, name)
+    this.showThreadFlash()
+
     // Deactivate current room
     const currentRoom = this.rooms.get(this.activeRoom)
     if (currentRoom) {
@@ -199,6 +204,42 @@ export class RoomManager {
     this.arrivalTimeout = window.setTimeout(() => {
       this.arrivalWhisper.style.color = 'rgba(255, 215, 0, 0)'
     }, 3000)
+  }
+
+  /** Brief red thread flash during room transitions (Shiota-inspired) */
+  private showThreadFlash() {
+    const thread = document.createElement('div')
+    thread.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 750; pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    `
+
+    // SVG with a wavy red thread across the screen
+    const w = window.innerWidth
+    const h = window.innerHeight
+    const y1 = h * (0.3 + Math.random() * 0.4)
+    const y2 = h * (0.3 + Math.random() * 0.4)
+    const cpY = (y1 + y2) / 2 + (Math.random() - 0.5) * h * 0.3
+    thread.innerHTML = `<svg width="${w}" height="${h}" style="position:absolute;top:0;left:0">
+      <path d="M 0 ${y1} Q ${w / 2} ${cpY} ${w} ${y2}"
+        fill="none" stroke="rgba(180,40,40,0.12)" stroke-width="1.5"
+        stroke-dasharray="${w * 2}" stroke-dashoffset="${w * 2}">
+        <animate attributeName="stroke-dashoffset" from="${w * 2}" to="0"
+          dur="1.2s" fill="freeze" />
+      </path>
+    </svg>`
+
+    document.body.appendChild(thread)
+    requestAnimationFrame(() => { thread.style.opacity = '1' })
+
+    // Fade out and remove
+    setTimeout(() => {
+      thread.style.transition = 'opacity 0.8s ease'
+      thread.style.opacity = '0'
+      setTimeout(() => thread.remove(), 800)
+    }, 1200)
   }
 
   private buildPassageBar() {
