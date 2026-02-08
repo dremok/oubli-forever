@@ -316,7 +316,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // This is a wall — determine subtype
     const h2 = cellHash2(wx, wy)
     if (h2 < 0.06) return INSCRIPTION
-    if (h2 < 0.20) return ANOMALY  // ~14% of walls are clickable anomalies
+    if (h2 < 0.11) return ANOMALY  // ~5% of walls are clickable anomalies
 
     return WALL
   }
@@ -960,7 +960,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           triggeredAt: time, duration: 3,
           type: 'map_reveal', params: { hue: 0, spiralDir: 1, originX: anomalyScreenX, msgIdx: 0 },
         }
-        insanity = 0 // knowledge calms you
+        insanity = Math.max(0, insanity - 0.2) // knowledge calms you
         return true
 
       default:
@@ -1009,11 +1009,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       },
     }
 
-    // Sanity impact: scary = lose 10%, non-scary = restore to full
+    // Sanity impact: scary = lose 10%, non-scary = recover a little
     if (category === 'scary') {
       insanity = Math.min(1, insanity + 0.1)
     } else {
-      insanity = 0
+      insanity = Math.max(0, insanity - 0.08)
     }
 
     playEffectSound(category)
@@ -1204,9 +1204,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function updateInsanity() {
     // Insanity increases slowly but relentlessly
-    // ~0.1 per minute at start, accelerating
-    const baseRate = 0.00003
-    const accel = 1 + insanity * 2 // accelerates as it gets worse
+    // ~0.15 per minute at start, accelerating faster
+    const baseRate = 0.00004
+    const accel = 1 + insanity * 3 // accelerates as it gets worse
     insanity = Math.min(1, insanity + baseRate * accel)
 
     // Derive all madness parameters from insanity level
@@ -1422,10 +1422,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const seed3 = cellHash2(wx * 100 + i * 19, wy * 100 + i * 23)
 
       // Per-character jitter
-      const charRotation = (seed1 - 0.5) * 0.25    // slight tilt
-      const yJitter = (seed2 - 0.5) * fontSize * 0.3 // wobble baseline
-      const sizeJitter = 0.85 + seed3 * 0.3          // size variation
-      const alphaJitter = 0.7 + seed1 * 0.3          // opacity variation
+      const charRotation = (seed1 - 0.5) * 0.3     // stronger tilt
+      const yJitter = (seed2 - 0.5) * fontSize * 0.35
+      const sizeJitter = 0.8 + seed3 * 0.4
+      const alphaJitter = 0.6 + seed1 * 0.4
 
       const charSize = fontSize * sizeJitter
 
@@ -1438,21 +1438,50 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const r = Math.floor(200 + warmth * 40)
       const g = Math.floor(160 + warmth * 30)
       const b = Math.floor(80 + warmth * 20)
-      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter})`
 
       // Use Caveat (handwriting font) with fallback to cursive
       c.font = `${Math.floor(charSize)}px "Caveat", cursive`
       c.textAlign = 'center'
       c.textBaseline = 'middle'
 
-      // Draw character twice with slight offset for thicker "scratched" feel
+      // --- Multi-pass scratched/drawn effect ---
+      // Pass 1: Chalky glow halo
+      c.shadowColor = `rgba(${r}, ${g}, ${b}, ${alpha * 0.3})`
+      c.shadowBlur = 4 + seed3 * 3
+      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.15})`
+      c.fillText(ch, (seed1 - 0.5) * 2, (seed2 - 0.5) * 2)
+      c.shadowBlur = 0
+      c.shadowColor = 'transparent'
+
+      // Pass 2: Stroke outline — looks scratched into the wall
+      c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.7})`
+      c.lineWidth = 0.8 + seed2 * 0.4
+      c.strokeText(ch, 0, 0)
+
+      // Pass 3: Thin secondary stroke with offset (trembling hand)
+      c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.35})`
+      c.lineWidth = 0.5
+      c.strokeText(ch, (seed3 - 0.5) * 2.5, (seed1 - 0.5) * 2)
+
+      // Pass 4: Faint fill for readability
+      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.25})`
       c.fillText(ch, 0, 0)
-      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.3})`
-      c.fillText(ch, (seed3 - 0.5) * 1.5, (seed1 - 0.5) * 1.5)
+
+      // Occasional scratch marks extending from characters
+      if (seed1 > 0.7) {
+        c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.1})`
+        c.lineWidth = 0.5
+        c.beginPath()
+        const scratchLen = charSize * (0.3 + seed2 * 0.4)
+        const scratchAngle = (seed3 - 0.5) * Math.PI * 0.5
+        c.moveTo(0, 0)
+        c.lineTo(Math.cos(scratchAngle) * scratchLen, Math.sin(scratchAngle) * scratchLen)
+        c.stroke()
+      }
 
       c.restore()
 
-      xOffset += charSize * 0.55 + (seed2 - 0.5) * 2 // irregular spacing
+      xOffset += charSize * 0.55 + (seed2 - 0.5) * 3 // more irregular spacing
     }
   }
 
@@ -1862,13 +1891,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const insanityB = insanity > 0.4 ? -insanity * 10 : 0
 
     if (cell === ANOMALY) {
-      // Anomaly walls shimmer with a strong otherworldly glow — clearly different from normal walls
-      const shimmer = 0.5 + Math.sin(time * 2.5) * 0.4
-      const pulse = 0.8 + Math.sin(time * 4) * 0.2
+      // Anomaly walls have a subtle difference — slight purple tint, gentle pulse
+      const shimmer = 0.15 + Math.sin(time * 1.2) * 0.1
+      const pulse = 0.95 + Math.sin(time * 1.8) * 0.05
       return [
-        (55 + tensionR + insanityR + shimmer * 25) * brightness * sideDim * pulse,
-        (38 + tensionG + insanityG + shimmer * 12) * brightness * sideDim * pulse,
-        (90 + insanityB + shimmer * 35) * brightness * sideDim * pulse,
+        (45 + tensionR + insanityR + shimmer * 8) * brightness * sideDim * pulse,
+        (32 + tensionG + insanityG + shimmer * 4) * brightness * sideDim * pulse,
+        (75 + insanityB + shimmer * 15) * brightness * sideDim * pulse,
       ]
     }
     if (cell === INSCRIPTION) {
@@ -2720,21 +2749,33 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         }
       }
 
+      const objSize = physScale * 28  // bigger objects for visibility
+
       ctx.save()
       ctx.translate(vo.screenX, objY)
       if (rotation) ctx.rotate(rotation)
+
+      // Shadow layer — gives depth/3D feel
+      ctx.globalAlpha = alpha * 0.25
+      ctx.save()
+      ctx.translate(3 * physScale, 4 * physScale)
+      ctx.scale(1.03, 1.03)
+      drawRenderedObject(ctx, vo.obj.name, objSize, time, vo.wx, vo.wy)
+      ctx.restore()
+
+      // Main object layer
       ctx.globalAlpha = alpha
-      drawRenderedObject(ctx, vo.obj.name, physScale * 18, time, vo.wx, vo.wy)
+      drawRenderedObject(ctx, vo.obj.name, objSize, time, vo.wx, vo.wy)
       ctx.globalAlpha = 1
       ctx.restore()
 
       // Description at moderate range
-      if (vo.dist < 4) {
+      if (vo.dist < 4.5) {
         const descAlpha = Math.min(0.7, alpha * 0.6)
-        ctx.font = `${Math.floor(12 * physScale)}px "Cormorant Garamond", serif`
+        ctx.font = `${Math.floor(13 * physScale)}px "Cormorant Garamond", serif`
         ctx.fillStyle = `rgba(200, 180, 230, ${descAlpha})`
         ctx.textAlign = 'center'
-        ctx.fillText(vo.obj.desc, vo.screenX, objY + physScale * 22 + 10)
+        ctx.fillText(vo.obj.desc, vo.screenX, objY + physScale * 28 + 14)
       }
     }
 

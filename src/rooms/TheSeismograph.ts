@@ -65,7 +65,66 @@ const CULTURAL_INSCRIPTIONS = [
   'the cascadia subduction zone last ruptured in 1700. the indigenous peoples of the northwest coast remember.',
   'moonquakes last up to an hour. on earth, tremors fade in minutes. the moon holds its grief longer.',
   'a hidden geometry bends electrons like gravity bends light. invisible forces warping the space of memory.',
+  'colorado mountains bare of snow in february 2026. the landscape is forgetting winter.',
+  'virtual particles emerge from nothing — quantum twins with perfect spin correlation. the void is never empty.',
+  'an annular eclipse over antarctica, february 17. a ring of fire witnessed by sixteen scientists and penguins.',
+  'ruthenium molecules that act as memory, logic, or learning — materials that think like brains.',
+  'the doomsday clock reads 85 seconds to midnight. the earth trembles not just from below.',
+  'iñárritu resurrected a million feet of discarded film. what was cut is never truly gone.',
+  'the polar vortex splits in two, february 2026. the atmosphere\'s protective memory fracturing.',
+  'seven thousand atoms held in quantum superposition. the largest schrödinger\'s cat ever — memory in two states at once.',
+  'CRISPR reactivates silenced memory genes in aging brains. what was forgotten can be switched back on.',
+  'a molecular sensor eavesdrops on the brain\'s synaptic whispers. we can finally hear neurons remembering.',
 ]
+
+// Simplified continent outlines (lat, lon pairs) — just enough to be recognizable
+const CONTINENTS: [number, number][][] = [
+  // North America
+  [[72,-168],[72,-140],[70,-100],[60,-95],[55,-75],[50,-58],[45,-65],[43,-70],[30,-82],[25,-80],[18,-88],
+   [15,-85],[10,-84],[8,-77],[15,-92],[17,-100],[22,-105],[30,-115],[35,-120],[48,-125],[55,-130],
+   [58,-138],[60,-145],[65,-168]],
+  // South America
+  [[12,-72],[8,-60],[2,-50],[-5,-35],[-10,-37],[-18,-40],[-23,-42],[-33,-52],[-42,-64],[-55,-68],
+   [-56,-66],[-52,-70],[-46,-75],[-40,-73],[-30,-71],[-18,-70],[-5,-80],[5,-77],[10,-72]],
+  // Africa
+  [[37,-10],[37,10],[32,32],[30,33],[22,37],[12,44],[5,42],[0,42],[-5,40],[-12,40],[-20,35],[-26,33],
+   [-34,26],[-35,18],[-34,18],[-28,16],[-18,12],[-8,13],[0,10],[5,1],[5,-5],[10,-14],[15,-17],
+   [20,-17],[22,-16],[25,-15],[30,-10],[35,-5],[37,-3]],
+  // Europe
+  [[40,-10],[44,-8],[46,-2],[48,2],[51,2],[53,5],[55,8],[56,10],[58,10],[60,5],[63,6],[65,13],
+   [70,20],[71,28],[70,30],[65,28],[60,30],[56,22],[54,14],[51,14],[48,16],[45,14],[44,12],[42,15],
+   [40,18],[38,24],[36,22],[36,28],[39,26],[42,28],[44,26],[45,12],[43,3],[41,-5],[38,-8]],
+  // Asia (mainland)
+  [[42,30],[45,40],[48,45],[50,55],[55,60],[58,60],[60,68],[62,75],[65,78],[68,85],[70,100],[72,120],
+   [72,140],[70,165],[68,170],[65,180],[62,170],[58,160],[56,140],[52,136],[50,132],[46,142],[44,145],
+   [42,140],[38,138],[35,136],[32,132],[30,122],[22,108],[20,106],[10,106],[8,100],[6,100],
+   [8,98],[14,99],[22,90],[25,88],[22,72],[25,62],[28,56],[26,50],[30,48],[33,44],[36,36],[40,30]],
+  // Australia
+  [[-12,130],[-14,137],[-18,146],[-24,152],[-28,154],[-34,151],[-38,146],[-37,140],[-35,137],
+   [-32,132],[-28,114],[-22,114],[-15,125],[-12,130]],
+  // Greenland
+  [[76,-72],[78,-56],[80,-40],[82,-30],[82,-20],[80,-18],[76,-22],[72,-25],[68,-28],[65,-42],
+   [68,-53],[72,-56],[75,-64]],
+  // Antarctica (partial)
+  [[-65,-60],[-68,-60],[-70,-30],[-70,0],[-70,30],[-70,60],[-68,80],[-70,100],[-70,130],[-70,160],
+   [-70,180],[-70,-170],[-70,-140],[-70,-120],[-68,-90],[-65,-60]],
+]
+
+/** P-wave ripple from a new earthquake */
+interface Pwave {
+  x: number; y: number
+  radius: number
+  maxRadius: number
+  alpha: number
+  speed: number  // pixels per frame
+}
+
+/** Micro-tremor visual noise dot */
+interface MicroTremor {
+  x: number; y: number
+  alpha: number
+  life: number
+}
 
 // Primary: USGS FDSNWS query API (20 most recent quakes, no key needed, CORS-friendly)
 const FDSNWS_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&limit=20&orderby=time'
@@ -97,6 +156,10 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
   let screenShake = 0  // decaying screen-shake intensity from large quakes
   let isFetching = false
   let needleWobble = 0 // micro-vibration phase for seismograph needle
+  let pwaves: Pwave[] = []
+  let microTremors: MicroTremor[] = []
+  let hoveredQuake: Quake | null = null
+  let lastMicroTremorTime = 0
 
   // --- Audio state ---
   let audioCtxRef: AudioContext | null = null
@@ -285,6 +348,160 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     audioInitialized = false
   }
 
+  /** Spawn P-wave ripples from newly arrived quakes */
+  function spawnPwaves(newQuakes: Quake[]) {
+    // Only spawn for significant quakes (M2+), limit to 5
+    const significant = newQuakes.filter(q => q.mag >= 2).slice(0, 5)
+    for (const q of significant) {
+      pwaves.push({
+        x: q.x, y: q.y,
+        radius: 0,
+        maxRadius: 80 + q.mag * 30,
+        alpha: 0.15 + q.mag * 0.02,
+        speed: 1.5 + q.mag * 0.3,
+      })
+    }
+  }
+
+  /** Draw simplified continent shapes as subtle filled polygons */
+  function drawContinents(c: CanvasRenderingContext2D, w: number, h: number) {
+    const alpha = 0.04 + Math.sin(time * 0.15) * 0.005
+    c.fillStyle = `rgba(40, 80, 40, ${alpha})`
+    c.strokeStyle = `rgba(60, 100, 60, ${alpha * 1.5})`
+    c.lineWidth = 0.5
+
+    for (const continent of CONTINENTS) {
+      c.beginPath()
+      for (let i = 0; i < continent.length; i++) {
+        const [lat, lon] = continent[i]
+        const [x, y] = latLonToScreen(lat, lon, w, h)
+        if (i === 0) c.moveTo(x, y)
+        else c.lineTo(x, y)
+      }
+      c.closePath()
+      c.fill()
+      c.stroke()
+    }
+  }
+
+  /** Draw and update P-wave propagation ripples */
+  function drawPwaves(c: CanvasRenderingContext2D) {
+    for (let i = pwaves.length - 1; i >= 0; i--) {
+      const pw = pwaves[i]
+      pw.radius += pw.speed
+      const t = pw.radius / pw.maxRadius
+      const a = pw.alpha * (1 - t) * (1 - t)
+
+      if (pw.radius >= pw.maxRadius || a < 0.001) {
+        pwaves.splice(i, 1)
+        continue
+      }
+
+      // P-wave (fast, tight)
+      c.strokeStyle = `rgba(60, 200, 255, ${a})`
+      c.lineWidth = 1.5
+      c.beginPath()
+      c.arc(pw.x, pw.y, pw.radius, 0, Math.PI * 2)
+      c.stroke()
+
+      // S-wave (slower, behind P-wave)
+      const sRadius = pw.radius * 0.6
+      if (sRadius > 3) {
+        c.strokeStyle = `rgba(255, 140, 60, ${a * 0.7})`
+        c.lineWidth = 1
+        c.beginPath()
+        c.arc(pw.x, pw.y, sRadius, 0, Math.PI * 2)
+        c.stroke()
+      }
+    }
+  }
+
+  /** Draw micro-tremor noise dots across the map */
+  function drawMicroTremors(c: CanvasRenderingContext2D, w: number, h: number) {
+    const mapX = w * 0.08
+    const mapY = h * 0.06
+    const mapW = w * 0.84
+    const mapH = h * 0.58
+
+    // Spawn new micro-tremors periodically
+    if (time - lastMicroTremorTime > 0.08) {
+      lastMicroTremorTime = time
+      if (microTremors.length < 30) {
+        microTremors.push({
+          x: mapX + Math.random() * mapW,
+          y: mapY + Math.random() * mapH,
+          alpha: 0.03 + Math.random() * 0.06,
+          life: 0.3 + Math.random() * 0.6,
+        })
+      }
+    }
+
+    // Draw and decay
+    for (let i = microTremors.length - 1; i >= 0; i--) {
+      const mt = microTremors[i]
+      mt.life -= 0.016
+      if (mt.life <= 0) {
+        microTremors.splice(i, 1)
+        continue
+      }
+      const fadeAlpha = mt.alpha * Math.min(1, mt.life * 3)
+      c.fillStyle = `rgba(40, 255, 80, ${fadeAlpha})`
+      c.fillRect(mt.x, mt.y, 1, 1)
+    }
+  }
+
+  /** Draw depth cross-section panel on right side */
+  function drawDepthSection(c: CanvasRenderingContext2D, w: number, h: number) {
+    const panelX = w - 60
+    const panelY = h * 0.08
+    const panelW = 40
+    const panelH = h * 0.52
+    const maxDepth = 700 // km
+
+    // Panel background
+    c.fillStyle = 'rgba(5, 10, 5, 0.4)'
+    c.fillRect(panelX, panelY, panelW, panelH)
+    c.strokeStyle = 'rgba(40, 80, 40, 0.08)'
+    c.strokeRect(panelX, panelY, panelW, panelH)
+
+    // Depth scale labels
+    c.font = '8px monospace'
+    c.fillStyle = 'rgba(40, 255, 80, 0.1)'
+    c.textAlign = 'center'
+    const depths = [0, 100, 300, 500, 700]
+    for (const d of depths) {
+      const y = panelY + (d / maxDepth) * panelH
+      c.fillText(`${d}km`, panelX + panelW / 2, y - 2)
+      c.strokeStyle = 'rgba(40, 80, 40, 0.04)'
+      c.beginPath()
+      c.moveTo(panelX, y)
+      c.lineTo(panelX + panelW, y)
+      c.stroke()
+    }
+
+    // Plot quakes as dots at their depth
+    for (const q of quakes) {
+      const y = panelY + Math.min(q.depth, maxDepth) / maxDepth * panelH
+      const x = panelX + 5 + Math.random() * (panelW - 10) // jitter horizontally
+      const size = Math.max(1.5, q.mag * 0.5)
+      const pulse = Math.sin(time * 1.5 + q.pulsePhase) * 0.2 + 0.8
+      c.fillStyle = depthColor(q.depth, 0.3 * pulse)
+      c.beginPath()
+      c.arc(x, y, size, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // Panel title
+    c.save()
+    c.translate(panelX - 4, panelY + panelH / 2)
+    c.rotate(-Math.PI / 2)
+    c.font = '9px monospace'
+    c.fillStyle = 'rgba(40, 255, 80, 0.08)'
+    c.textAlign = 'center'
+    c.fillText('depth cross-section', 0, 0)
+    c.restore()
+  }
+
   // Earthquake epicenter navigation stations — placed at real-world coordinates
   const stations = [
     { label: 'automaton', room: 'automaton', lat: 35.68, lon: 139.69, illumination: 0 },   // Tokyo — Ring of Fire
@@ -413,6 +630,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     if (parsed.length > 0) {
       quakes = parsed
       buildFadingLabels(parsed)
+      spawnPwaves(parsed)
       // Build trace from magnitudes (simulate seismograph needle)
       traceData = quakes.slice(0, 100).map(q => q.mag).reverse()
       lastFetch = Date.now()
@@ -655,8 +873,10 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     ctx.fillStyle = 'rgba(5, 8, 5, 1)'
     ctx.fillRect(-shakeX, -shakeY, w, h)
 
-    // World outline
+    // World outline + continents
     drawWorldOutline(ctx, w, h)
+    drawContinents(ctx, w, h)
+    drawMicroTremors(ctx, w, h)
 
     // Draw quakes
     for (const q of quakes) {
@@ -721,8 +941,39 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     // Draw fading place-name labels
     drawFadingLabels(ctx, w, h)
 
+    // P-wave / S-wave propagation ripples
+    drawPwaves(ctx)
+
+    // Depth cross-section
+    drawDepthSection(ctx, w, h)
+
     // Seismograph trace
     drawSeismographTrace(ctx, w, h)
+
+    // Hover tooltip for nearest quake
+    if (hoveredQuake) {
+      const hq = hoveredQuake
+      const tipX = hq.x + 15
+      const tipY = hq.y - 15
+
+      // Background
+      ctx.fillStyle = 'rgba(5, 10, 5, 0.7)'
+      ctx.fillRect(tipX - 4, tipY - 14, 180, 46)
+      ctx.strokeStyle = 'rgba(40, 255, 80, 0.15)'
+      ctx.strokeRect(tipX - 4, tipY - 14, 180, 46)
+
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.textAlign = 'left'
+      ctx.fillStyle = depthColor(hq.depth, 0.7)
+      ctx.fillText(`M${hq.mag.toFixed(1)} — ${hq.place}`, tipX, tipY)
+      ctx.fillStyle = 'rgba(40, 255, 80, 0.4)'
+      ctx.fillText(`depth: ${hq.depth.toFixed(1)}km · ${timeAgo(hq.time)}`, tipX, tipY + 14)
+      const energy = Math.pow(10, 1.5 * hq.mag + 4.8)
+      const energyStr = energy > 1e12 ? `${(energy / 1e12).toFixed(1)} TJ` :
+        energy > 1e9 ? `${(energy / 1e9).toFixed(1)} GJ` :
+        energy > 1e6 ? `${(energy / 1e6).toFixed(1)} MJ` : `${energy.toFixed(0)} J`
+      ctx.fillText(`energy: ~${energyStr}`, tipX, tipY + 28)
+    }
 
     // Selected quake info
     if (selectedQuake) {
@@ -987,7 +1238,7 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
 
       canvas.addEventListener('click', handleClick)
 
-      // Epicenter station hover detection
+      // Epicenter station + quake hover detection
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
         mouseX = e.clientX
@@ -995,7 +1246,10 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
         const w = canvas.width
         const h = canvas.height
         hoveredStation = -1
+        hoveredQuake = null
         canvas.style.cursor = 'crosshair'
+
+        // Check navigation stations first
         for (let i = 0; i < stations.length; i++) {
           const [sx, sy] = latLonToScreen(stations[i].lat, stations[i].lon, w, h)
           const dx = mouseX - sx
@@ -1003,9 +1257,22 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
           if (dx * dx + dy * dy < 625) {  // 25px radius
             hoveredStation = i
             canvas.style.cursor = 'pointer'
-            break
+            return
           }
         }
+
+        // Check quake proximity for tooltip
+        let closestDist = Infinity
+        for (const q of quakes) {
+          const dx = q.x - mouseX
+          const dy = q.y - mouseY
+          const dist = dx * dx + dy * dy
+          if (dist < 900 && dist < closestDist) {  // 30px radius
+            closestDist = dist
+            hoveredQuake = q
+          }
+        }
+        if (hoveredQuake) canvas.style.cursor = 'pointer'
       })
 
       const onResize = () => {
