@@ -225,8 +225,8 @@ export function createCartographerRoom(deps: MapDeps): Room {
   // ═══════════════════════════════════════
 
   function runForceSimulation(iterations: number) {
-    const repulseStrength = 2000
-    const attractStrength = 0.005
+    const repulseStrength = 4500
+    const attractStrength = 0.004
     const damping = 0.85
     const centerPullX = canvas ? canvas.width / 2 : 600
     const centerPullY = canvas ? canvas.height / 2 : 400
@@ -281,12 +281,12 @@ export function createCartographerRoom(deps: MapDeps): Room {
     }
 
     // Clamp positions to canvas bounds with margin
-    const margin = 60
+    const margin = 40
     const w = canvas?.width || 1200
     const h = canvas?.height || 800
     for (const node of nodes) {
       node.targetX = Math.max(margin, Math.min(w - margin, node.targetX))
-      node.targetY = Math.max(margin + 30, Math.min(h - margin - 50, node.targetY))
+      node.targetY = Math.max(margin + 30, Math.min(h - margin - 30, node.targetY))
     }
   }
 
@@ -305,11 +305,11 @@ export function createCartographerRoom(deps: MapDeps): Room {
 
     nodes = []
 
-    // Start with elliptical layout as seed positions
+    // Start with elliptical layout as seed positions — use most of the screen
     const cx = w / 2
-    const surfaceCY = h * 0.35
-    const rx = w * 0.35
-    const ry = h * 0.2
+    const surfaceCY = h * 0.38
+    const rx = w * 0.42
+    const ry = h * 0.28
 
     for (let i = 0; i < surfaceRooms.length; i++) {
       const angle = (i / surfaceRooms.length) * Math.PI * 2 - Math.PI / 2
@@ -332,13 +332,13 @@ export function createCartographerRoom(deps: MapDeps): Room {
     }
 
     // Hidden rooms below
-    const hiddenCY = h * 0.72
-    const hiddenRX = w * 0.2
+    const hiddenCY = h * 0.78
+    const hiddenRX = w * 0.28
     for (let i = 0; i < hiddenRooms.length; i++) {
       const angle = (i / hiddenRooms.length) * Math.PI * 2 - Math.PI / 2
       const r = hiddenRooms[i]
       const tx = cx + Math.cos(angle) * hiddenRX
-      const ty = hiddenCY + Math.sin(angle) * (h * 0.1)
+      const ty = hiddenCY + Math.sin(angle) * (h * 0.12)
       nodes.push({
         name: r.name,
         label: r.label,
@@ -639,18 +639,18 @@ export function createCartographerRoom(deps: MapDeps): Room {
           const glowPulse = Math.sin(time * 4) * 0.1 + 0.9
           ctx.strokeStyle = `rgba(255, 215, 0, ${0.35 * glowPulse})`
           ctx.setLineDash([])
-          ctx.lineWidth = 2
+          ctx.lineWidth = 2.5
         } else if (anyHidden && !(node.visited && target.visited)) {
           // Hidden connection — barely visible
           ctx.strokeStyle = `rgba(80, 60, 100, ${0.03 + pulse})`
           ctx.setLineDash([3, 6])
           ctx.lineWidth = 1
         } else if (bothVisited) {
-          ctx.strokeStyle = `rgba(255, 215, 0, ${0.08 + pulse})`
+          ctx.strokeStyle = `rgba(255, 215, 0, ${0.1 + pulse})`
           ctx.setLineDash([])
-          ctx.lineWidth = 1
+          ctx.lineWidth = 1.5
         } else {
-          ctx.strokeStyle = `rgba(120, 100, 140, ${0.05 + pulse})`
+          ctx.strokeStyle = `rgba(120, 100, 140, ${0.06 + pulse})`
           ctx.setLineDash([2, 4])
           ctx.lineWidth = 1
         }
@@ -671,29 +671,29 @@ export function createCartographerRoom(deps: MapDeps): Room {
       const breathe = Math.sin(time * 0.8 + node.x * 0.01 + node.y * 0.01) * 0.5 + 0.5
 
       // Node size and appearance
-      let radius = 4
+      let radius = 5
       let alpha = 0.15
 
       if (node.visited) {
-        radius = 5
+        radius = 7
         alpha = 0.3
       }
       if (isActive) {
-        radius = 7
+        radius = 9
         alpha = 0.6
       }
       if (node.hidden && !node.visited) {
-        radius = 3
+        radius = 4
         alpha = 0.04
       }
       if (isHovered) {
-        radius += 2
+        radius += 3
         alpha += 0.2
       }
       if (isOnPath) {
         // Pulse nodes along the path
         const pathPulse = Math.sin(time * 5) * 0.15 + 0.85
-        radius += 1.5
+        radius += 2
         alpha = Math.min(1, alpha + 0.15 * pathPulse)
       }
 
@@ -729,16 +729,16 @@ export function createCartographerRoom(deps: MapDeps): Room {
       ctx.fill()
 
       // Label
-      ctx.font = '9px "Cormorant Garamond", serif'
+      ctx.font = `${isHovered ? '12' : '11'}px "Cormorant Garamond", serif`
       ctx.textAlign = 'center'
 
       if (node.hidden && !node.visited) {
         ctx.fillStyle = `rgba(100, 80, 140, ${0.04 + breathe * 0.01})`
-        ctx.fillText('?', node.x, node.y + radius + 14)
+        ctx.fillText('?', node.x, node.y + radius + 16)
       } else {
-        const labelAlpha = isHovered ? 0.4 : isActive ? 0.3 : isOnPath ? 0.25 : node.visited ? 0.12 : 0.06
+        const labelAlpha = isHovered ? 0.5 : isActive ? 0.35 : isOnPath ? 0.3 : node.visited ? 0.15 : 0.08
         ctx.fillStyle = `rgba(200, 190, 180, ${labelAlpha})`
-        ctx.fillText(node.label, node.x, node.y + radius + 14)
+        ctx.fillText(node.label, node.x, node.y + radius + 16)
       }
     }
 
@@ -813,7 +813,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
     for (const node of nodes) {
       const dx = e.clientX - node.x
       const dy = e.clientY - node.y
-      if (dx * dx + dy * dy < 400) { // 20px radius
+      if (dx * dx + dy * dy < 625) { // 25px radius
         if (!node.hidden || node.visited) {
           hoveredNode = node
         }
