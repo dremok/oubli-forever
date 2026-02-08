@@ -1444,6 +1444,24 @@ Added "Origins" section to CLAUDE.md: oubli is both French for "forgetting" AND 
 - **WASI 0.3**: Native async support for WebAssembly. Wasm usage rising.
 - **p5.js 2.2**: WebGPU rendering mode in creative coding.
 
+### 136. Keyboard Fix — a/m/h/t Keys
+Fixed key conflict: a/m/h/t no longer start memory typing when no text is being typed. They trigger their respective features (AsciiVoid, MemoryArchive, Heatmap, Trails) instead. When typing IS active, the feature toggles are suppressed. Added `setTypingCheck()` to AsciiVoid, ParticleTrails, PresenceHeatmap.
+
+### 137. Cultural Research Round 8 — Feb 2026 Events
+- **Snow drought**: Colorado/Utah record-low snowpack. Mountains bare. Rain instead of snow.
+- **Annular eclipse Feb 17**: Ring of fire over Antarctica. Seen by ~16 scientists + penguins.
+- **Virtual particles from vacuum**: Brookhaven Lab quantum twins with 100% spin correlation.
+- **Shape-shifting molecules**: Ruthenium complexes as memory/logic/learning (Indian Institute of Science).
+- **Memory of Materials**: Hayward Gallery Feb 17 — Shiota (threads) + Yin Xiuzhen (used clothing).
+- **TikTok Undesirable Child Confessions**: Confessional comedy exposing your weirdest past self.
+- 18 new whisper fragments + 7 new decay meditations from this research.
+
+### 138. Vacuum Fluctuations (`src/effects/VacuumFluctuations.ts`)
+New global visual effect: every 35-75 seconds in the void, paired "quantum twin" particles (gold + blue) briefly materialize from a random point, connected by a faint thread. They fly apart in opposite directions and dissolve — something from nothing, back to nothing. Inspired by Brookhaven Lab's Feb 2026 discovery.
+
+### 139. Eclipse Ring of Fire in the Glacarium
+The Glacarium sky now shows a ring of fire as the Feb 17 annular eclipse approaches. Intensity grows quadratically over 14 days, peaks on eclipse day, fades 3 days after. Countdown label reads "eclipse in N days" then "ring of fire — antarctica" on the day. Plus 2 new cultural inscriptions.
+
 ---
-*Last updated: Era 9, Feature 135 — Self-evolving instructions + cultural inscriptions across 30 rooms*
-*"oubli: forgetting in french. a sweet golden fruit in west africa. both."*
+*Last updated: Era 9, Feature 139 — Vacuum fluctuations + eclipse ring + cultural research round 8*
+*"the void is not empty. it seethes with particles that exist for a fraction of a second."*
