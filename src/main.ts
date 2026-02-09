@@ -618,6 +618,47 @@ phenotype.start()
 const seasonalClock = new SeasonalClock()
 seasonalClock.start()
 
+// Wire seasonal clock to the void's particle system
+// Each season subtly modulates the void's appearance
+seasonalClock.onSeasonChange((season) => {
+  switch (season) {
+    case 'seed':
+      voidRenderer.setDriftSpeed(0.7)
+      voidRenderer.setDriftSaturation(0.6)
+      voidRenderer.setBloomStrength(0.8)
+      voidRenderer.setFogDensity(0.003)
+      break
+    case 'growth':
+      voidRenderer.setDriftSpeed(1.0)
+      voidRenderer.setDriftSaturation(1.0)
+      voidRenderer.setBloomStrength(1.2)
+      voidRenderer.setFogDensity(0.002)
+      break
+    case 'ripe':
+      voidRenderer.setDriftSpeed(0.9)
+      voidRenderer.setDriftHueShift(0.08) // golden warmth
+      voidRenderer.setDriftSaturation(1.3)
+      voidRenderer.setBloomStrength(1.6)
+      voidRenderer.setFogDensity(0.001)
+      break
+    case 'fall':
+      voidRenderer.setDriftSpeed(1.3)
+      voidRenderer.setDriftHueShift(0.12) // amber
+      voidRenderer.setDriftSaturation(0.8)
+      voidRenderer.setBloomStrength(1.0)
+      voidRenderer.setGrainIntensity(0.1)
+      break
+    case 'decay':
+      voidRenderer.setDriftSpeed(0.5)
+      voidRenderer.setDriftHueShift(0.0)
+      voidRenderer.setDriftSaturation(0.4)
+      voidRenderer.setBloomStrength(0.6)
+      voidRenderer.setFogDensity(0.004)
+      voidRenderer.setGrainIntensity(0.12)
+      break
+  }
+})
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays

@@ -91,6 +91,16 @@ const PROMPTS_BASE = [
   'Spider silk holds because of invisible molecular bonds. Write about the invisible thing that holds a relationship together...',
   'Knowing and remembering use the same brain network. Is there a difference between knowing a fact and remembering a face?',
   'Community darkrooms are reopening everywhere — shared darkness as collective practice. Write about something you can only do in the dark...',
+
+  // Feb 2026 — round 5: Morrison, lattice surgery, seasonal time
+  'Toni Morrison: "Our liberation from diminishing notions comes through language." What notion diminishes you? Write your way out...',
+  'Scientists split a quantum state in two without losing the information. Write about a separation that preserved something...',
+  'The great meme reset failed — millions tried to collectively forget, and nothing changed. What have you tried to forget and failed?',
+  'Tracey Emin showed her unmade bed in a museum. What object in your life is too honest to display?',
+  '"Guaranteed human" is the new premium. Write about a flaw that proves you\'re alive...',
+  'The house has seasons — seed, growth, ripe, fall, decay. Which season are you in right now?',
+  'A poet wrote about a childhood near-drowning. Memory as something you almost didn\'t survive. What memory nearly destroyed you?',
+  'The rare aesthetic: nostalgia not for beauty but for recognition. What do you recognize but can\'t name?',
 ]
 
 // Fallback quotes for when the API is unreachable
