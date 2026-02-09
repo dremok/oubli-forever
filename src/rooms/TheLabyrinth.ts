@@ -236,9 +236,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let lastGhostSpawnTime = 0
   const GHOST_SPAWN_INTERVAL = 18 // seconds between spawn attempts
   const GHOST_MAX = 3
-  const GHOST_APPEAR_DIST = 8    // visible from this far
-  const GHOST_DISSOLVE_DIST = 3.5 // start dissolving below this
-  const GHOST_GONE_DIST = 1.2    // fully invisible below this
+  const GHOST_APPEAR_DIST = 14   // visible from very far
+  const GHOST_DISSOLVE_DIST = 7  // start dissolving below this
+  const GHOST_GONE_DIST = 4      // fully gone well before you reach them
 
   // Pre-rendered ghost sprite canvas
   let ghostSpriteCanvas: HTMLCanvasElement | null = null
@@ -319,10 +319,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function spawnGhost(): void {
     if (ghosts.length >= GHOST_MAX) return
-    // Find a random open cell 5-10 tiles from player
+    // Find a random open cell 7-13 tiles from player — far enough to see approaching
     for (let attempt = 0; attempt < 20; attempt++) {
       const angle = Math.random() * Math.PI * 2
-      const dist = 5 + Math.random() * 5
+      const dist = 7 + Math.random() * 6
       const gx = Math.floor(px + Math.cos(angle) * dist)
       const gy = Math.floor(py + Math.sin(angle) * dist)
       // Must be an open cell (odd,odd = room)
@@ -2543,12 +2543,15 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const angleToGhost = Math.atan2(dy, dx)
       // Relative angle within player's FOV
       let relAngle = angleToGhost - pa
-      // Normalize to [-PI, PI]
       while (relAngle > Math.PI) relAngle -= Math.PI * 2
       while (relAngle < -Math.PI) relAngle += Math.PI * 2
 
       // Skip if outside FOV (with margin)
       if (Math.abs(relAngle) > fov * 0.6) continue
+
+      // Wall occlusion — cast ray toward ghost, skip if wall is closer
+      const wallHit = castRay(px, py, angleToGhost)
+      if (wallHit.dist < dist * 0.95) continue // wall blocks line of sight
 
       // Project to screen X
       const screenX = w / 2 + (relAngle / fov) * w
@@ -2557,49 +2560,49 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const perpDist = dist * Math.cos(relAngle)
       if (perpDist < 0.3) continue
 
-      // Sprite height on screen
-      const spriteH = (h / perpDist) * ghost.height
-      const spriteW = spriteH * 0.5 // aspect ratio of sprite canvas (64/128)
-      const spriteTop = midLine - spriteH * 0.5
+      // Sprite dimensions — ghost stands on the floor
+      const unitH = h / perpDist  // 1 world-unit in screen pixels at this distance
+      const spriteH = unitH * ghost.height
+      const spriteW = spriteH * 0.5
+      // Anchor feet to floor: floor is at midLine + unitH/2
+      const floorY = midLine + unitH / 2
+      const spriteTop = floorY - spriteH
 
       // Dissolution based on distance — closer = more transparent
       let opacity: number
       if (dist > GHOST_DISSOLVE_DIST) {
-        // Fully visible (but still ethereal)
-        opacity = Math.min(0.7, (GHOST_APPEAR_DIST - dist) / 2)
+        opacity = Math.min(0.55, (GHOST_APPEAR_DIST - dist) / 3)
       } else {
-        // Dissolving as player approaches
         const t = (dist - GHOST_GONE_DIST) / (GHOST_DISSOLVE_DIST - GHOST_GONE_DIST)
-        opacity = t * 0.7
+        opacity = t * 0.55
       }
 
-      // Fade in on spawn (first 3 seconds)
+      // Fade in on spawn (first 4 seconds)
       const age = time - ghost.spawnTime
-      if (age < 3) opacity *= age / 3
+      if (age < 4) opacity *= age / 4
 
       // Slight sway animation
-      const sway = Math.sin(time * 0.8 + ghost.sway) * 4 * (1 / Math.max(1, perpDist))
+      const sway = Math.sin(time * 0.6 + ghost.sway) * 3 * (1 / Math.max(1, perpDist))
 
-      // Distance fog tint
-      const fogFade = Math.max(0.3, 1 - dist / GHOST_APPEAR_DIST)
+      // Distance fog
+      const fogFade = Math.max(0.2, 1 - dist / GHOST_APPEAR_DIST)
 
       if (opacity < 0.01) continue
 
       c.save()
       c.globalAlpha = opacity * fogFade
 
-      // Dissolution distortion — break apart into strips at close range
+      // Dissolution distortion — break apart into strips as player approaches
       if (dist < GHOST_DISSOLVE_DIST) {
         const dissolveT = 1 - (dist - GHOST_GONE_DIST) / (GHOST_DISSOLVE_DIST - GHOST_GONE_DIST)
         const stripCount = 8
-        const stripW = spriteW / stripCount
+        const sW = spriteW / stripCount
         const srcStripW = 64 / stripCount
 
         for (let s = 0; s < stripCount; s++) {
-          // Each strip drifts differently during dissolution
           const stripSeed = Math.sin(s * 7.3 + ghost.sway * 3.1)
-          const driftX = stripSeed * dissolveT * 20
-          const driftY = Math.cos(s * 4.7 + ghost.sway) * dissolveT * 15
+          const driftX = stripSeed * dissolveT * 25
+          const driftY = Math.cos(s * 4.7 + ghost.sway) * dissolveT * 20 - dissolveT * 10
           const stripAlpha = Math.max(0, 1 - dissolveT * (0.5 + Math.abs(stripSeed) * 0.8))
 
           if (stripAlpha < 0.01) continue
@@ -2608,14 +2611,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           c.drawImage(
             ghostSpriteCanvas!,
             s * srcStripW, 0, srcStripW, 128,
-            screenX - spriteW / 2 + s * stripW + sway + driftX,
+            screenX - spriteW / 2 + s * sW + sway + driftX,
             spriteTop + driftY,
-            stripW + 1,
+            sW + 1,
             spriteH,
           )
         }
       } else {
-        // Full sprite — simple draw
         c.drawImage(
           ghostSpriteCanvas!,
           0, 0, 64, 128,
@@ -3364,6 +3366,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       // No description text — objects speak for themselves
     }
 
+    // Ghost figures — rendered before fog so they're part of the scene
+    renderGhosts(w, h, fov, midLine)
+
     // Fog overlay — tightens with insanity (vision narrows)
     const fogRadius = w * (0.6 - insanity * 0.15)
     const fogGrad = ctx.createRadialGradient(w / 2, midLine, 0, w / 2, midLine, fogRadius)
@@ -3399,9 +3404,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillStyle = portalGlow
       ctx.fillRect(0, 0, w, h)
     }
-
-    // Ghost figures — rendered after fog so they look atmospheric
-    renderGhosts(w, h, fov, midLine)
 
     // Crosshair — changes when looking at anomaly
     if (lookingAtAnomaly) {
