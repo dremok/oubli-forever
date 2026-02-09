@@ -84,6 +84,7 @@ import { RoomAfterimage } from './effects/RoomAfterimage'
 import { SpacetimeRipple } from './effects/SpacetimeRipple'
 import { MemoryBleed } from './effects/MemoryBleed'
 import { VacuumFluctuations } from './effects/VacuumFluctuations'
+import { Mycelium } from './organisms/Mycelium'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -575,6 +576,11 @@ memoryBleed.start()
 const vacuumFluctuations = new VacuumFluctuations()
 vacuumFluctuations.setRoomCheck(() => roomManager.getActiveRoom())
 vacuumFluctuations.start()
+// The Mycelium — a living network organism between rooms
+// Not a room. Not an effect. The circulatory system of the house.
+const mycelium = new Mycelium()
+mycelium.start()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -586,6 +592,7 @@ roomManager.onRoomChange((room) => {
   // Trigger spacetime ripple when entering destructive rooms
   spacetimeRipple.triggerRoomEvent(room)
   _prevRoom = room
+  mycelium.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'
