@@ -82,6 +82,12 @@ const CULTURAL_INSCRIPTIONS = [
   'the last manned lighthouse in the US was automated in 1998. the keeper\'s memory, replaced by a timer.',
   'a foghorn\'s low frequency carries further because long waves bend around obstacles. grief travels the same way.',
   'episodic and semantic memory use the same brain network. what happened to you and what you know are one.',
+  'samson young\'s liquid borders (2026): field recordings of border fence vibrations. sound carries across boundaries.',
+  'the art of noise exhibition (cooper hewitt, feb 2026): how sound shapes space, memory, and identity.',
+  'marconi sent the first transatlantic radio signal in 1901. three dots: S. the simplest message crossed the ocean.',
+  'the last manual lighthouse keeper in britain retired in 1998. automation replaced vigil with algorithm.',
+  'voice cloning has crossed the indistinguishable threshold. the signal can no longer be trusted. who is speaking?',
+  'the polar vortex split (feb 2026): earth\'s atmospheric shield breaking apart. weather itself is forgetting its patterns.',
 ]
 
 export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
@@ -124,6 +130,24 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
     radius: number
   }
   const ripples: Ripple[] = []
+
+  // ── Distant ship lights ────────────────────────────────────
+  interface DistantShip {
+    x: number       // 0-1 fraction of width
+    speed: number   // drift speed per frame
+    blinkPhase: number
+    blinkRate: number // radians per frame
+    brightness: number // base brightness 0-1
+    size: number
+  }
+  const distantShips: DistantShip[] = []
+  let shipSpawnTimer = 0
+
+  // ── Fog weather ────────────────────────────────────────────
+  let fogDensity = 0       // current fog 0-1
+  let fogTarget = 0        // target fog density
+  let fogTransitionRate = 0.0003 // how fast fog changes
+  let nextFogEvent = 600   // frames until next fog change
 
   // Landmark definitions for beam-illumination navigation
   const landmarks = [
@@ -618,6 +642,73 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       ctx.stroke()
     }
 
+    // ── Distant ship lights ──────────────────────────────────
+    shipSpawnTimer--
+    if (shipSpawnTimer <= 0 && distantShips.length < 5) {
+      const fromLeft = Math.random() > 0.5
+      distantShips.push({
+        x: fromLeft ? -0.02 : 1.02,
+        speed: (fromLeft ? 1 : -1) * (0.00002 + Math.random() * 0.00003),
+        blinkPhase: Math.random() * Math.PI * 2,
+        blinkRate: 0.02 + Math.random() * 0.04,
+        brightness: 0.15 + Math.random() * 0.25,
+        size: 1.5 + Math.random() * 1.5,
+      })
+      shipSpawnTimer = 300 + Math.random() * 600 // 5-15s between ships
+    }
+
+    for (let si = distantShips.length - 1; si >= 0; si--) {
+      const ship = distantShips[si]
+      ship.x += ship.speed
+      ship.blinkPhase += ship.blinkRate
+      // Remove ships that drift off screen
+      if (ship.x < -0.05 || ship.x > 1.05) {
+        distantShips.splice(si, 1)
+        continue
+      }
+      // Blink pattern: on for a bit, off for a bit
+      const blink = Math.sin(ship.blinkPhase) > 0.3 ? 1 : 0
+      const fogDim = 1 - fogDensity * 0.7 // fog dims distant lights
+      const alpha = ship.brightness * blink * fogDim
+      if (alpha > 0.01) {
+        const sx = ship.x * w
+        const sy = horizonY + 2 + Math.sin(time * 0.8 + si * 2) * 2 // gentle bob
+        // Warm yellowish light
+        const shipGlow = ctx.createRadialGradient(sx, sy, 0, sx, sy, ship.size * 4)
+        shipGlow.addColorStop(0, `rgba(255, 230, 160, ${alpha})`)
+        shipGlow.addColorStop(0.4, `rgba(255, 210, 120, ${alpha * 0.3})`)
+        shipGlow.addColorStop(1, 'transparent')
+        ctx.fillStyle = shipGlow
+        ctx.beginPath()
+        ctx.arc(sx, sy, ship.size * 4, 0, Math.PI * 2)
+        ctx.fill()
+        // Tiny bright core
+        ctx.fillStyle = `rgba(255, 250, 220, ${alpha * 1.5})`
+        ctx.fillRect(sx - ship.size * 0.5, sy - ship.size * 0.5, ship.size, ship.size)
+      }
+    }
+
+    // ── Fog weather update ──────────────────────────────────
+    nextFogEvent--
+    if (nextFogEvent <= 0) {
+      // Decide new fog target
+      if (fogTarget < 0.1) {
+        // Clear → foggy
+        fogTarget = 0.2 + Math.random() * 0.5 // 0.2-0.7 density
+        nextFogEvent = 600 + Math.random() * 1200 // fog lasts 10-30s
+      } else {
+        // Foggy → clear
+        fogTarget = 0
+        nextFogEvent = 900 + Math.random() * 1800 // clear lasts 15-45s
+      }
+    }
+    // Smooth transition
+    if (fogDensity < fogTarget) {
+      fogDensity = Math.min(fogTarget, fogDensity + fogTransitionRate)
+    } else if (fogDensity > fogTarget) {
+      fogDensity = Math.max(fogTarget, fogDensity - fogTransitionRate * 0.6) // clears slower
+    }
+
     // Lighthouse tower
     const towerBase = horizonY - 5
     const towerWidth = 16
@@ -734,6 +825,67 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, ${starAlpha})`
       const starSize = 1 + starBeamIl * 1.5
       ctx.fillRect(sx - starSize / 2, sy - starSize / 2, starSize, starSize)
+    }
+
+    // ── Fog overlay ──────────────────────────────────────────
+    if (fogDensity > 0.01) {
+      // Layered fog: denser near water, thinner above
+      // Upper fog (sky area)
+      const upperFogAlpha = fogDensity * 0.15
+      ctx.fillStyle = `rgba(8, 12, 20, ${upperFogAlpha})`
+      ctx.fillRect(0, 0, w, horizonY)
+
+      // Lower fog (water area) — denser
+      const lowerFogAlpha = fogDensity * 0.3
+      ctx.fillStyle = `rgba(10, 15, 25, ${lowerFogAlpha})`
+      ctx.fillRect(0, horizonY, w, h - horizonY)
+
+      // Rolling fog wisps near the horizon
+      for (let fi = 0; fi < 6; fi++) {
+        const wispX = (Math.sin(time * 0.1 + fi * 1.7) * 0.3 + 0.5) * w
+        const wispY = horizonY + Math.sin(time * 0.15 + fi * 2.3) * 30
+        const wispW = 120 + Math.sin(fi * 3.1) * 60
+        const wispH = 25 + Math.sin(fi * 2.7) * 10
+        const wispAlpha = fogDensity * (0.06 + Math.sin(time * 0.2 + fi) * 0.02)
+
+        const wispGrad = ctx.createRadialGradient(wispX, wispY, 0, wispX, wispY, wispW)
+        wispGrad.addColorStop(0, `rgba(15, 20, 35, ${wispAlpha})`)
+        wispGrad.addColorStop(0.5, `rgba(12, 18, 30, ${wispAlpha * 0.5})`)
+        wispGrad.addColorStop(1, 'transparent')
+        ctx.fillStyle = wispGrad
+        ctx.beginPath()
+        ctx.ellipse(wispX, wispY, wispW, wispH, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // Beam scattering in fog — light beam becomes more diffuse/visible
+      if (lightIntensity > 0.1) {
+        const scatterAlpha = fogDensity * 0.04 * lightIntensity
+        for (let b = 0; b < 2; b++) {
+          const angle = beamAngle + b * Math.PI
+          const beamLen = Math.max(w, h)
+          const beamW = 0.2 + fogDensity * 0.15 // wider beam in fog
+          const endX = lightX + Math.cos(angle) * beamLen
+          const endY = lightY + Math.sin(angle) * beamLen
+          const scatterGrad = ctx.createLinearGradient(lightX, lightY, endX, endY)
+          scatterGrad.addColorStop(0, `rgba(255, 250, 220, ${scatterAlpha * 2})`)
+          scatterGrad.addColorStop(0.15, `rgba(255, 250, 220, ${scatterAlpha})`)
+          scatterGrad.addColorStop(0.5, `rgba(255, 250, 220, ${scatterAlpha * 0.2})`)
+          scatterGrad.addColorStop(1, 'transparent')
+          ctx.fillStyle = scatterGrad
+          ctx.beginPath()
+          ctx.moveTo(lightX, lightY)
+          ctx.lineTo(
+            lightX + Math.cos(angle - beamW) * beamLen,
+            lightY + Math.sin(angle - beamW) * beamLen,
+          )
+          ctx.lineTo(
+            lightX + Math.cos(angle + beamW) * beamLen,
+            lightY + Math.sin(angle + beamW) * beamLen,
+          )
+          ctx.fill()
+        }
+      }
     }
 
     // ── Cursor signal trail ──
@@ -1193,6 +1345,11 @@ export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {
       autoTimer = 60 // start auto-transmit after 1 second
       transmitCount = 0
       shoreLinkVisible = false
+      distantShips.length = 0
+      shipSpawnTimer = 60
+      fogDensity = 0
+      fogTarget = 0
+      nextFogEvent = 600 + Math.random() * 600
       if (shoreLink) {
         shoreLink.style.opacity = '0'
         shoreLink.style.pointerEvents = 'none'
