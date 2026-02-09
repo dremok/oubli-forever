@@ -68,6 +68,14 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     "365 buttons, one for each day, because i'm scared of time. — tamara, january 2026",
     "emerald fennell's wuthering heights: cathy's ghost at the window, 20 years after death. time means nothing to obsession.",
     "consciousness is always remembering the present. we never experience it directly.",
+    "NYU levitates a time crystal in a magnetic trap. a state that repeats forever without energy. time's perpetual motion machine.",
+    "the second is being redefined. optical atomic clocks measure 430 trillion oscillations per second. the old cesium clock is no longer precise enough.",
+    "leap seconds abolished by 2035. the world decided to let clocks drift from the sun rather than stutter.",
+    "hippocampal time cells fire in sequence as you experience events. your brain timestamps every memory. without them, everything is simultaneous.",
+    "tehching hsieh punched a time clock every hour for one year. 8,760 photographs. he missed 133 punches. the gaps are the art.",
+    "christian marclay's 'the clock': a 24-hour film where every frame shows a clock matching real time. cinema as sundial.",
+    "time slows during fear. not really — your brain just records more frames per second. terror is high-resolution memory.",
+    "CANYON opens in NYC: a museum dedicated to time-based art. every piece expires, loops, or decays. nothing is permanent.",
   ]
   let inscriptionIndex = 0
   let inscriptionAlpha = 0
@@ -79,6 +87,34 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
 
   // --- Quarter-hour chime tracking ---
   let lastChimeQuarter = -1
+
+  // --- Time cells (hippocampal timestamp neurons) ---
+  interface TimeCell {
+    angle: number      // position on clock edge
+    fireIntensity: number  // 0-1, decays after firing
+    baseRate: number   // how often this cell fires (unique per cell)
+  }
+  const timeCells: TimeCell[] = []
+  const TIME_CELL_COUNT = 60
+  let lastSecondForCells = -1
+
+  // --- Chronometric distortion ring (experienced vs measured time) ---
+  let lastMouseMoveTime = 0
+  let perceivedSpeed = 1  // 1 = normal, <1 = time stretching, >1 = time compressing
+  let distortionHistory: number[] = []  // ring of recent distortion values
+  const DISTORTION_RING_SEGMENTS = 120
+
+  // --- Time crystal particles (perpetual oscillators) ---
+  interface TimeCrystal {
+    angle: number      // orbital position
+    radius: number     // distance from center
+    speed: number      // angular velocity (never decays)
+    size: number
+    hue: number        // color phase
+    phase: number      // oscillation phase
+  }
+  const timeCrystals: TimeCrystal[] = []
+  const TIME_CRYSTAL_COUNT = 12
 
   // --- Pendulum trail ---
   const pendulumTrail: { x: number; y: number }[] = []
@@ -584,6 +620,61 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     // === GEAR SHADOWS (behind clock face) ===
     drawGearShadows(ctx, cx, cy, radius)
 
+    // === CHRONOMETRIC DISTORTION RING ===
+    // Experienced time vs measured time — stretches when user is active
+    const timeSinceMove = performance.now() - lastMouseMoveTime
+    const targetSpeed = timeSinceMove < 500 ? 0.5 : timeSinceMove < 3000 ? 1.0 : 1.5
+    perceivedSpeed += (targetSpeed - perceivedSpeed) * 0.02
+    // Shift history ring and push current value
+    distortionHistory.push(perceivedSpeed)
+    if (distortionHistory.length > DISTORTION_RING_SEGMENTS) distortionHistory.shift()
+
+    const distortRingRadius = radius + 18
+    ctx.lineWidth = 2
+    for (let i = 0; i < distortionHistory.length - 1; i++) {
+      const a1 = (i / DISTORTION_RING_SEGMENTS) * Math.PI * 2 - Math.PI / 2
+      const a2 = ((i + 1) / DISTORTION_RING_SEGMENTS) * Math.PI * 2 - Math.PI / 2
+      const val = distortionHistory[i]
+      // Warp the radius based on perceived speed — stretched = further out, compressed = closer
+      const r1 = distortRingRadius + (val - 1) * 12
+      const r2 = distortRingRadius + (distortionHistory[i + 1] - 1) * 12
+      // Color: blue when time stretches (slow perception), amber when compresses
+      const hue = val < 1 ? 220 : 35
+      const sat = Math.abs(val - 1) * 100
+      const alpha = 0.04 + Math.abs(val - 1) * 0.08
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(a1) * r1, cy + Math.sin(a1) * r1)
+      ctx.lineTo(cx + Math.cos(a2) * r2, cy + Math.sin(a2) * r2)
+      ctx.strokeStyle = `hsla(${hue}, ${sat}%, 60%, ${alpha})`
+      ctx.stroke()
+    }
+
+    // === TIME CRYSTAL PARTICLES ===
+    // Perpetual orbiting particles that never decay — inspired by NYU levitating time crystals
+    for (const crystal of timeCrystals) {
+      crystal.angle += crystal.speed
+      crystal.phase += 0.03
+      const cr = radius * crystal.radius
+      const cxp = cx + Math.cos(crystal.angle) * cr
+      const cyp = cy + Math.sin(crystal.angle) * cr
+      // Pulsing size
+      const pulseSize = crystal.size * (0.8 + Math.sin(crystal.phase) * 0.2)
+      // Glow
+      const glowR = pulseSize * 4
+      const glowGrad = ctx.createRadialGradient(cxp, cyp, 0, cxp, cyp, glowR)
+      glowGrad.addColorStop(0, `hsla(${crystal.hue}, 80%, 70%, 0.15)`)
+      glowGrad.addColorStop(1, `hsla(${crystal.hue}, 80%, 70%, 0)`)
+      ctx.beginPath()
+      ctx.arc(cxp, cyp, glowR, 0, Math.PI * 2)
+      ctx.fillStyle = glowGrad
+      ctx.fill()
+      // Core
+      ctx.beginPath()
+      ctx.arc(cxp, cyp, pulseSize, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${crystal.hue}, 80%, 75%, 0.4)`
+      ctx.fill()
+    }
+
     // === CLOCK FACE ===
 
     // Apply wobble at high degradation
@@ -753,6 +844,50 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
     const tickSecond = Math.floor(realSeconds)
     if (Math.abs(realSeconds - tickSecond) < 0.05) {
       tickSound = 0.5
+    }
+
+    // === TIME CELLS (hippocampal timestamp neurons) ===
+    // Cells fire as the second hand sweeps past them, creating a neural timestamp ring
+    const currentSec = Math.floor(realSeconds)
+    if (currentSec !== lastSecondForCells) {
+      lastSecondForCells = currentSec
+      // Fire cells near the second hand position
+      const secondPos = realSeconds / 60 // 0..1 position around the clock
+      for (const cell of timeCells) {
+        const cellPos = ((cell.angle + Math.PI / 2) / (Math.PI * 2) + 1) % 1
+        const dist = Math.abs(cellPos - secondPos)
+        const wrappedDist = Math.min(dist, 1 - dist)
+        if (wrappedDist < 0.05 && Math.random() < cell.baseRate) {
+          cell.fireIntensity = 0.8 + Math.random() * 0.2
+        }
+      }
+    }
+
+    // Draw time cells
+    const cellRingRadius = radius * 0.97
+    for (const cell of timeCells) {
+      cell.fireIntensity *= 0.96 // decay
+      if (cell.fireIntensity < 0.01) continue
+      const cellX = cx + Math.cos(cell.angle) * cellRingRadius
+      const cellY = cy + Math.sin(cell.angle) * cellRingRadius
+      const cellSize = 1 + cell.fireIntensity * 2
+      ctx.beginPath()
+      ctx.arc(cellX, cellY, cellSize, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(120, 220, 180, ${cell.fireIntensity * 0.35})`
+      ctx.fill()
+      // Small radial spike when firing strongly
+      if (cell.fireIntensity > 0.3) {
+        const spikeLen = cell.fireIntensity * 8
+        ctx.beginPath()
+        ctx.moveTo(cellX, cellY)
+        ctx.lineTo(
+          cx + Math.cos(cell.angle) * (cellRingRadius + spikeLen),
+          cy + Math.sin(cell.angle) * (cellRingRadius + spikeLen)
+        )
+        ctx.strokeStyle = `rgba(120, 220, 180, ${cell.fireIntensity * 0.15})`
+        ctx.lineWidth = 0.5
+        ctx.stroke()
+      }
     }
 
     // === DUST PARTICLES (degradation) ===
@@ -1101,10 +1236,11 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
         }
       })
 
-      // Track mouse position for clock face hover detection
+      // Track mouse position for clock face hover detection + chronometric distortion
       canvas.addEventListener('mousemove', (e) => {
         mouseX = e.clientX
         mouseY = e.clientY
+        lastMouseMoveTime = performance.now()
       })
 
       overlay.appendChild(canvas)
@@ -1128,6 +1264,36 @@ export function createClockTowerRoom(deps: ClockTowerDeps): Room {
       dustParticles.length = 0
       inscriptionTimer = 0
       lastChimeQuarter = -1
+      lastSecondForCells = -1
+      perceivedSpeed = 1
+      lastMouseMoveTime = performance.now()
+
+      // Initialize time cells around the clock edge
+      timeCells.length = 0
+      for (let i = 0; i < TIME_CELL_COUNT; i++) {
+        timeCells.push({
+          angle: (i / TIME_CELL_COUNT) * Math.PI * 2 - Math.PI / 2,
+          fireIntensity: 0,
+          baseRate: 0.3 + Math.random() * 0.7, // variable firing threshold
+        })
+      }
+
+      // Initialize time crystals — perpetual orbiting particles
+      timeCrystals.length = 0
+      for (let i = 0; i < TIME_CRYSTAL_COUNT; i++) {
+        timeCrystals.push({
+          angle: (i / TIME_CRYSTAL_COUNT) * Math.PI * 2,
+          radius: 0.92 + Math.random() * 0.12, // just outside clock face (fraction of radius)
+          speed: 0.003 + Math.random() * 0.004, // slow orbit
+          size: 1 + Math.random() * 1.5,
+          hue: 200 + Math.random() * 60, // blue-cyan range
+          phase: Math.random() * Math.PI * 2,
+        })
+      }
+
+      // Initialize distortion history
+      distortionHistory = new Array(DISTORTION_RING_SEGMENTS).fill(1)
+
       initAudio()
       render()
     },
