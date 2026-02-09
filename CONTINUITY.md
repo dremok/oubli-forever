@@ -1486,6 +1486,56 @@ The labyrinth now progressively drives you insane the longer you stay:
 - Phantom sound system: procedurally synthesized knocking, metal bangs, haunting whispers, sinister laughs, scraping — frequency increases with insanity
 - 12 distinct wall objects (rusty handles, cracks, peeping eyes, symbols, mirrors, bloodstains, keyholes, handprints, fungus, candles, scratches, face reliefs) rendered at wall-correct perspective
 
+### 143. TheStudy Deepened — Typewriter Clicks, Ink Blots, Writing Warmth
+- Typewriter click synthesis per keystroke (different sounds for letter/space/enter/backspace)
+- Writing streak warmth: continuous typing builds visual warmth (oil lamp brightens, vignette opens, dust motes glow)
+- Ink blot system: after writing pauses, ink drops appear, slowly spread and fade
+- 8 new writing prompts added
+
+### 144. Labyrinth Object Overhaul — Procedural 2D Graphics + Physics
+- All 16 wall objects redrawn as full procedural Canvas2D art (candle with flickering flame, eye with tracking pupil, crack with light bleed, tarnished mirror with distorted reflection, bloodstain splatters, keyhole with inner light, ghostly handprint, bioluminescent fungus, gouged scratches, carved face relief, skull, floating orb, swinging chain, glowing rune, carved symbol)
+- Physics system: bob (floating), spin (rotating), breathe (pulsing), drip (particle effects)
+- Placement system: wall, floor, ceiling, floating positions
+- Object interactions: candle=light boost, mirror=control inversion, fungus=sanity calm, keyhole=map reveal
+- Objects now render with shadow depth layer for 3D effect, 55% bigger
+
+### 145. Labyrinth Hand-Drawn Memory Text
+- Caveat handwriting font for memories on walls
+- Multi-pass scratched/drawn effect: chalky glow halo, stroke outline, trembling secondary stroke, faint fill
+- Occasional scratch marks extending from characters
+- Per-character seeded jitter: rotation, baseline wobble, size/opacity variation, irregular spacing
+
+### 146. Labyrinth Insanity Balance Fix
+- Anomaly rate reduced 14%→5% (fewer blinking walls)
+- Non-scary clicks reduce insanity by 0.08 (was resetting to 0 — killing the whole system)
+- Keyhole reduces insanity by 0.2 (was resetting to 0)
+- Base insanity rate increased to 0.00004 with ×3 acceleration
+- Anomaly wall shimmer toned down: slower pulse, subtler glow
+
+### 147. Memory Pictograph System on Labyrinth Walls
+Keywords in user memories trigger procedural symbol drawings on walls: sun (with rays), crescent moon (with stars), ocean waves, beating heart, tree (with swaying branches), house (with glowing window), flickering flame, tracking eye, mountains (with snow caps), flying birds, ticking clock, spiral, reaching hand, key. Up to 2 symbols per inscription, animated, positioned below the scratched text. Actual drawings, not fonts.
+
+### 148. TheSeismograph Deepened (1061→1334 lines)
+- Simplified continent silhouettes: filled polygons for all 7 continents + Greenland
+- P-wave / S-wave propagation: blue P-wave ripples + orange S-wave ripples from new earthquake epicenters
+- Depth cross-section panel: vertical strip on right side plotting earthquake depths (0-700km)
+- Micro-tremor visual noise: subtle flickering dots across the map area
+- Enhanced quake hover tooltip: magnitude, place, depth, time ago, energy estimate (Joules)
+- 10 new cultural inscriptions from Feb 2026 research (virtual particles, polar vortex, CRISPR, solar storms, quantum superposition, Iñárritu, eclipse)
+
+### Cultural Research Round 9 (Feb 2026)
+- **Alzheimer's scrambles replay**: Memory replays fire but in WRONG ORDER — corruption not absence (UCL)
+- **Episodic = Semantic**: Personal memories and facts use identical brain networks (Nottingham/Cambridge)
+- **S4 solar storm**: Largest radiation storm in 20 years, aurora at low latitudes (Jan 2026)
+- **"2026 is the new 2016"**: 55M TikTok videos, mass nostalgia for pre-algorithmic internet
+- **Iñárritu SUEÑO PERRO**: Million feet of discarded film resurrected (LACMA Feb 22)
+- **Tracey Emin "A Second Life"**: Largest retrospective (Tate Modern Feb 27)
+- **Shiota During Sleep**: Performers sleep inside thread installations
+- **Quantum error correction while computing**: Simultaneous creation and destruction
+- **Polar vortex + weather whiplash**: 50C Australia + deadly US winter simultaneously
+- **Berlinale 2026**: Wim Wenders jury, 1990s retrospective
+- **Microsoft sleeper agent detection**: Hidden behaviors that activate only under specific conditions
+
 ---
-*Last updated: Era 9, Feature 142 — Labyrinth insanity escalation*
+*Last updated: Era 9, Feature 148 — Seismograph deepened + labyrinth pictographs*
 *"the labyrinth forgets its own corridors. you forget yourself."*
