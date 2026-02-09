@@ -54,6 +54,12 @@ const CULTURAL_INSCRIPTIONS = [
   'orson welles\' war of the worlds: radio so convincing that listeners believed aliens had landed. fiction as signal.',
   'the ionosphere bounces shortwave signals around the earth. at night, you can hear stations from another continent.',
   'EVP researchers record empty rooms and hear voices in the static. the noise wants to speak.',
+  'agentic OS (2026): AI swarms that coordinate and self-organize. many small minds tuning the same frequency.',
+  'see memory (feb 2026): 30,000 painted frames of how memory breaks. every frame a different station.',
+  'the nihilist penguin walked into static. the signal faded. the frequency was never found again.',
+  'lab-grown brain circuits: thalamus fused with cortex, neurons wiring in real time. the radio tunes itself.',
+  'nothing — "a short history of decay": shoegaze written with essential tremors. the signal shakes.',
+  'queen of chess (netflix, feb 2026): judit polgar broke fischer\'s record at 15. every move a broadcast.',
 ]
 
 export function createRadioRoom(deps: RadioDeps): Room {
@@ -728,15 +734,21 @@ export function createRadioRoom(deps: RadioDeps): Room {
       ? `${Math.round(530 + ((frequency - 88) / 20) * 1170)} kHz`
       : `${frequency.toFixed(1)} MHz`
 
+    // Frequency display with tremor effect (Nothing "a short history of decay")
+    // Static/noise makes the display shake — stronger when no signal
+    const displayTremor = (1 - signalStrength) * 1.5
+    const tremX = displayTremor > 0.1 ? (Math.random() - 0.5) * displayTremor : 0
+    const tremY = displayTremor > 0.1 ? (Math.random() - 0.5) * displayTremor * 0.7 : 0
+
     ctx.font = '32px "Courier New", monospace'
     ctx.fillStyle = `rgba(${bandColor}, ${0.6 + Math.sin(time * 2) * 0.05})`
     ctx.textAlign = 'center'
-    ctx.fillText(displayFreq, w / 2, panelY + 40)
+    ctx.fillText(displayFreq, w / 2 + tremX, panelY + 40 + tremY)
 
     // Glow behind frequency
     ctx.shadowColor = bandGlow
     ctx.shadowBlur = 20
-    ctx.fillText(displayFreq, w / 2, panelY + 40)
+    ctx.fillText(displayFreq, w / 2 + tremX, panelY + 40 + tremY)
     ctx.shadowBlur = 0
 
     // Band mode indicator

@@ -472,6 +472,22 @@ const fragments: string[] = [
   "the fruit of oubli grows sweetest where memory decays.",
   "to eat the oubli fruit is to taste what you have forgotten.",
   "in the garden of forgetting, the oubli tree bears golden fruit.",
+
+  // Cultural research round 19 — Feb 2026
+  "lab-grown brain circuits wire themselves. consciousness requires connection to mature.",
+  "the nihilist penguin walks toward the mountain. the internet watches. nobody follows.",
+  "menopause erases grey matter in the hippocampus. the gateway narrows.",
+  "30,000 hand-painted frames of how memory shatters. see memory, feb 2026.",
+  "170 trillion plastic particles float on the ocean. the treaty collapsed. nothing degrades.",
+  "seurat painted the sea in dots. up close, chaos. at distance, a wave.",
+  "muonium becomes antimuonium. matter transforms into its opposite. the standard model trembles.",
+  "a metasurface chip makes invisible light visible. your attention was always infrared.",
+  "nothing: a short history of decay. shoegaze written with essential tremors.",
+  "the nihilist penguin was herzog's. we made it ours. meaning walks away.",
+  "no hands dance: all expression through what remains when constraint removes the obvious.",
+  "florence cleared its renaissance walls. when you remove the noise, older layers appear.",
+  "queen of chess: judit polgar broke fischer's record at 15. memory is strategy.",
+  "silver ions heal nano-fissures in ceramic. 3 nanometers between holding and shattering.",
 ]
 
 // Fragments that trigger the golden fruit effect

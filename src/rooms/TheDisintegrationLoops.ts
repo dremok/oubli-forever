@@ -86,6 +86,11 @@ const CULTURAL_INSCRIPTIONS = [
   'consciousness agnosticism: we may never know if AI is conscious. the loop that questions itself.',
   'the ship of theseus: if every plank is replaced, is it the same ship? if every note degrades?',
   'fennell\'s wuthering heights (2026): love that disintegrates and reforms. gothic decay.',
+  'nothing — "a short history of decay" (feb 2026): shoegaze written with essential tremors. the body degrades the music.',
+  'see memory (feb 2026): 30,000 hand-painted frames of how memory forms and shatters. art as neuroscience.',
+  'the global plastics treaty collapsed in geneva. 170 trillion particles on the ocean. nothing degrades.',
+  'menopause erases grey matter in the hippocampus. the gateway between memory and self narrows.',
+  'lab-grown brain circuits (nagoya 2026): thalamus fused with cortex. consciousness requires connection to mature.',
 ]
 
 export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
@@ -570,6 +575,16 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
     c.fillStyle = 'rgba(8, 6, 4, 1)'
     c.fillRect(0, 0, w, h)
 
+    // --- Neurological tremor (inspired by Nothing's "a short history of decay") ---
+    // Essential tremor intensifies with total passes — the machine degrades with the tape
+    const tremorIntensity = Math.min(1, totalPasses * 0.03)
+    if (tremorIntensity > 0.05) {
+      c.save()
+      const tx = (Math.random() - 0.5) * tremorIntensity * 3
+      const ty = (Math.random() - 0.5) * tremorIntensity * 2
+      c.translate(tx, ty)
+    }
+
     if (loops.length === 0) {
       c.font = '12px "Cormorant Garamond", serif'
       c.fillStyle = 'rgba(200, 180, 140, 0.1)'
@@ -1046,6 +1061,11 @@ export function createDisintegrationLoopsRoom(deps: DisintegrationDeps): Room {
         if (canvas) canvas.style.cursor = 'default'
       }
       drawTears(c, w, h)
+    }
+
+    // Close tremor transform
+    if (tremorIntensity > 0.05) {
+      c.restore()
     }
 
     // Cultural inscriptions

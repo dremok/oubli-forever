@@ -176,6 +176,14 @@ const DECAY_MEDITATIONS = [
   'deepseek R1: $6M open-source model matching $100B labs. power from constraint. something from almost nothing.',
   'ovid\'s metamorphoses at the rijksmuseum: bodies becoming rivers, becoming trees. 2000 years of transformation.',
   'duchamp\'s boîte-en-valise: a museum in a suitcase. 69 miniature replicas of his own work. memory you can carry.',
+  'lab-grown brain circuits: thalamus fused with cortex organoids. consciousness needs company to develop.',
+  'see memory (feb 2026): every frame painted by hand. 30,000 frames of neurons forming and fragmenting.',
+  'nihilist penguin: herzog\'s lone penguin walking toward a mountain. burnout as viral meme. the quiet dignity of giving up.',
+  'plastics treaty collapsed in geneva. 170 trillion particles. every click spawns another. nothing is removed.',
+  'seurat painted the english channel in pure dots of color. the courtauld shows 27 pointillist seascapes.',
+  'muonium-to-antimuonium conversion: matter becoming antimatter. if detected, the standard model cracks.',
+  'the no-hands dance: constraint as creativity. remove the obvious and the body compensates beautifully.',
+  'silver heals ceramic at the nanoscale. 3nm coating. five times tougher. the physics of repair.',
 ]
 
 export class DigitalDecay {

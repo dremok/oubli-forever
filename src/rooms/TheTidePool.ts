@@ -89,6 +89,12 @@ const CULTURAL_INSCRIPTIONS = [
   'the UN declared global water bankruptcy in january 2026. 50% of large lakes have shrunk since 1990.',
   'deep-sea mining threatens hydrothermal vents — ecosystems that have existed for millions of years.',
   'an ice-cold earth discovered in kepler archives. a frozen ocean world, 146 light-years away.',
+  'the global plastics treaty collapsed in geneva. 170 trillion particles float on the ocean. nothing is removed.',
+  'seurat painted the sea in dots of pure color (courtauld, feb 2026). up close, chaos. at distance, a wave.',
+  'florence banned fossil fuel ads. the visual landscape of a renaissance city, cleared of petrochemical noise.',
+  'ENSO returns to neutral by april 2026. the ocean\'s thermostat resets. the baseline was always an illusion.',
+  'the nihilist penguin walked toward the mountain. the ocean watched. the internet watched. nobody followed.',
+  'see memory: 30,000 hand-painted frames of forgetting. the documentary is itself a memory of memory.',
 ]
 
 const WATER_CRISIS_FACTS = [
@@ -144,6 +150,12 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
   // Crisis audio timers
   let foghornTimer: ReturnType<typeof setTimeout> | null = null
   let dripTimer: ReturnType<typeof setTimeout> | null = null
+
+  // Micro-plastic particles — inspired by the collapsed plastics treaty (Feb 2026)
+  // These NEVER disappear. Every interaction adds more. The room accumulates.
+  interface MicroPlastic { x: number; y: number; size: number; hue: number; alpha: number; drift: number }
+  let microPlastics: MicroPlastic[] = []
+  let microPlasticTimer = 0
 
   // Sun data
   let sunData: SunData | null = null
@@ -1013,6 +1025,24 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
     ctx.fillStyle = sky
     ctx.fillRect(0, 0, w, h * 0.6)
 
+    // --- Seurat pointillist sky (inspired by Courtauld exhibition Feb 2026) ---
+    // The horizon dissolves into visible dots of pure color, like Seurat's seascapes
+    const horizonY = h * 0.48
+    const pointillismBand = 80 // px band where dots are visible
+    for (let pi = 0; pi < 25; pi++) {
+      const px = Math.random() * w
+      const py = horizonY + (Math.random() - 0.5) * pointillismBand
+      const dotSize = 1 + Math.random() * 2
+      // Color sampled from sky/water boundary with slight variation
+      const hueShift = (Math.random() - 0.5) * 30
+      const dotHue = colors.waterHue + hueShift
+      const dotAlpha = 0.04 + Math.random() * 0.04
+      ctx.beginPath()
+      ctx.arc(px, py, dotSize, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${dotHue}, ${colors.waterSat + 10}%, ${colors.waterLight + 15}%, ${dotAlpha})`
+      ctx.fill()
+    }
+
     // Stars (night / twilight only)
     drawStars(w, h, colors.starAlpha, time)
 
@@ -1080,6 +1110,33 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
 
     // Water crisis data overlay — drifting fragments
     updateAndDrawCrisisFragments(w, h, colors)
+
+    // --- Micro-plastic particles (global plastics treaty collapse, Feb 2026) ---
+    // Every 2-4 seconds, a new particle appears. They NEVER disappear.
+    microPlasticTimer += 0.016
+    if (microPlasticTimer > 2 + Math.random() * 2) {
+      microPlasticTimer = 0
+      const waveY = getWaveY(Math.random() * w, w, h)
+      microPlastics.push({
+        x: Math.random() * w,
+        y: waveY + Math.random() * 40 - 10,
+        size: 0.5 + Math.random() * 1.5,
+        hue: [0, 30, 60, 180, 200, 280, 320][Math.floor(Math.random() * 7)], // bright plastic colors
+        alpha: 0.06 + Math.random() * 0.08,
+        drift: (Math.random() - 0.5) * 0.3,
+      })
+    }
+    // Render all accumulated micro-plastics
+    for (const mp of microPlastics) {
+      mp.x += mp.drift + Math.sin(time * 0.3 + mp.y * 0.01) * 0.15
+      mp.y += Math.sin(time * 0.5 + mp.x * 0.005) * 0.1
+      if (mp.x < -5) mp.x = w + 5
+      if (mp.x > w + 5) mp.x = -5
+      ctx.beginPath()
+      ctx.arc(mp.x, mp.y, mp.size, 0, Math.PI * 2)
+      ctx.fillStyle = `hsla(${mp.hue}, 60%, 60%, ${mp.alpha})`
+      ctx.fill()
+    }
 
     // "the water is receding" message after 10 minutes
     const drift = getSessionDrift()
@@ -1325,6 +1382,7 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
       stopCrisisAudio()
       plankton = []
       crisisFragments = []
+      microPlastics = []
     },
 
     destroy() {
@@ -1335,6 +1393,7 @@ export function createTidePoolRoom(deps: TidePoolDeps): Room {
       overlay?.remove()
       plankton = []
       crisisFragments = []
+      microPlastics = []
     },
   }
 }

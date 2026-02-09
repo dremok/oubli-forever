@@ -198,6 +198,25 @@ const LAYERS: CatacombLayer[] = [
       { text: '', style: 'epitaph' },
       { text: '', style: 'epitaph' },
       { text: 'or is there?', style: 'epitaph' },
+      { text: '', style: 'epitaph' },
+      // Nihilist penguin — Feb 2026's defining meme
+      {
+        text: '🐧 ← he walked toward the mountain. he never came back.',
+        style: 'environmental',
+        detail: 'Feb 2026: a clip from Werner Herzog\'s 2007 documentary — a penguin leaving its colony, walking alone toward certain death — became the year\'s defining meme. Paired with pipe organ music, it became a symbol of burnout, of the quiet dignity of walking away. BMW and Lidl adopted it. Millions shared it. The internet watched a penguin choose oblivion and saw itself.',
+      },
+      // See Memory documentary
+      {
+        text: '30,000 hand-painted frames of how memory forms and breaks',
+        style: 'inscription',
+        detail: 'Viviane Silvera\'s documentary "See Memory" (Feb 2026): 30,000 individually hand-painted frames visualizing how memory forms, fragments, and reshapes. Features Nobel laureate Eric Kandel and neuroscientist Daniela Schiller. Inspired by Oliver Sacks. It bridges neuroscience, trauma research, and visual art — literally painting the process of remembering.',
+      },
+      // Florence ad ban
+      {
+        text: 'florence cleared its renaissance walls of petrochemical advertising. 18 votes to 3.',
+        style: 'environmental',
+        detail: 'Feb 2026: Florence became the first Italian city to ban fossil fuel advertising. A collision of 500-year-old aesthetics and 21st-century climate politics. When you remove the noise of the present, older layers become visible.',
+      },
     ],
   },
 ]
