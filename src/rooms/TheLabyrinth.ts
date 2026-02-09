@@ -192,6 +192,152 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let inscriptionText = ''
   let inscriptionAlpha = 0
 
+  // ===== GHOST FIGURE SYSTEM =====
+  // Spectral figures that appear in distant corridors and dissolve as you approach
+  interface Ghost {
+    x: number       // world position (center of an open cell)
+    y: number
+    spawnTime: number
+    type: number    // appearance variant 0-4
+    sway: number    // random sway phase offset
+    height: number  // 0.6-1.0 relative height
+  }
+  const ghosts: Ghost[] = []
+  let lastGhostSpawnTime = 0
+  const GHOST_SPAWN_INTERVAL = 18 // seconds between spawn attempts
+  const GHOST_MAX = 3
+  const GHOST_APPEAR_DIST = 8    // visible from this far
+  const GHOST_DISSOLVE_DIST = 3.5 // start dissolving below this
+  const GHOST_GONE_DIST = 1.2    // fully invisible below this
+
+  // Pre-rendered ghost sprite canvas
+  let ghostSpriteCanvas: HTMLCanvasElement | null = null
+
+  function createGhostSprite(): HTMLCanvasElement {
+    const sw = 64
+    const sh = 128
+    const c = document.createElement('canvas')
+    c.width = sw
+    c.height = sh
+    const g = c.getContext('2d')!
+    g.clearRect(0, 0, sw, sh)
+
+    // Ethereal humanoid silhouette — drawn in white/blue with soft edges
+    const cx = sw / 2
+    // Head
+    g.beginPath()
+    g.arc(cx, 22, 10, 0, Math.PI * 2)
+    g.fillStyle = 'rgba(180, 200, 220, 0.6)'
+    g.fill()
+    // Inner head glow
+    g.beginPath()
+    g.arc(cx, 22, 6, 0, Math.PI * 2)
+    g.fillStyle = 'rgba(220, 230, 240, 0.4)'
+    g.fill()
+    // Eyes — two dim points
+    g.fillStyle = 'rgba(100, 140, 180, 0.7)'
+    g.fillRect(cx - 4, 20, 2, 2)
+    g.fillRect(cx + 2, 20, 2, 2)
+
+    // Neck
+    g.fillStyle = 'rgba(160, 180, 200, 0.3)'
+    g.fillRect(cx - 3, 32, 6, 6)
+
+    // Body — tapers down, like a shroud
+    g.beginPath()
+    g.moveTo(cx - 14, 38)
+    g.quadraticCurveTo(cx - 16, 70, cx - 10, 110)
+    g.lineTo(cx + 10, 110)
+    g.quadraticCurveTo(cx + 16, 70, cx + 14, 38)
+    g.closePath()
+    g.fillStyle = 'rgba(160, 180, 210, 0.35)'
+    g.fill()
+
+    // Inner body lighter core
+    g.beginPath()
+    g.moveTo(cx - 8, 42)
+    g.quadraticCurveTo(cx - 9, 65, cx - 5, 100)
+    g.lineTo(cx + 5, 100)
+    g.quadraticCurveTo(cx + 9, 65, cx + 8, 42)
+    g.closePath()
+    g.fillStyle = 'rgba(190, 210, 230, 0.2)'
+    g.fill()
+
+    // Arms — thin, slightly outstretched
+    g.strokeStyle = 'rgba(160, 180, 200, 0.25)'
+    g.lineWidth = 3
+    g.beginPath()
+    g.moveTo(cx - 14, 44)
+    g.quadraticCurveTo(cx - 22, 58, cx - 18, 72)
+    g.stroke()
+    g.beginPath()
+    g.moveTo(cx + 14, 44)
+    g.quadraticCurveTo(cx + 22, 58, cx + 18, 72)
+    g.stroke()
+
+    // Bottom dissolve — fades to nothing (the figure has no feet)
+    const fadeGrad = g.createLinearGradient(0, 90, 0, 120)
+    fadeGrad.addColorStop(0, 'rgba(0,0,0,0)')
+    fadeGrad.addColorStop(1, 'rgba(0,0,0,1)')
+    g.globalCompositeOperation = 'destination-out'
+    g.fillStyle = fadeGrad
+    g.fillRect(0, 90, sw, 38)
+    g.globalCompositeOperation = 'source-over'
+
+    return c
+  }
+
+  function spawnGhost(): void {
+    if (ghosts.length >= GHOST_MAX) return
+    // Find a random open cell 5-10 tiles from player
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const angle = Math.random() * Math.PI * 2
+      const dist = 5 + Math.random() * 5
+      const gx = Math.floor(px + Math.cos(angle) * dist)
+      const gy = Math.floor(py + Math.sin(angle) * dist)
+      // Must be an open cell (odd,odd = room)
+      if ((gx & 1) === 1 && (gy & 1) === 1 && getWorldCell(gx, gy) === 0) {
+        // Check it's not too close to another ghost
+        const tooClose = ghosts.some(g => Math.hypot(g.x - (gx + 0.5), g.y - (gy + 0.5)) < 3)
+        if (tooClose) continue
+        ghosts.push({
+          x: gx + 0.5,
+          y: gy + 0.5,
+          spawnTime: time,
+          type: Math.floor(Math.random() * 5),
+          sway: Math.random() * Math.PI * 2,
+          height: 0.65 + Math.random() * 0.35,
+        })
+        return
+      }
+    }
+  }
+
+  function updateGhosts(): void {
+    // Remove ghosts that the player has approached (fully dissolved)
+    for (let i = ghosts.length - 1; i >= 0; i--) {
+      const g = ghosts[i]
+      const dist = Math.hypot(g.x - px, g.y - py)
+      if (dist < GHOST_GONE_DIST) {
+        ghosts.splice(i, 1)
+      }
+      // Also remove ghosts that have been alive too long (60s)
+      else if (time - g.spawnTime > 60) {
+        ghosts.splice(i, 1)
+      }
+    }
+
+    // Spawn new ghosts periodically
+    if (time - lastGhostSpawnTime > GHOST_SPAWN_INTERVAL && time > 15) {
+      // Higher insanity = more frequent spawns
+      const spawnChance = 0.3 + insanity * 0.5
+      if (Math.random() < spawnChance) {
+        spawnGhost()
+      }
+      lastGhostSpawnTime = time
+    }
+  }
+
   // ===== INSANITY ESCALATION SYSTEM =====
   // The labyrinth slowly drives you mad the longer you stay
   let insanity = 0        // 0-1 scale, gradually increases
@@ -1395,6 +1541,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // Update tension/scare
     checkScare()
 
+    // Update ghost figures
+    updateGhosts()
+
     // Update ambient drone pitch with tension + insanity
     if (ambOsc && audioCtx) {
       // Drone drops lower with tension, warps with insanity
@@ -2340,6 +2489,117 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.restore()
   }
 
+  function renderGhosts(w: number, h: number, fov: number, midLine: number): void {
+    if (!ctx || ghosts.length === 0) return
+    if (!ghostSpriteCanvas) ghostSpriteCanvas = createGhostSprite()
+
+    const c = ctx
+
+    // Sort ghosts far to near for correct overlap
+    const sorted = [...ghosts].sort((a, b) => {
+      const da = (a.x - px) * (a.x - px) + (a.y - py) * (a.y - py)
+      const db = (b.x - px) * (b.x - px) + (b.y - py) * (b.y - py)
+      return db - da
+    })
+
+    for (const ghost of sorted) {
+      const dx = ghost.x - px
+      const dy = ghost.y - py
+      const dist = Math.hypot(dx, dy)
+
+      if (dist > GHOST_APPEAR_DIST || dist < GHOST_GONE_DIST) continue
+
+      // Angle from player to ghost
+      const angleToGhost = Math.atan2(dy, dx)
+      // Relative angle within player's FOV
+      let relAngle = angleToGhost - pa
+      // Normalize to [-PI, PI]
+      while (relAngle > Math.PI) relAngle -= Math.PI * 2
+      while (relAngle < -Math.PI) relAngle += Math.PI * 2
+
+      // Skip if outside FOV (with margin)
+      if (Math.abs(relAngle) > fov * 0.6) continue
+
+      // Project to screen X
+      const screenX = w / 2 + (relAngle / fov) * w
+
+      // Perspective-corrected distance (fish-eye fix)
+      const perpDist = dist * Math.cos(relAngle)
+      if (perpDist < 0.3) continue
+
+      // Sprite height on screen
+      const spriteH = (h / perpDist) * ghost.height
+      const spriteW = spriteH * 0.5 // aspect ratio of sprite canvas (64/128)
+      const spriteTop = midLine - spriteH * 0.5
+
+      // Dissolution based on distance — closer = more transparent
+      let opacity: number
+      if (dist > GHOST_DISSOLVE_DIST) {
+        // Fully visible (but still ethereal)
+        opacity = Math.min(0.7, (GHOST_APPEAR_DIST - dist) / 2)
+      } else {
+        // Dissolving as player approaches
+        const t = (dist - GHOST_GONE_DIST) / (GHOST_DISSOLVE_DIST - GHOST_GONE_DIST)
+        opacity = t * 0.7
+      }
+
+      // Fade in on spawn (first 3 seconds)
+      const age = time - ghost.spawnTime
+      if (age < 3) opacity *= age / 3
+
+      // Slight sway animation
+      const sway = Math.sin(time * 0.8 + ghost.sway) * 4 * (1 / Math.max(1, perpDist))
+
+      // Distance fog tint
+      const fogFade = Math.max(0.3, 1 - dist / GHOST_APPEAR_DIST)
+
+      if (opacity < 0.01) continue
+
+      c.save()
+      c.globalAlpha = opacity * fogFade
+
+      // Dissolution distortion — break apart into strips at close range
+      if (dist < GHOST_DISSOLVE_DIST) {
+        const dissolveT = 1 - (dist - GHOST_GONE_DIST) / (GHOST_DISSOLVE_DIST - GHOST_GONE_DIST)
+        const stripCount = 8
+        const stripW = spriteW / stripCount
+        const srcStripW = 64 / stripCount
+
+        for (let s = 0; s < stripCount; s++) {
+          // Each strip drifts differently during dissolution
+          const stripSeed = Math.sin(s * 7.3 + ghost.sway * 3.1)
+          const driftX = stripSeed * dissolveT * 20
+          const driftY = Math.cos(s * 4.7 + ghost.sway) * dissolveT * 15
+          const stripAlpha = Math.max(0, 1 - dissolveT * (0.5 + Math.abs(stripSeed) * 0.8))
+
+          if (stripAlpha < 0.01) continue
+
+          c.globalAlpha = opacity * fogFade * stripAlpha
+          c.drawImage(
+            ghostSpriteCanvas!,
+            s * srcStripW, 0, srcStripW, 128,
+            screenX - spriteW / 2 + s * stripW + sway + driftX,
+            spriteTop + driftY,
+            stripW + 1,
+            spriteH,
+          )
+        }
+      } else {
+        // Full sprite — simple draw
+        c.drawImage(
+          ghostSpriteCanvas!,
+          0, 0, 64, 128,
+          screenX - spriteW / 2 + sway,
+          spriteTop,
+          spriteW,
+          spriteH,
+        )
+      }
+
+      c.restore()
+    }
+  }
+
   function renderJumpScare(w: number, h: number): void {
     if (!currentScare || !ctx) return
 
@@ -3071,6 +3331,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillRect(0, 0, w, h)
     }
 
+    // Ghost figures — rendered after fog so they look atmospheric
+    renderGhosts(w, h, fov, midLine)
+
     // Crosshair — changes when looking at anomaly
     if (lookingAtAnomaly) {
       const pulse = 0.15 + Math.sin(time * 4) * 0.08
@@ -3292,8 +3555,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       lastFetchTime = time
       fetchIntervalSec = 8 + Math.random() * 10
 
-      // Reset used anomalies, textures, and ambient sounds for fresh session
+      // Reset used anomalies, ghosts, and ambient sounds for fresh session
       usedAnomalies.clear()
+      ghosts.length = 0
+      lastGhostSpawnTime = 0
       lastCreepySoundTime = time + 20 // first ambient sound after 20s
 
       initAudio()
