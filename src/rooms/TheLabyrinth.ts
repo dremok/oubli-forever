@@ -637,12 +637,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     src.start(now)
   }
 
+  /** Play only the AI-generated scare sound (no synth layers) */
   function playScareSound(intensity: number = 1) {
     if (!audioCtx) return
     const dest = getAudioDestination()
-    const now = audioCtx.currentTime
 
-    // Play pre-generated sound if available
+    // Play pre-generated AI sound only
     if (scareBuffers.length > 0) {
       const buf = scareBuffers[Math.floor(Math.random() * scareBuffers.length)]
       const source = audioCtx.createBufferSource()
@@ -654,27 +654,34 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       if (reverbNode) gain.connect(reverbNode)
       source.start()
     }
+  }
 
-    // Sub-bass body slam — chest-rattling thump
+  /** Synthesized horror sting — used rarely for random ambient scares, NOT on every jump scare */
+  function playSynthHorrorSting(intensity: number = 0.6) {
+    if (!audioCtx) return
+    const dest = getAudioDestination()
+    const now = audioCtx.currentTime
+
+    // Sub-bass body slam
     const thump = audioCtx.createOscillator()
     thump.frequency.setValueAtTime(50, now)
     thump.frequency.exponentialRampToValueAtTime(20, now + 0.4)
     thump.type = 'sine'
     const thumpGain = audioCtx.createGain()
-    thumpGain.gain.setValueAtTime(0.35 * intensity, now)
+    thumpGain.gain.setValueAtTime(0.25 * intensity, now)
     thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
     thump.connect(thumpGain)
     thumpGain.connect(dest)
     thump.start(now)
     thump.stop(now + 0.7)
 
-    // Metallic screech — like nails on a chalkboard
+    // Metallic screech
     const screech = audioCtx.createOscillator()
     screech.frequency.setValueAtTime(1200 + Math.random() * 800, now)
     screech.frequency.linearRampToValueAtTime(2800 + Math.random() * 400, now + 0.15)
     screech.type = 'sawtooth'
     const screechGain = audioCtx.createGain()
-    screechGain.gain.setValueAtTime(0.1 * intensity, now)
+    screechGain.gain.setValueAtTime(0.07 * intensity, now)
     screechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35)
     const screechFilter = audioCtx.createBiquadFilter()
     screechFilter.type = 'bandpass'
@@ -687,7 +694,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     screech.start(now)
     screech.stop(now + 0.4)
 
-    // Distorted white noise burst — like a broken radio
+    // Distorted white noise burst
     const noiseLen = audioCtx.sampleRate * 0.3
     const noiseBuf = audioCtx.createBuffer(1, noiseLen, audioCtx.sampleRate)
     const noiseData = noiseBuf.getChannelData(0)
@@ -697,7 +704,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const noiseSrc = audioCtx.createBufferSource()
     noiseSrc.buffer = noiseBuf
     const noiseGain = audioCtx.createGain()
-    noiseGain.gain.setValueAtTime(0.12 * intensity, now)
+    noiseGain.gain.setValueAtTime(0.08 * intensity, now)
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25)
     const noiseFilter = audioCtx.createBiquadFilter()
     noiseFilter.type = 'highpass'
@@ -1182,7 +1189,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       sGain.connect(dest)
       if (reverbNode) sGain.connect(reverbNode)
       sSrc.start(now)
-    } else {
+    } else if (roll < 0.9) {
       // Play a pre-recorded sound if available
       if (scareBuffers.length > 0) {
         const buf = scareBuffers[Math.floor(Math.random() * scareBuffers.length)]
@@ -1194,6 +1201,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         if (reverbNode) g.connect(reverbNode)
         src.start(now)
       }
+    } else {
+      // Rare synth horror sting — thump + screech + noise
+      playSynthHorrorSting(0.4 + insanity * 0.3)
     }
   }
 
