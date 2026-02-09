@@ -56,6 +56,12 @@ const AUTO_MESSAGES = [
   'the keeper has gone but the light remains',
   'signal received no reply',
   'lat 36.0 lon 25.4 minoan eruption',
+  'the vortex split in two and the cold rushed in',
+  'each atom gets its own tiny light trap',
+  'becoming becoming becoming',
+  'the methylation is failing the marks are eroding',
+  'a croak dream is a premonition of how you die',
+  'the house narrates its own decay',
 ]
 
 interface LighthouseDeps {
@@ -88,6 +94,10 @@ const CULTURAL_INSCRIPTIONS = [
   'the last manual lighthouse keeper in britain retired in 1998. automation replaced vigil with algorithm.',
   'voice cloning has crossed the indistinguishable threshold. the signal can no longer be trusted. who is speaking?',
   'the polar vortex split (feb 2026): earth\'s atmospheric shield breaking apart. weather itself is forgetting its patterns.',
+  'stanford built 500 tiny optical cavities: each atom in its own room, emitting light only when observed. a lighthouse for qubits.',
+  'puma blue\'s croak dream: tape loop premonitions at peter gabriel\'s studio. the machine dreams what the musician forgets.',
+  'luc besson\'s dracula (feb 2026): a man who waits 400 years for his wife\'s reincarnation. the lighthouse as immortal patience.',
+  'co2 growth rate broke 8 ppm per 3 years. not just high — accelerating. the signal we broadcast gets louder every year.',
 ]
 
 export function createLighthouseRoom(deps: LighthouseDeps = {}): Room {

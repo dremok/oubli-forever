@@ -101,6 +101,16 @@ const PROMPTS_BASE = [
   'The house has seasons — seed, growth, ripe, fall, decay. Which season are you in right now?',
   'A poet wrote about a childhood near-drowning. Memory as something you almost didn\'t survive. What memory nearly destroyed you?',
   'The rare aesthetic: nostalgia not for beauty but for recognition. What do you recognize but can\'t name?',
+
+  // Feb 2026 — round 6: croak dreams, vortex split, becoming, methylation
+  'A croak dream is when you see how you die, then wake up and choose what to do with it. Write yours...',
+  'The polar vortex split in two. The atmosphere\'s protection broke apart. Write about a shield that failed...',
+  'Art Basel Qatar chose "becoming" as its theme. What are you becoming? Write the thing you\'re turning into...',
+  'DNA methylation decays with age — the protective marks erode and chaos invades. What protection have you lost?',
+  'Puma Blue recorded premonitions on tape loops at Peter Gabriel\'s studio. Record a premonition here...',
+  'Rice University found a quantum state where chaos produces order. Write about disorder that created something beautiful...',
+  'Each atom gets its own tiny light trap. 500 cavities, each holding one qubit. What is your smallest container for your largest thought?',
+  'Fragments from rooms you\'ve neglected drift into this one. What has drifted into your life from somewhere you forgot?',
 ]
 
 // Fallback quotes for when the API is unreachable
