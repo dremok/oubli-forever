@@ -89,6 +89,7 @@ import { Fruiting } from './organisms/Fruiting'
 import { CollectiveWarmth } from './organisms/CollectiveWarmth'
 import { Membrane } from './organisms/Membrane'
 import { Phenotype } from './organisms/Phenotype'
+import { SeasonalClock } from './organisms/SeasonalClock'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -607,6 +608,11 @@ membrane.setTrailSource((a, b) => mycelium.getTrailStrength(a, b))
 // Like epigenetic expression: same house, different appearance for different visitors
 const phenotype = new Phenotype()
 phenotype.start()
+
+// The Seasonal Clock — the house has its own biological seasons
+// Not tied to the calendar — measured in cumulative visitor presence
+const seasonalClock = new SeasonalClock()
+seasonalClock.start()
 
 let _prevRoom = 'void'
 
