@@ -48,6 +48,12 @@ const CULTURAL_INSCRIPTIONS = [
   'the defiantly analog olympics: milan chose fire over drones. human voice over digital spectacle.',
   'FDR\'s fireside chats: the president speaking directly into living rooms. intimacy as political tool.',
   'the cosmic microwave background: static on your old TV was partly the echo of the big bang.',
+  'voice cloning crossed the indistinguishable threshold in 2025. the signal can no longer be trusted.',
+  'radio caroline broadcast from a ship. the government couldn\'t reach the transmitter. freedom is offshore.',
+  'alzheimer\'s scrambles memory replay: the brain broadcasts memories in the WRONG ORDER during rest.',
+  'orson welles\' war of the worlds: radio so convincing that listeners believed aliens had landed. fiction as signal.',
+  'the ionosphere bounces shortwave signals around the earth. at night, you can hear stations from another continent.',
+  'EVP researchers record empty rooms and hear voices in the static. the noise wants to speak.',
 ]
 
 export function createRadioRoom(deps: RadioDeps): Room {
@@ -88,6 +94,25 @@ export function createRadioRoom(deps: RadioDeps): Room {
   let numberStationSequence: number[] = []
   let numberStationStep = 0
   let numberStationStepTime = 0
+
+  // Signal echo — ghost text from previously tuned stations
+  interface SignalEcho {
+    text: string
+    x: number; y: number
+    vx: number; vy: number
+    alpha: number
+    freq: number // original frequency
+  }
+  const signalEchoes: SignalEcho[] = []
+  let lastEchoStation: Station | null = null
+
+  // Static crackling — visual sparks when tuning through noise
+  interface StaticSpark {
+    x: number; y: number
+    size: number; alpha: number
+    life: number
+  }
+  const staticSparks: StaticSpark[] = []
 
   // Scanner line
   let scannerX = 0 // 0–1 normalized position
@@ -550,6 +575,38 @@ export function createRadioRoom(deps: RadioDeps): Room {
     updateAudio()
     updateShortwaveAmbience()
     triggerNumberStation(deltaTime)
+
+    // Signal echo — when tuning away from a station, spawn ghost text
+    if (lastEchoStation && lastEchoStation !== currentStation && signalStrength < 0.15) {
+      const words = lastEchoStation.memory.currentText.split(' ')
+      const fragment = words.slice(0, Math.min(3, words.length)).join(' ')
+      signalEchoes.push({
+        text: fragment,
+        x: w * 0.3 + Math.random() * w * 0.4,
+        y: h * 0.5 + (Math.random() - 0.5) * 100,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: -0.15 - Math.random() * 0.2,
+        alpha: 0.12,
+        freq: lastEchoStation.frequency,
+      })
+      if (signalEchoes.length > 8) signalEchoes.shift()
+      lastEchoStation = null
+    }
+    if (currentStation && signalStrength > 0.5) {
+      lastEchoStation = currentStation
+    }
+
+    // Static crackling sparks — more when no signal, less when tuned in
+    if (signalStrength < 0.4 && Math.random() < 0.15 * (1 - signalStrength)) {
+      staticSparks.push({
+        x: w * 0.15 + Math.random() * w * 0.7,
+        y: h * 0.2 + Math.random() * h * 0.5,
+        size: 1 + Math.random() * 2,
+        alpha: 0.2 + Math.random() * 0.3,
+        life: 0,
+      })
+      if (staticSparks.length > 25) staticSparks.shift()
+    }
 
     // --- LOCK-ON MECHANIC ---
     if (navigatingTo) {
@@ -1043,6 +1100,51 @@ export function createRadioRoom(deps: RadioDeps): Room {
       ctx.restore()
     }
 
+    // === SIGNAL ECHOES (ghost text from previously tuned stations) ===
+    for (let ei = signalEchoes.length - 1; ei >= 0; ei--) {
+      const echo = signalEchoes[ei]
+      echo.x += echo.vx
+      echo.y += echo.vy
+      echo.alpha -= 0.0008
+      if (echo.alpha <= 0) {
+        signalEchoes.splice(ei, 1)
+        continue
+      }
+      ctx.font = '13px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(${bandColor}, ${echo.alpha})`
+      ctx.textAlign = 'center'
+      ctx.fillText(echo.text, echo.x, echo.y)
+      // Faint frequency label
+      ctx.font = '9px monospace'
+      ctx.fillStyle = `rgba(${bandColor}, ${echo.alpha * 0.4})`
+      ctx.fillText(`${echo.freq.toFixed(1)}`, echo.x, echo.y + 12)
+    }
+
+    // === STATIC CRACKLING SPARKS ===
+    for (let si = staticSparks.length - 1; si >= 0; si--) {
+      const spark = staticSparks[si]
+      spark.life += deltaTime
+      spark.alpha -= 0.02
+      if (spark.alpha <= 0 || spark.life > 0.5) {
+        staticSparks.splice(si, 1)
+        continue
+      }
+      // Brief bright flash that fades
+      const flashAlpha = spark.alpha * (1 - spark.life * 2)
+      if (flashAlpha > 0) {
+        ctx.fillStyle = `rgba(${bandColor}, ${flashAlpha})`
+        ctx.fillRect(spark.x - spark.size * 0.5, spark.y - spark.size * 0.5, spark.size, spark.size)
+        // Tiny glow
+        const sparkGlow = ctx.createRadialGradient(spark.x, spark.y, 0, spark.x, spark.y, spark.size * 3)
+        sparkGlow.addColorStop(0, `rgba(${bandColor}, ${flashAlpha * 0.3})`)
+        sparkGlow.addColorStop(1, 'transparent')
+        ctx.fillStyle = sparkGlow
+        ctx.beginPath()
+        ctx.arc(spark.x, spark.y, spark.size * 3, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+
     // Title
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(${bandColor}, ${0.1 + Math.sin(time * 0.3) * 0.03})`
@@ -1193,6 +1295,9 @@ export function createRadioRoom(deps: RadioDeps): Room {
       staticLines = []
       lastFrameTime = 0
       lockedSignal = null
+      signalEchoes.length = 0
+      staticSparks.length = 0
+      lastEchoStation = null
       navigatingTo = null
       lockFlashTime = 0
       for (const sig of hiddenSignals) sig.lockTime = 0

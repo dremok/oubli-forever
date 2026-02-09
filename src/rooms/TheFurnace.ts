@@ -38,6 +38,10 @@ const CULTURAL_INSCRIPTIONS = [
   'iñárritu\'s SUEÑO PERRO: a million feet of discarded film resurrected. the furnace reversed.',
   'alzheimer\'s doesn\'t delete memories. it scrambles the replay. the tape melts, but the grooves remain.',
   'tracey emin, "a second life" (tate modern, feb 2026): reinvention after loss. what burns becomes fuel.',
+  'shiota\'s red thread installations: during sleep, performers lie in cocoons of red thread. the burning thread is connection.',
+  'the doomsday clock: 85 seconds to midnight (jan 2026). the furnace of civilization burning faster.',
+  'spontaneous combustion: medieval monks believed sinners could ignite from within. guilt as accelerant.',
+  'controlled burns: forests need fire to regenerate. suppression breeds catastrophe. forgetting is necessary maintenance.',
 ]
 
 interface FurnaceDeps {
@@ -157,6 +161,13 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
   // --- Fire breathing rhythm ---
   let breathPhase = 0
   const BREATH_SPEED = 0.8 // cycles per second
+
+  // --- Spark cascade (periodic burst of sparks) ---
+  let sparkCascadeTimer = 0
+  interface CascadeSpark {
+    x: number; y: number; vx: number; vy: number; alpha: number; size: number
+  }
+  const cascadeSparks: CascadeSpark[] = []
 
   // --- Wind drift ---
   let windAngle = 0
@@ -741,6 +752,39 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     // Keep embers manageable
     if (embers.length > 200) embers.splice(0, 50)
 
+    // === SPARK CASCADE ===
+    sparkCascadeTimer += 0.016
+    if (sparkCascadeTimer > 4 + Math.random() * 8 && fireIntensity > 0.4) {
+      sparkCascadeTimer = 0
+      // Burst of 8-15 sparks
+      const burstCount = 8 + Math.floor(Math.random() * 8)
+      for (let si = 0; si < burstCount; si++) {
+        const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.6
+        const speed = 2 + Math.random() * 4
+        cascadeSparks.push({
+          x: fireX + (Math.random() - 0.5) * 20,
+          y: fireY - 10 - Math.random() * 20,
+          vx: Math.cos(angle) * speed + (Math.random() - 0.5),
+          vy: Math.sin(angle) * speed,
+          alpha: 0.6 + Math.random() * 0.4,
+          size: 0.5 + Math.random() * 1.5,
+        })
+      }
+    }
+    for (let si = cascadeSparks.length - 1; si >= 0; si--) {
+      const sp = cascadeSparks[si]
+      sp.vy += 0.03 // gravity
+      sp.x += sp.vx
+      sp.y += sp.vy
+      sp.alpha -= 0.008
+      if (sp.alpha <= 0 || sp.y > h) {
+        cascadeSparks.splice(si, 1)
+        continue
+      }
+      ctx.fillStyle = `rgba(255, ${180 + Math.floor(sp.alpha * 70)}, 50, ${sp.alpha})`
+      ctx.fillRect(sp.x - sp.size * 0.5, sp.y - sp.size * 0.5, sp.size, sp.size)
+    }
+
     // Fire slowly dies down
     fireIntensity *= 0.9995
     if (fireIntensity < 0.3) fireIntensity = 0.3
@@ -1239,6 +1283,8 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       ashParticles = []
       smokeParticles = []
       breathPhase = 0
+      sparkCascadeTimer = 0
+      cascadeSparks.length = 0
       windAngle = Math.random() * Math.PI * 2
       windStrength = 0
       heatTrail.length = 0
