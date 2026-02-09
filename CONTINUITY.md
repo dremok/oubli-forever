@@ -1773,6 +1773,43 @@ Fresh cultural research findings:
 - Inspired by residual body heat, Felix Gonzalez-Torres candy pile
 - Changes are extremely gradual — you notice the state, not the transition
 
+### 172. MEMORY COMPOSTING — Biological Cycle Closure
+- Highly degraded memories (>75% degradation) are composted by the mycelium into nutrients
+- One memory composted per ~30s cycle — gradual, not sudden
+- Yields nutrients to active room + neighbors (decomposition diffuses)
+- Visual: letter fragments from the dying memory sink downward in earth tones (amber/brown)
+- Composted memory IDs persisted to prevent double-composting
+- Closes the biological cycle: memories → degradation → compost → nutrients → ripening → fruit → seeds
+- Inspired by mycorrhizal decomposition, nutrient cycling in forest ecosystems
+
+### 173. THE MEMBRANE (`src/organisms/Membrane.ts`) — Living Tissue Between Rooms
+- Navigation itself becomes a sensory experience
+- When transitioning, visitors push through an organic membrane with cellular structures
+- Membrane density/duration scales inversely with mycelium trail strength:
+  - Well-traveled paths: thin, fast membrane (800ms)
+  - Unknown paths: thick, resistant passage (1800ms)
+- Visual: Voronoi-like organic cells, mycelium filaments between cells, central parting line
+- Room name characters from both rooms bleed through during passage
+- Color shifts: golden-green for strong trails, gray for weak
+- Inspired by lattice surgery, Tracey Emin "A Second Life," episodic-semantic memory merger
+
+### 174. THE PHENOTYPE (`src/organisms/Phenotype.ts`) — Adaptive House Coloration
+- The house develops its appearance based on how you explore it
+- Rooms categorized into 8 biomes: water, fire, earth, cosmic, sound, text, time, liminal
+- Time spent in biome rooms accumulates scores; all scores decay slowly
+- Dominant biome tints the entire house with an extremely subtle color overlay:
+  - Water → cool blue-green, Fire → warm amber, Earth → olive-brown
+  - Cosmic → deep purple, Sound → soft violet, Text → cream/sepia
+  - Time → silver-gray, Liminal → iridescent teal
+- Every visitor's Oubli looks slightly different based on their exploration pattern
+- Persists in localStorage — develops over many visits
+- Inspired by epigenetic expression, "Guaranteed Human" movement
+
+### 175. Cultural Whispers Round 20
+- 15 new whispers: lattice surgery, Toni Morrison posthumous lectures, Great Meme Reset failure,
+  "guaranteed human" premium, rare aesthetic, monkey philosophy, Tracey Emin retrospective,
+  Art Basel Qatar, MIT consciousness ultrasound, million-qubit light traps
+
 ---
-*Last updated: Era 9, Feature 171 — Oubli is now a shared organism: Mycelium, Fruiting, Neural Pathways, Shared Seeds, Collective Warmth*
-*"what falls from a tree of forgetting tastes sweet"*
+*Last updated: Era 9, Feature 175 — Oubli now has 5 organisms (Mycelium, Fruiting, CollectiveWarmth, Membrane, Phenotype), a complete biological cycle, and adaptive coloration*
+*"the membrane between rooms is alive. it remembers what passed through."*
