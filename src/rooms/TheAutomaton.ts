@@ -127,6 +127,21 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   // --- Pattern age tracking ---
   let oldestCellAge = 0 // tracks the longest-surviving cell
 
+  // --- Fossil layer: cells that died many times leave permanent traces ---
+  // (uses deathCount grid — cells with high death counts get rendered as dim fossils)
+
+  // --- Cosmic ray mutations: occasional random cell flips ---
+  let cosmicRayTimer = 0
+  let cosmicRayFlash: { x: number; y: number; alpha: number } | null = null
+
+  // --- Extinction memorial markers on the population graph ---
+  interface ExtinctionMarker {
+    generation: number
+    severity: number // 0-1, how much was lost
+    graphX: number   // computed during render
+  }
+  const extinctionMarkers: ExtinctionMarker[] = []
+
   // --- Audio state ---
   let audioReady = false
   let ac: AudioContext | null = null
@@ -486,6 +501,32 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     }
     prevPopulation = liveCells
 
+    // Extinction marker: record on the timeline
+    if (prevPopulation > 50 && liveCells < prevPopulation * 0.6) {
+      const severity = 1 - liveCells / prevPopulation
+      extinctionMarkers.push({ generation, severity, graphX: 0 })
+      if (extinctionMarkers.length > 20) extinctionMarkers.shift()
+    }
+
+    // Cosmic ray mutation: ~every 5-15 seconds, flip a random cell
+    cosmicRayTimer += 1
+    if (cosmicRayTimer > 300 + Math.random() * 600) {
+      cosmicRayTimer = 0
+      const rayR = Math.floor(Math.random() * rows)
+      const rayC = Math.floor(Math.random() * cols)
+      if (grid[rayR][rayC] > 0) {
+        grid[rayR][rayC] = 0
+        deathCount[rayR][rayC]++
+      } else {
+        grid[rayR][rayC] = generation + 1
+      }
+      cosmicRayFlash = {
+        x: rayC * cellSize + cellSize / 2,
+        y: rayR * cellSize + cellSize / 2,
+        alpha: 0.6,
+      }
+    }
+
     // Grid pulse brightness peaks on step then decays
     gridPulseBrightness = 0.02
 
@@ -823,6 +864,44 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
       ctx.fill()
     }
 
+    // --- Fossil layer: cells with many deaths leave permanent dim marks ---
+    for (let r = 0; r < rows; r += 2) { // every other row for performance
+      for (let c = 0; c < cols; c += 2) {
+        const deaths = deathCount[r][c]
+        if (deaths > 5 && grid[r][c] === 0) {
+          const fossilAlpha = Math.min(0.06, deaths * 0.004)
+          ctx.fillStyle = `rgba(100, 80, 120, ${fossilAlpha})`
+          ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize)
+        }
+      }
+    }
+
+    // --- Cosmic ray flash ---
+    if (cosmicRayFlash) {
+      cosmicRayFlash.alpha -= 0.01
+      if (cosmicRayFlash.alpha <= 0) {
+        cosmicRayFlash = null
+      } else {
+        const cr = cosmicRayFlash
+        // Bright flash expanding outward
+        const radius = (0.6 - cr.alpha) * 40 + 5
+        const grad = ctx.createRadialGradient(cr.x, cr.y, 0, cr.x, cr.y, radius)
+        grad.addColorStop(0, `rgba(255, 255, 200, ${cr.alpha})`)
+        grad.addColorStop(0.3, `rgba(200, 150, 255, ${cr.alpha * 0.5})`)
+        grad.addColorStop(1, 'rgba(150, 100, 200, 0)')
+        ctx.fillStyle = grad
+        ctx.fillRect(cr.x - radius, cr.y - radius, radius * 2, radius * 2)
+
+        // Label
+        if (cr.alpha > 0.3) {
+          ctx.font = '9px monospace'
+          ctx.fillStyle = `rgba(255, 255, 200, ${cr.alpha * 0.6})`
+          ctx.textAlign = 'center'
+          ctx.fillText('cosmic ray', cr.x, cr.y - radius - 4)
+        }
+      }
+    }
+
     // UI overlay
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(180, 160, 200, ${0.08 + Math.sin(time * 0.3) * 0.02})`
@@ -911,6 +990,26 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
       ctx.strokeStyle = 'rgba(255, 180, 220, 0.2)'
       ctx.lineWidth = 1
       ctx.stroke()
+
+      // Extinction markers on the graph
+      const oldestGen = generation - popHistory.length
+      for (const em of extinctionMarkers) {
+        const genOffset = em.generation - oldestGen
+        if (genOffset >= 0 && genOffset < popHistory.length) {
+          const markerX = graphX + (genOffset / POP_HISTORY_MAX) * graphW
+          em.graphX = markerX
+          // Vertical red line at extinction point
+          ctx.strokeStyle = `rgba(220, 60, 60, ${0.1 + em.severity * 0.15})`
+          ctx.lineWidth = 0.5
+          ctx.beginPath()
+          ctx.moveTo(markerX, graphY)
+          ctx.lineTo(markerX, graphY + graphH)
+          ctx.stroke()
+          // Small cross/memorial mark
+          ctx.fillStyle = `rgba(220, 60, 60, ${0.08 + em.severity * 0.1})`
+          ctx.fillRect(markerX - 1, graphY + graphH + 2, 2, 3)
+        }
+      }
 
       // Label
       ctx.font = '9px monospace'
@@ -1141,6 +1240,9 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
 
     activate() {
       active = true
+      cosmicRayTimer = 0
+      cosmicRayFlash = null
+      extinctionMarkers.length = 0
       initGrid()
       initAudio()
       render()
