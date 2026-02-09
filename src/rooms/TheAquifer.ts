@@ -79,6 +79,23 @@ interface CurrentParticle {
   size: number
 }
 
+interface SedimentFragment {
+  text: string
+  x: number
+  y: number       // anchored near bottom
+  alpha: number   // very dim
+  size: number
+  hue: number
+  age: number     // frames since deposited
+}
+
+interface RecombineFlash {
+  x: number
+  y: number
+  alpha: number
+  radius: number
+}
+
 const CULTURAL_INSCRIPTIONS = [
   'episodic and semantic memory share the same brain networks. all water mingles in the aquifer.',
   'cenário: shape-shifting molecular devices. matter that remembers its former shape beneath the surface.',
@@ -90,6 +107,12 @@ const CULTURAL_INSCRIPTIONS = [
   'cenotes: sacred wells of the maya. portals to xibalba, the underworld where the dead dissolve.',
   'artesian wells: water under pressure rises on its own. memory that surfaces uninvited.',
   'the great meme reset: collective culture trying to wash itself clean, forgetting what it was.',
+  'the thermocline: a boundary where warm surface water meets cold deep water. thoughts compress here.',
+  'deep sea pressure: at 1000 meters, 100 atmospheres. language collapses into density.',
+  'marine snow: dead organisms sinking through water. a slow rain of everything that ever lived.',
+  'the challenger deep: 11km down. it took sound 7 seconds to reach the bottom. memory has a floor.',
+  'subduction zones: one plate slides beneath another. old ocean floor returns to the mantle. recycled.',
+  'lake vostok: buried under 4km of antarctic ice for 15 million years. sealed memory.',
 ]
 
 export function createAquiferRoom(deps: AquiferDeps): Room {
@@ -117,6 +140,13 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
   // Bioluminescence trails and burst particles
   let glowTrails: GlowTrail[] = []
   let burstParticles: BurstParticle[] = []
+
+  // Sediment layer — fragments that sank to the bottom
+  let sedimentFragments: SedimentFragment[] = []
+
+  // Memory recombination
+  let recombineTimer = 0
+  let recombineFlashes: RecombineFlash[] = []
 
   // Fragment catching
   let caughtFragment: FloatingFragment | null = null
@@ -812,6 +842,167 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
     hoveredCurrent = null
   }
 
+  // --- Thermocline: visible boundary between midwater and depths ---
+  function drawThermocline(w: number, h: number) {
+    if (!ctx) return
+    const baseY = h * 0.78 // boundary between midwater and depths
+    ctx.save()
+
+    // Shimmering density boundary — two overlapping wavy lines
+    for (let pass = 0; pass < 2; pass++) {
+      const offset = pass * 3
+      const alpha = 0.035 - pass * 0.01
+      ctx.beginPath()
+      for (let x = 0; x <= w; x += 3) {
+        const waveY = baseY + offset
+          + Math.sin(x * 0.008 + time * 0.4) * 6
+          + Math.sin(x * 0.02 + time * 0.7) * 3
+          + Math.sin(x * 0.003 + time * 0.2) * 8
+        if (x === 0) ctx.moveTo(x, waveY)
+        else ctx.lineTo(x, waveY)
+      }
+      ctx.strokeStyle = `rgba(40, 160, 200, ${alpha})`
+      ctx.lineWidth = pass === 0 ? 1.5 : 0.8
+      ctx.stroke()
+    }
+
+    // Subtle gradient band at the thermocline — temperature transition
+    const bandGrad = ctx.createLinearGradient(0, baseY - 15, 0, baseY + 15)
+    bandGrad.addColorStop(0, 'rgba(30, 100, 160, 0)')
+    bandGrad.addColorStop(0.4, 'rgba(20, 80, 140, 0.015)')
+    bandGrad.addColorStop(0.6, 'rgba(15, 60, 120, 0.015)')
+    bandGrad.addColorStop(1, 'rgba(10, 40, 100, 0)')
+    ctx.fillStyle = bandGrad
+    ctx.fillRect(0, baseY - 15, w, 30)
+
+    ctx.restore()
+  }
+
+  // --- Sediment: fragments that sank become geological layers ---
+  function updateSediment(h: number) {
+    // Check fragments near the bottom — if they stay in depths zone, they sediment
+    for (let i = fragments.length - 1; i >= 0; i--) {
+      const frag = fragments[i]
+      if (frag === caughtFragment) continue
+      // Fragments in the deepest 10% slowly become sediment
+      if (frag.y > h * 0.92 && sedimentFragments.length < 25) {
+        // 0.2% chance per frame once in sediment zone
+        if (Math.random() < 0.002) {
+          sedimentFragments.push({
+            text: frag.text,
+            x: frag.x,
+            y: h - 8 - Math.random() * 20 - sedimentFragments.length * 0.5,
+            alpha: 0.04 + Math.random() * 0.03,
+            size: frag.size * 0.85,
+            hue: frag.hue,
+            age: 0,
+          })
+          // Remove from floating fragments
+          fragments.splice(i, 1)
+        }
+      }
+    }
+
+    // Age sediment — slowly fades further
+    for (let i = sedimentFragments.length - 1; i >= 0; i--) {
+      sedimentFragments[i].age++
+      // Very slow fade: becomes geology
+      if (sedimentFragments[i].age > 3000) {
+        sedimentFragments[i].alpha *= 0.999
+      }
+      if (sedimentFragments[i].alpha < 0.005) {
+        sedimentFragments.splice(i, 1)
+      }
+    }
+  }
+
+  function drawSediment(w: number, h: number) {
+    if (!ctx) return
+    // Ground layer glow — subtle warmth from compressed memories
+    if (sedimentFragments.length > 3) {
+      const groundGlow = ctx.createLinearGradient(0, h - 35, 0, h)
+      const intensity = Math.min(0.02, sedimentFragments.length * 0.002)
+      groundGlow.addColorStop(0, 'rgba(80, 60, 30, 0)')
+      groundGlow.addColorStop(1, `rgba(80, 60, 30, ${intensity})`)
+      ctx.fillStyle = groundGlow
+      ctx.fillRect(0, h - 35, w, 35)
+    }
+
+    // Draw sediment text
+    for (const s of sedimentFragments) {
+      ctx.font = `${s.size}px "Cormorant Garamond", serif`
+      ctx.fillStyle = `hsla(${30 + s.hue * 0.1}, 30%, 40%, ${s.alpha})`
+      ctx.textAlign = 'center'
+      ctx.fillText(s.text, s.x, s.y)
+    }
+  }
+
+  // --- Memory recombination: nearby fragments occasionally merge ---
+  function tryRecombine() {
+    if (fragments.length < 2) return
+    // Check pairs — only test a few random pairs per call for performance
+    const attempts = Math.min(5, fragments.length)
+    for (let a = 0; a < attempts; a++) {
+      const i = Math.floor(Math.random() * fragments.length)
+      const j = Math.floor(Math.random() * fragments.length)
+      if (i === j) continue
+      const fi = fragments[i]
+      const fj = fragments[j]
+      if (fi === caughtFragment || fj === caughtFragment) continue
+
+      const dx = fi.x - fj.x
+      const dy = fi.y - fj.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      // Must be very close — within 30px
+      if (dist < 30) {
+        // Merge: combine texts, remove one fragment
+        const words1 = fi.text.split(' ')
+        const words2 = fj.text.split(' ')
+        // Take one word from each
+        const w1 = words1[Math.floor(Math.random() * words1.length)]
+        const w2 = words2[Math.floor(Math.random() * words2.length)]
+        fi.text = `${w1} ${w2}`
+        fi.glow = 0.8
+        fi.hue = (fi.hue + fj.hue) / 2
+
+        // Flash at merge point
+        recombineFlashes.push({
+          x: (fi.x + fj.x) / 2,
+          y: (fi.y + fj.y) / 2,
+          alpha: 0.3,
+          radius: 5,
+        })
+
+        // Remove the absorbed fragment
+        const removeIdx = fragments.indexOf(fj)
+        if (removeIdx >= 0) fragments.splice(removeIdx, 1)
+        return // one merge per call
+      }
+    }
+  }
+
+  function updateRecombineFlashes() {
+    for (let i = recombineFlashes.length - 1; i >= 0; i--) {
+      const f = recombineFlashes[i]
+      f.alpha -= 0.005
+      f.radius += 0.3
+      if (f.alpha <= 0) recombineFlashes.splice(i, 1)
+    }
+  }
+
+  function drawRecombineFlashes() {
+    if (!ctx) return
+    for (const f of recombineFlashes) {
+      const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.radius)
+      grad.addColorStop(0, `rgba(120, 220, 180, ${f.alpha})`)
+      grad.addColorStop(0.5, `rgba(80, 180, 160, ${f.alpha * 0.4})`)
+      grad.addColorStop(1, 'rgba(60, 140, 140, 0)')
+      ctx.fillStyle = grad
+      ctx.fillRect(f.x - f.radius, f.y - f.radius, f.radius * 2, f.radius * 2)
+    }
+  }
+
   // --- Main render ---
   function render() {
     if (!canvas || !ctx || !active) return
@@ -862,6 +1053,22 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
       }
       ctx.stroke()
     }
+
+    // Thermocline boundary
+    drawThermocline(w, h)
+
+    // Sediment layer at bottom
+    updateSediment(h)
+    drawSediment(w, h)
+
+    // Memory recombination (~every 4 seconds)
+    recombineTimer += dt
+    if (recombineTimer > 4) {
+      recombineTimer = 0
+      tryRecombine()
+    }
+    updateRecombineFlashes()
+    drawRecombineFlashes()
 
     // Bioluminescence trails
     updateGlowTrails()
@@ -1170,6 +1377,9 @@ export function createAquiferRoom(deps: AquiferDeps): Room {
       caughtFragment = null
       caughtTimer = 0
       caughtDisplayText = ''
+      sedimentFragments = []
+      recombineTimer = 0
+      recombineFlashes = []
       shatterMemories()
       initAudio()
       render()
