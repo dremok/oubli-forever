@@ -349,63 +349,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     return { text, isMemory }
   }
 
-  // ===== INSCRIPTION TEXTURE CACHE =====
-  // Pre-render text to offscreen canvases, then sample per-column during raycasting
-  // for perspective-correct wall text that appears genuinely ON the surface
-  const INSC_TEX_W = 256
-  const INSC_TEX_H = 128
-  const inscriptionTextures = new Map<string, HTMLCanvasElement>()
-
-  function getInscriptionTexture(wx: number, wy: number): HTMLCanvasElement | null {
-    const key = `${wx},${wy}`
-    const cached = inscriptionTextures.get(key)
-    if (cached) return cached
-
-    const insc = getInscriptionText(wx, wy)
-    if (!insc.text) return null
-
-    const texCanvas = document.createElement('canvas')
-    texCanvas.width = INSC_TEX_W
-    texCanvas.height = INSC_TEX_H
-    const texCtx = texCanvas.getContext('2d')
-    if (!texCtx) return null
-
-    texCtx.clearRect(0, 0, INSC_TEX_W, INSC_TEX_H)
-
-    // Vertical position — hash-determined, like real graffiti at various heights
-    const yHash = cellHash2(wx + 17, wy + 31)
-    const textY = INSC_TEX_H * (0.25 + yHash * 0.5)
-
-    if (insc.isMemory) {
-      texCtx.save()
-      texCtx.translate(INSC_TEX_W / 2, textY)
-      drawHandwrittenText(texCtx, insc.text.substring(0, 28), 22, 0.85, wx, wy)
-      texCtx.restore()
-    } else {
-      texCtx.save()
-      texCtx.font = '15px "Cormorant Garamond", serif'
-      texCtx.fillStyle = 'rgba(180, 160, 200, 0.55)'
-      texCtx.textAlign = 'center'
-      texCtx.textBaseline = 'middle'
-      texCtx.fillText(insc.text.substring(0, 24), INSC_TEX_W / 2, textY)
-      texCtx.restore()
-    }
-
-    inscriptionTextures.set(key, texCanvas)
-
-    // LRU eviction — keep cache bounded
-    if (inscriptionTextures.size > 80) {
-      const first = inscriptionTextures.keys().next().value
-      if (first) inscriptionTextures.delete(first)
-    }
-
-    return texCanvas
-  }
-
-  function clearInscriptionTextures() {
-    inscriptionTextures.clear()
-  }
-
   // ===== REGION MANAGEMENT =====
 
   function updateRegions(): void {
@@ -420,18 +363,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
 
     // Increment salt for regions that just left the active set (the labyrinth forgets)
-    let regionsEvicted = false
     for (const key of activeRegions) {
       if (!newActive.has(key)) {
         const currentSalt = regionSalts.get(key) ?? 0
         regionSalts.set(key, currentSalt + 1)
         ghostRegions.add(key)
-        regionsEvicted = true
       }
     }
-    // Clear texture cache when maze topology changes
-    if (regionsEvicted) clearInscriptionTextures()
-
     activeRegions.clear()
     for (const key of newActive) {
       activeRegions.add(key)
@@ -3017,26 +2955,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillStyle = `rgb(${Math.floor(Math.max(0, r))}, ${Math.floor(Math.max(0, g))}, ${Math.floor(Math.max(0, b))})`
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
-      // Texture-mapped inscription rendering — text is ON the wall surface
-      if (hit.cell === INSCRIPTION && correctedDist < 6) {
-        const tex = getInscriptionTexture(hit.hitX, hit.hitY)
-        if (tex) {
-          const texX = Math.floor(hit.wallU * INSC_TEX_W)
-          // Brightness fade with distance + side dimming
-          const texAlpha = brightness * sideDim * flicker * 0.9
-          if (texAlpha > 0.02) {
-            ctx.save()
-            ctx.globalAlpha = texAlpha
-            // Draw one column from the texture onto the wall strip
-            ctx.drawImage(
-              tex,
-              texX, 0, 1, INSC_TEX_H,               // source: 1-pixel column
-              i * stripW, wallTop, stripW + 1, wallHeight  // dest: full wall strip
-            )
-            ctx.restore()
-          }
-        }
-      }
 
       // Collect wall objects on anomaly walls (skip used ones)
       if (hit.cell === ANOMALY && correctedDist < 7) {
@@ -3191,14 +3109,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.fillStyle = `rgba(140, 120, 160, ${0.06 + Math.sin(time * 0.3) * 0.02})`
     ctx.textAlign = 'center'
     ctx.fillText('the labyrinth', w / 2, 25)
-
-    // Nearby inscription text
-    if (inscriptionText && inscriptionAlpha > 0.01) {
-      ctx.font = '14px "Cormorant Garamond", serif'
-      ctx.fillStyle = `rgba(180, 160, 200, ${inscriptionAlpha * 0.5})`
-      ctx.textAlign = 'center'
-      ctx.fillText(inscriptionText, w / 2, h / 2 + 60)
-    }
 
     // Anomaly interaction prompt
     if (lookingAtAnomaly && !currentEffect) {
@@ -3384,7 +3294,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       // Reset used anomalies, textures, and ambient sounds for fresh session
       usedAnomalies.clear()
-      clearInscriptionTextures()
       lastCreepySoundTime = time + 20 // first ambient sound after 20s
 
       initAudio()
