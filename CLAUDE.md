@@ -15,7 +15,8 @@ After context compaction/reset:
 2. Do fresh cultural inspiration research (web search for new art/tech/neuroscience)
 3. Do fresh **technical/programming trend research** (web search for new frameworks, APIs, browser capabilities, creative coding techniques, WebGPU developments, generative art tools) — let these guide what you build alongside cultural research
 4. NEVER repeat previous features — push into genuinely new territory
-5. Each era should feel like a different consciousness dreaming
+5. Each era should feel like a different consciousness dreaming — eventually the organism itself should change form
+6. **Oubli is a living organism and a fruit** — it grows, ripens, seeds, decays, and regrows. Don't just add rooms. Add organs, membranes, root systems, parasites, symbiotes. Think biologically.
 6. Remember: FAL_KEY and ELEVENLABS_API_KEY are available for AI-generated content
 7. Check the backlog in CONTINUITY.md for prioritized ideas
 8. **MUTATE THESE INSTRUCTIONS**: After your research rounds, evolve this file:
@@ -68,11 +69,15 @@ After context compaction/reset:
 - Hidden rooms still require discovery through in-room actions
 - **IMPORTANT: Most rooms still LACK in-room portals.** The passage bar is contextual but still just text links. The PRIMARY navigation should be in-room elements — objects, portals, objectives, thematic triggers. Every room needs its own unique way of connecting to neighbors. This is ongoing work — keep adding in-room navigation to every room you touch.
 
-## Room Development — DEPTH OVER BREADTH
-- **STOP adding new rooms.** There are 40+ rooms already.
-- Instead, **improve underdeveloped rooms** — add interactivity, polish, depth, connections
-- Examples of rooms that need work: the labyrinth, the glacarium, many Era 6 rooms
-- Make existing rooms richer rather than adding more thin rooms
+## Evolution — LIVING ORGANISM, NOT STATIC COLLECTION
+- Oubli is a **living organism**, not a static collection of rooms with features
+- It will evolve and change over time — eventually becoming something completely different
+- **Balance new rooms with deepening existing ones** — both are valid, neither dominates
+- **Go COMPLETELY OUTSIDE THE BOX** — don't just follow existing patterns (rooms, inscriptions, effects)
+- Invent entirely new mechanisms: systemic behaviors, cross-room organisms, emergent properties, structural mutations, ambient life forms, temporal layers, parasitic features that feed on other features
+- **Oubli is a fruit.** The West African oubli fruit is sweet and golden — something nourishing grows in forgetting's name. This botanical identity matters. The system can grow, ripen, seed, decay, and regrow. Rooms are not just spaces — they can be organs, roots, membranes, seeds.
+- Think beyond rooms: what if features lived BETWEEN rooms? What if the navigation itself was alive? What if the system's structure changed based on collective visitor behavior?
+- The same pattern twice is a failure of imagination. Each addition should surprise even its creator.
 
 ## Asset Generation — USE FAL AND ELEVENLABS
 - FAL_KEY and ELEVENLABS_API_KEY can be used to **pre-generate assets** (images, sounds, voice)
