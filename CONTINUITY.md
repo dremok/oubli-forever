@@ -1754,6 +1754,25 @@ Fresh cultural research findings:
 - Golden spore celebration on new pathway growth
 - Inspired by neuroplasticity, brain organoid self-wiring (Nagoya 2026)
 
+### 170. SHARED COLLECTIVE STATE — Server Backend
+- **Architectural shift**: nginx replaced with Node.js server (`server.js`)
+- Server serves static files AND provides shared state API routes
+- `POST /api/seeds` — plant a seed shared across all visitors
+- `GET /api/seeds?room=X` — harvest seeds planted by OTHER visitors
+- `POST /api/pulse` — contribute room activity to collective pulse
+- `GET /api/pulse` — get collective state (active rooms, seed count)
+- Shared state is in-memory — resets on deploy (each season forgets)
+- Anonymous visitor IDs for seed attribution
+- Graceful degradation: if server is unavailable, falls back to local-only
+
+### 171. COLLECTIVE WARMTH (`src/organisms/CollectiveWarmth.ts`)
+- Subtle ambient effect showing the presence of other visitors
+- Polls `/api/pulse` every 15s — shows golden warmth based on active visitors
+- If someone is in the SAME room: warm breathing spot at center
+- If the house has many active visitors: golden edge glow
+- Inspired by residual body heat, Felix Gonzalez-Torres candy pile
+- Changes are extremely gradual — you notice the state, not the transition
+
 ---
-*Last updated: Era 9, Feature 169 — Oubli grows organisms: Mycelium (circulatory system), Fruiting (emergent events), Neural Pathways (living topology)*
+*Last updated: Era 9, Feature 171 — Oubli is now a shared organism: Mycelium, Fruiting, Neural Pathways, Shared Seeds, Collective Warmth*
 *"what falls from a tree of forgetting tastes sweet"*
