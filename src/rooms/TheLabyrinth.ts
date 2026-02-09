@@ -140,6 +140,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let frameId = 0
   let time = 0
 
+  // Session seed — makes every visit a different labyrinth
+  let sessionSeed = 0
+
   // Player state — world coordinates
   let px = 1.5
   let py = 1.5
@@ -445,7 +448,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const rx = Math.floor(wx / REGION_SIZE)
     const ry = Math.floor(wy / REGION_SIZE)
     const salt = regionSalts.get(`${rx},${ry}`) ?? 0
-    let h = (wx * 374761393 + wy * 668265263 + salt * 1013904223) | 0
+    let h = (wx * 374761393 + wy * 668265263 + (salt + sessionSeed) * 1013904223) | 0
     h = Math.imul(h ^ (h >>> 13), 1274126177)
     h = h ^ (h >>> 16)
     return (h >>> 0) / 4294967296
@@ -455,7 +458,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const rx = Math.floor(wx / REGION_SIZE)
     const ry = Math.floor(wy / REGION_SIZE)
     const salt = regionSalts.get(`${rx},${ry}`) ?? 0
-    let h = (wx * 668265263 + wy * 374761393 + salt * 2654435769) | 0
+    let h = (wx * 668265263 + wy * 374761393 + (salt + sessionSeed) * 2654435769) | 0
     h = Math.imul(h ^ (h >>> 13), 2246822507)
     h = h ^ (h >>> 16)
     return (h >>> 0) / 4294967296
@@ -2390,13 +2393,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const insanityB = insanity > 0.4 ? -insanity * 10 : 0
 
     if (cell === ANOMALY) {
-      // Anomaly walls have a subtle difference — slight purple tint, gentle pulse
-      const shimmer = 0.15 + Math.sin(time * 1.2) * 0.1
-      const pulse = 0.95 + Math.sin(time * 1.8) * 0.05
+      // Anomaly walls pulse with a noticeable purple glow
+      const shimmer = 0.3 + Math.sin(time * 1.8) * 0.25
+      const pulse = 0.9 + Math.sin(time * 2.5) * 0.1
       return [
-        (45 + tensionR + insanityR + shimmer * 8) * brightness * sideDim * pulse,
-        (32 + tensionG + insanityG + shimmer * 4) * brightness * sideDim * pulse,
-        (75 + insanityB + shimmer * 15) * brightness * sideDim * pulse,
+        (50 + tensionR + insanityR + shimmer * 20) * brightness * sideDim * pulse,
+        (30 + tensionG + insanityG + shimmer * 8) * brightness * sideDim * pulse,
+        (90 + insanityB + shimmer * 30) * brightness * sideDim * pulse,
       ]
     }
     if (cell === INSCRIPTION) {
@@ -3613,10 +3616,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     activate() {
       active = true
       time = 0
+      // New random seed each visit — every labyrinth is different
+      sessionSeed = Math.floor(Math.random() * 2147483647)
       px = 1.5
       py = 1.5
-      pa = 0
+      pa = Math.random() * Math.PI * 2 // random starting direction
       keys.clear()
+      regionSalts.clear()
       exploredCells.clear()
       ghostRegions.clear()
       tension = 0
