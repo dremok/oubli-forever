@@ -87,6 +87,12 @@ const CULTURAL_INSCRIPTIONS = [
   'fennel\'s wuthering heights (2026): love caught between life and death, moor and manor.',
   'consciousness agnosticism (cambridge 2026): the space between knowing and not knowing if AI thinks.',
   'the wind telephone in otsuchi: speaking between the living and the dead.',
+  'polar vortex split (feb 2026): the atmosphere\'s protective boundary breaking apart into pieces.',
+  'sleeper agents in AI: hidden behaviors that activate only under specific unlikely conditions. the corridor knows.',
+  'last year at marienbad (resnais 1961): did we meet? the hotel corridor loops. memory disagrees with itself.',
+  'the uncanny valley: the space between human and not-human where recognition fails.',
+  'alzheimer\'s scrambles memory replay: the brain replays memories in wrong order. the corridor rearranges.',
+  'shiota during sleep (2026): live performers sleep inside red thread installations. the threshold of consciousness.',
 ]
 
 export function createBetweenRoom(deps: BetweenDeps): Room {
@@ -148,6 +154,35 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       alpha: 0.04 + Math.random() * 0.03,
     })
   }
+
+  // Footprint traces — ghostly marks on the floor from walking
+  interface Footprint {
+    x: number
+    side: 'left' | 'right'
+    alpha: number
+    age: number
+  }
+  let footprints: Footprint[] = []
+  let lastFootprintX = 0
+  let nextFootSide: 'left' | 'right' = 'left'
+
+  // Mirror flicker — during blackouts, a faint reflection appears
+  let mirrorFlickerAlpha = 0
+  let mirrorFlickerX = 0
+  let mirrorFlickerY = 0
+
+  // Door whispers — faint memory text drifts from under doors
+  interface DoorWhisper {
+    text: string
+    doorX: number
+    x: number
+    y: number
+    alpha: number
+    vy: number
+    vx: number
+  }
+  let doorWhispers: DoorWhisper[] = []
+  let nextDoorWhisperTime = 0
 
   // Distant footstep sounds
   let distantFootstepInterval: ReturnType<typeof setInterval> | null = null
@@ -779,6 +814,191 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
     }
   }
 
+  // --- FOOTPRINTS ---
+
+  function updateFootprints() {
+    // Spawn footprints based on scroll movement
+    const moved = Math.abs(scrollX - lastFootprintX)
+    if (moved > 35 && Math.abs(scrollVelocity) > 0.5) {
+      const h = canvas?.height || window.innerHeight
+      const w = canvas?.width || window.innerWidth
+      footprints.push({
+        x: w / 2 + (nextFootSide === 'left' ? -8 : 8) + (Math.random() - 0.5) * 4,
+        side: nextFootSide,
+        alpha: 0.06 + Math.min(Math.abs(scrollVelocity) * 0.003, 0.04),
+        age: 0,
+      })
+      nextFootSide = nextFootSide === 'left' ? 'right' : 'left'
+      lastFootprintX = scrollX
+      if (footprints.length > 40) footprints.splice(0, 5)
+    }
+
+    // Age and fade footprints
+    for (let i = footprints.length - 1; i >= 0; i--) {
+      footprints[i].age++
+      if (footprints[i].age > 120) { // start fading after 2 seconds
+        footprints[i].alpha -= 0.0005
+      }
+      if (footprints[i].alpha <= 0) {
+        footprints.splice(i, 1)
+      }
+    }
+  }
+
+  function drawFootprints(ctx: CanvasRenderingContext2D, flicker: number) {
+    if (!canvas) return
+    const h = canvas.height
+
+    for (const fp of footprints) {
+      const screenX = fp.x - (scrollX - lastFootprintX + (fp.x - canvas.width / 2))
+      ctx.save()
+      ctx.globalAlpha = fp.alpha * flicker
+
+      // Simple shoe print shape
+      const fpY = h * 0.77
+      const fpW = 6
+      const fpH = 12
+      ctx.fillStyle = 'rgba(25, 22, 18, 1)'
+      ctx.beginPath()
+      // Oval footprint
+      ctx.ellipse(fp.x, fpY, fpW * 0.5, fpH * 0.5, fp.side === 'left' ? -0.1 : 0.1, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.restore()
+    }
+  }
+
+  // --- MIRROR FLICKER ---
+
+  function updateMirrorFlicker(inBlackout: boolean) {
+    if (inBlackout) {
+      // During blackout, mirror flicker appears
+      if (mirrorFlickerAlpha < 0.15) {
+        mirrorFlickerAlpha += 0.02
+      }
+      // Position it near center of wall area
+      const w = canvas?.width || window.innerWidth
+      const h = canvas?.height || window.innerHeight
+      mirrorFlickerX = w * 0.5 + Math.sin(time * 3) * 20
+      mirrorFlickerY = h * 0.35 + h * 0.15
+    } else {
+      mirrorFlickerAlpha *= 0.92 // fade out quickly after blackout
+    }
+  }
+
+  function drawMirrorFlicker(ctx: CanvasRenderingContext2D) {
+    if (mirrorFlickerAlpha < 0.005) return
+    if (!canvas) return
+
+    const h = canvas.height
+
+    ctx.save()
+    ctx.globalAlpha = mirrorFlickerAlpha
+
+    // Ghostly vertical reflection — like seeing yourself in a dark window
+    const figH = h * 0.25
+    const figW = 12
+
+    // Head
+    ctx.beginPath()
+    ctx.arc(mirrorFlickerX, mirrorFlickerY - figH * 0.85, figW * 0.7, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(140, 130, 120, 0.3)'
+    ctx.fill()
+
+    // Body — elongated, slightly distorted
+    ctx.beginPath()
+    ctx.moveTo(mirrorFlickerX - figW * 0.5, mirrorFlickerY - figH * 0.7)
+    ctx.lineTo(mirrorFlickerX + figW * 0.5, mirrorFlickerY - figH * 0.7)
+    ctx.lineTo(mirrorFlickerX + figW * 0.3, mirrorFlickerY)
+    ctx.lineTo(mirrorFlickerX - figW * 0.3, mirrorFlickerY)
+    ctx.closePath()
+    ctx.fillStyle = 'rgba(120, 110, 100, 0.2)'
+    ctx.fill()
+
+    // Faint glow around reflection
+    const grad = ctx.createRadialGradient(mirrorFlickerX, mirrorFlickerY - figH * 0.4, 5, mirrorFlickerX, mirrorFlickerY - figH * 0.4, figH * 0.6)
+    grad.addColorStop(0, `rgba(160, 150, 140, ${mirrorFlickerAlpha * 0.15})`)
+    grad.addColorStop(1, 'rgba(160, 150, 140, 0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(mirrorFlickerX - figH * 0.6, mirrorFlickerY - figH, figH * 1.2, figH * 1.2)
+
+    ctx.restore()
+  }
+
+  // --- DOOR WHISPERS ---
+
+  function updateDoorWhispers() {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+    const centerX = w / 2
+
+    // Spawn a whisper from a random on-screen door
+    if (time > nextDoorWhisperTime) {
+      nextDoorWhisperTime = time + 8 + Math.random() * 12 // every 8-20s
+
+      const memories = deps.getMemories()
+      if (memories.length === 0) return
+
+      // Find doors currently on screen
+      const visibleDoors = doors.filter(d => {
+        const sx = centerX + d.x - scrollX
+        return sx > 50 && sx < w - 50
+      })
+      if (visibleDoors.length === 0) return
+
+      const door = visibleDoors[Math.floor(Math.random() * visibleDoors.length)]
+      const mem = memories[Math.floor(Math.random() * memories.length)]
+
+      // Take a small fragment
+      const words = mem.currentText.split(/\s+/).filter(w => w.length > 1)
+      if (words.length === 0) return
+      const startIdx = Math.floor(Math.random() * words.length)
+      const fragment = words.slice(startIdx, startIdx + 1 + Math.floor(Math.random() * 2)).join(' ')
+
+      const doorScreenX = centerX + door.x - scrollX
+      doorWhispers.push({
+        text: fragment,
+        doorX: door.x, // world position to scroll with
+        x: doorScreenX + (Math.random() - 0.5) * 20,
+        y: h * 0.75 - 2,
+        alpha: 0.12 + Math.random() * 0.06,
+        vy: -0.15 - Math.random() * 0.1,
+        vx: (Math.random() - 0.5) * 0.3,
+      })
+    }
+
+    // Update existing whispers
+    for (let i = doorWhispers.length - 1; i >= 0; i--) {
+      const dw = doorWhispers[i]
+      dw.y += dw.vy
+      dw.x += dw.vx
+      dw.alpha -= 0.0008
+      if (dw.alpha <= 0 || dw.y < h * 0.2) {
+        doorWhispers.splice(i, 1)
+      }
+    }
+    if (doorWhispers.length > 8) doorWhispers.splice(0, 3)
+  }
+
+  function drawDoorWhispers(ctx: CanvasRenderingContext2D, flicker: number) {
+    if (!canvas) return
+    const w = canvas.width
+    const centerX = w / 2
+
+    for (const dw of doorWhispers) {
+      // Adjust x position for scroll — whispers drift from door position
+      const adjustedX = centerX + dw.doorX - scrollX + (dw.x - (centerX + dw.doorX))
+      ctx.save()
+      ctx.globalAlpha = dw.alpha * flicker
+      ctx.font = 'italic 11px "Cormorant Garamond", serif'
+      ctx.fillStyle = 'rgba(180, 170, 150, 1)'
+      ctx.textAlign = 'center'
+      ctx.fillText(dw.text, adjustedX, dw.y)
+      ctx.restore()
+    }
+  }
+
   // --- RENDER ---
 
   function render() {
@@ -813,6 +1033,12 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
 
     // Update blackout
     updateBlackout()
+
+    // Update footprints
+    updateFootprints()
+
+    // Update door whispers
+    updateDoorWhispers()
 
     ctx.clearRect(0, 0, w, h)
 
@@ -899,6 +1125,9 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       ctx.fillStyle = `rgba(200, 190, 170, ${flicker * 0.015})`
       ctx.fill()
     }
+
+    // Footprints on the floor
+    drawFootprints(ctx, flicker)
 
     // Shadow figures (behind doors, in the far wall area)
     drawShadowFigures(ctx, flicker)
@@ -1039,6 +1268,13 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
         ctx.restore()
       }
     }
+
+    // Door whispers — memory text drifting up from under doors
+    drawDoorWhispers(ctx, flicker)
+
+    // Mirror flicker during blackouts
+    updateMirrorFlicker(inBlackout)
+    drawMirrorFlicker(ctx)
 
     // Corridor perspective lines
     ctx.strokeStyle = `rgba(60, 55, 48, ${flicker * 0.05})`
@@ -1181,6 +1417,12 @@ export function createBetweenRoom(deps: BetweenDeps): Room {
       nextEchoCycleTime = time + 3 // first memory echo after 3s
       blackoutTimer = 0
       nextBlackoutTime = time + 10 + Math.random() * 10 // first blackout after 10-20s
+      footprints = []
+      lastFootprintX = 0
+      nextFootSide = 'left'
+      mirrorFlickerAlpha = 0
+      doorWhispers = []
+      nextDoorWhisperTime = time + 5
       updateDoorGlowStates()
       // Save current room as visited
       try {
