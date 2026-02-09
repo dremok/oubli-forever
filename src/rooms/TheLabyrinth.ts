@@ -114,8 +114,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let px = 1.5
   let py = 1.5
   let pa = 0 // angle in radians
-  const moveSpeed = 0.035
-  const turnSpeed = 0.045
+  const moveSpeed = 0.022
+  const turnSpeed = 0.035
 
   // Input
   const keys = new Set<string>()
