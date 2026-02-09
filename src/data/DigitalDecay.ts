@@ -159,6 +159,13 @@ const DECAY_MEDITATIONS = [
   'ceija stojka survived three concentration camps. then she painted. 500,000 roma erased. one woman\'s brush against oblivion.',
   'the large hadron collider powers down july 2026 for long shutdown 3. the machine that heard the higgs boson falls silent.',
   'PtBi₂: superconductivity only on the surface. the interior stays ordinary. what if identity works the same way?',
+  'binh danh\'s daguerreotypes: mirrors that remember landscapes. your reflection stares back through 150 years of chemistry.',
+  'kidney cells form memories. nerve tissue learns patterns. memory is not a brain function — it is a body function.',
+  'the boltzmann brain paradox: a random vacuum fluctuation could produce a brain with a complete set of false memories.',
+  'film photography up 127%. gen z calls it intentional seeing. each click is a choice, not a reflex.',
+  'spider silk\'s strength: invisible molecular glue holds protein chains together. you can\'t see what makes it strong.',
+  'an ape preferred imaginary juice. pretend play exists outside human minds. the boundary of imagination is thinner than we thought.',
+  'community darkrooms reopening worldwide. shared darkness, shared chemicals, shared waiting. photography as communion.',
 ]
 
 export class DigitalDecay {

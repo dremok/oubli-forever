@@ -40,6 +40,25 @@ interface DevelopedPrint {
 const STORAGE_KEY = 'oubli-darkroom-prints'
 const MAX_PRINTS = 12
 
+const CULTURAL_INSCRIPTIONS = [
+  'man ray held objects directly on photographic paper — the image was the thing itself, no camera needed',
+  'gerhard richter painted over his own photographs, blurring the line between memory and invention',
+  'the daguerreotype was a mirror that remembered — binh danh still uses the process, folding viewers into landscapes',
+  'in a darkroom, you learn to see in reverse — what was light becomes shadow, what was shadow becomes form',
+  'film photography sales up 127% since 2020 — gen z calls it "intentional seeing" — #filmtok at 2.8 billion views',
+  'the decisive moment (cartier-bresson) — one click freezes time, but the photographer forgets everything before and after',
+  'kidney cells form memories. nerve tissue activates memory genes. the body remembers what the brain cannot',
+  'a boltzmann brain could fluctuate into existence with a complete set of false memories — are yours real?',
+  'community darkrooms are reopening across the world — shared darkness as collective practice',
+  'an ape chose a cup of imaginary juice over an empty one — the first pretend play outside human minds',
+  'spider silk\'s strength comes from invisible molecular bonds — the glue you can\'t see holds everything together',
+  'episodic and semantic memory are neurologically indistinguishable — knowing and remembering are the same act',
+  'the helsinki analog festival theme is BODY — photography as something you do with your hands, in the dark',
+  'empac\'s "staging grounds" restages experience across time — a thai myth evoked, a forbidden frontier field-recorded',
+  'she speaks: black women artists encoding historical memory into art that outlives the forgetting',
+  'every photograph is an act of embalming — you stop time, coat it in silver, and call it remembering',
+]
+
 interface DustMote {
   x: number
   y: number
@@ -75,6 +94,28 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
   let dustMotes: DustMote[] = []
   let ripples: { x: number; y: number; r: number; maxR: number; alpha: number }[] = []
   let animFrameId = 0
+
+  // --- Cultural inscription state ---
+  let inscriptionEl: HTMLElement | null = null
+  let inscriptionIdx = 0
+  let inscriptionTimer: ReturnType<typeof setInterval> | null = null
+
+  // --- Chemical stain state ---
+  interface ChemicalStain {
+    x: number; y: number
+    radius: number; maxRadius: number
+    hue: number; alpha: number
+    age: number
+  }
+  let stainCanvas: HTMLCanvasElement | null = null
+  let stainCtx: CanvasRenderingContext2D | null = null
+  let stains: ChemicalStain[] = []
+  let lastStainTime = 0
+
+  // --- Enlarger light cone state ---
+  let enlargerCanvas: HTMLCanvasElement | null = null
+  let enlargerCtx: CanvasRenderingContext2D | null = null
+  let enlargerAngle = 0
 
   function loadPrints(): DevelopedPrint[] {
     try {
@@ -395,6 +436,8 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     if (!active) return
     animFrameId = requestAnimationFrame(renderVisualEffects)
 
+    const now = performance.now() / 1000
+
     // Safelight flicker: 1-2% chance per frame
     if (safelightEl && Math.random() < 0.015) {
       const brightness = 0.6 + Math.random() * 0.8
@@ -445,6 +488,82 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
         rippleCtx.lineWidth = 0.5
         rippleCtx.stroke()
       }
+    }
+
+    // Chemical stains — spawn new ones every 12-20 seconds
+    if (stainCtx && stainCanvas) {
+      const sw = stainCanvas.width
+      const sh = stainCanvas.height
+
+      if (now - lastStainTime > 12 + Math.random() * 8) {
+        if (stains.length < 8) {
+          stains.push({
+            x: Math.random() * sw,
+            y: Math.random() * sh,
+            radius: 0,
+            maxRadius: 15 + Math.random() * 35,
+            hue: 350 + Math.random() * 20, // reddish-brown
+            alpha: 0.03 + Math.random() * 0.04,
+            age: 0,
+          })
+        }
+        lastStainTime = now
+      }
+
+      // Don't clear — stains accumulate permanently
+      for (const stain of stains) {
+        if (stain.radius < stain.maxRadius) {
+          stain.radius += 0.08
+          stain.age += 0.016
+
+          const grad = stainCtx.createRadialGradient(
+            stain.x, stain.y, 0,
+            stain.x, stain.y, stain.radius
+          )
+          const a = stain.alpha * (1 - stain.radius / stain.maxRadius)
+          grad.addColorStop(0, `hsla(${stain.hue}, 60%, 25%, ${a})`)
+          grad.addColorStop(0.6, `hsla(${stain.hue}, 50%, 18%, ${a * 0.5})`)
+          grad.addColorStop(1, 'transparent')
+          stainCtx.fillStyle = grad
+          stainCtx.fillRect(stain.x - stain.radius, stain.y - stain.radius,
+            stain.radius * 2, stain.radius * 2)
+        }
+      }
+    }
+
+    // Enlarger light cone — subtle swaying cone of red light from above
+    if (enlargerCtx && enlargerCanvas) {
+      const ew = enlargerCanvas.width
+      const eh = enlargerCanvas.height
+      enlargerCtx.clearRect(0, 0, ew, eh)
+
+      enlargerAngle += 0.003
+      const sway = Math.sin(enlargerAngle) * 15
+      const cx = ew / 2 + sway
+      const topW = 8
+      const botW = 80 + Math.sin(enlargerAngle * 0.7) * 10
+      const coneH = eh * 0.5
+
+      const grad = enlargerCtx.createLinearGradient(cx, 0, cx, coneH)
+      grad.addColorStop(0, 'rgba(180, 40, 30, 0.06)')
+      grad.addColorStop(0.5, 'rgba(180, 40, 30, 0.03)')
+      grad.addColorStop(1, 'rgba(180, 40, 30, 0)')
+
+      enlargerCtx.fillStyle = grad
+      enlargerCtx.beginPath()
+      enlargerCtx.moveTo(cx - topW, 0)
+      enlargerCtx.lineTo(cx + topW, 0)
+      enlargerCtx.lineTo(cx + botW, coneH)
+      enlargerCtx.lineTo(cx - botW, coneH)
+      enlargerCtx.closePath()
+      enlargerCtx.fill()
+
+      // Bright point at top — the enlarger bulb
+      const bulbGrad = enlargerCtx.createRadialGradient(cx, 4, 0, cx, 4, 12)
+      bulbGrad.addColorStop(0, 'rgba(200, 60, 40, 0.12)')
+      bulbGrad.addColorStop(1, 'transparent')
+      enlargerCtx.fillStyle = bulbGrad
+      enlargerCtx.fillRect(cx - 12, 0, 24, 16)
     }
   }
 
@@ -879,6 +998,33 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       dustCtx = dustCanvas.getContext('2d')
       overlay.appendChild(dustCanvas)
 
+      // Chemical stain canvas — accumulates over time
+      stainCanvas = document.createElement('canvas')
+      stainCanvas.width = 400
+      stainCanvas.height = 800
+      stainCanvas.style.cssText = `
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none; z-index: 0;
+        opacity: 0.7;
+      `
+      stainCtx = stainCanvas.getContext('2d')
+      overlay.appendChild(stainCanvas)
+
+      // Enlarger light cone canvas — swaying cone of red light
+      enlargerCanvas = document.createElement('canvas')
+      enlargerCanvas.width = 300
+      enlargerCanvas.height = 400
+      enlargerCanvas.style.cssText = `
+        position: absolute; top: 0; left: 50%;
+        transform: translateX(-50%);
+        width: 300px; height: 400px;
+        pointer-events: none; z-index: 0;
+        mix-blend-mode: screen;
+      `
+      enlargerCtx = enlargerCanvas.getContext('2d')
+      overlay.appendChild(enlargerCanvas)
+
       // Title
       const title = document.createElement('div')
       title.style.cssText = `
@@ -1192,33 +1338,78 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       renderGallery(gallery)
       overlay.appendChild(gallery)
 
+      // Cultural inscription — cycling text at very bottom
+      inscriptionEl = document.createElement('div')
+      inscriptionEl.style.cssText = `
+        position: fixed; bottom: 48px; left: 0; width: 100%;
+        text-align: center;
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300; font-size: 12px; font-style: italic;
+        color: rgba(200, 100, 100, 0.08);
+        padding: 0 40px;
+        pointer-events: none; z-index: 5;
+        transition: opacity 2s ease;
+        max-width: 600px; margin: 0 auto;
+        line-height: 1.5;
+      `
+      inscriptionEl.textContent = CULTURAL_INSCRIPTIONS[0]
+      overlay.appendChild(inscriptionEl)
+
       return overlay
     },
 
     activate() {
       active = true
+      stains = []
+      lastStainTime = performance.now() / 1000
+      enlargerAngle = 0
+      if (stainCtx && stainCanvas) stainCtx.clearRect(0, 0, stainCanvas.width, stainCanvas.height)
       initAudio()
       initDustMotes()
       renderVisualEffects()
+
+      // Start cultural inscription cycling
+      inscriptionIdx = Math.floor(Math.random() * CULTURAL_INSCRIPTIONS.length)
+      if (inscriptionEl) inscriptionEl.textContent = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+      inscriptionTimer = setInterval(() => {
+        inscriptionIdx = (inscriptionIdx + 1) % CULTURAL_INSCRIPTIONS.length
+        if (inscriptionEl) {
+          inscriptionEl.style.opacity = '0'
+          setTimeout(() => {
+            if (inscriptionEl) {
+              inscriptionEl.textContent = CULTURAL_INSCRIPTIONS[inscriptionIdx]
+              inscriptionEl.style.opacity = '1'
+            }
+          }, 2000)
+        }
+      }, 22000)
     },
 
     deactivate() {
       active = false
       cancelAnimationFrame(animFrameId)
       fadeAudioOut()
+      if (inscriptionTimer) { clearInterval(inscriptionTimer); inscriptionTimer = null }
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(animFrameId)
       destroyAudio()
+      if (inscriptionTimer) { clearInterval(inscriptionTimer); inscriptionTimer = null }
       safelightEl = null
       rippleCanvas = null
       rippleCtx = null
       dustCanvas = null
       dustCtx = null
+      stainCanvas = null
+      stainCtx = null
+      enlargerCanvas = null
+      enlargerCtx = null
+      inscriptionEl = null
       dustMotes = []
       ripples = []
+      stains = []
       overlay?.remove()
     },
   }

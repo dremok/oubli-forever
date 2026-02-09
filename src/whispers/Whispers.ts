@@ -432,6 +432,20 @@ const fragments: string[] = [
   "PtBi₂: a crystal whose surface superconducts while its interior stays ordinary. identity is skin-deep.",
   "majorana particles trapped at the edges of a crystal. existence lives on the boundary.",
 
+  // Feb 2026 — photography and embodied memory
+  "binh danh makes daguerreotypes: photographs on polished metal. the viewer's face appears inside the landscape.",
+  "film photography sales up 127% since 2020. intentional seeing. each frame costs something.",
+  "your kidneys form memories. your nerve tissue learns. the whole body is a brain.",
+  "the boltzmann brain: a random fluctuation could create a mind with a lifetime of false memories.",
+  "knowing and remembering activate the same brain networks. there may be no difference.",
+  "an ape chose imaginary juice over an empty cup. pretend play outside human minds.",
+  "spider silk holds because of invisible molecular bonds. the glue you can't see.",
+  "community darkrooms reopen across the world. shared darkness as collective practice.",
+  "she speaks: black women artists encoding historical memory into art that outlives the forgetting.",
+  "empac 'staging grounds': restaging experience across time. a thai myth, a forbidden frontier recorded.",
+  "helsinki analog festival 2026: theme is BODY. photography as something you do with your hands, in the dark.",
+  "every photograph is an act of embalming. you stop time, coat it in silver, call it remembering.",
+
   // Oubli fruit — the golden thread
   "oubli: in west africa, a sweet golden fruit. forgetting that nourishes.",
   "the oubli fruit ripens and falls. what is lost feeds the soil.",

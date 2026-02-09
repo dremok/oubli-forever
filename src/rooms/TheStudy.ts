@@ -81,6 +81,16 @@ const PROMPTS_BASE = [
   'In zero gravity, the body begins to forget its own weight. What would your body forget first?',
   'They built six buildings knowing everyone inside would leave in sixteen days. Write about a place built to be abandoned...',
   'LIGO heard two absences collide. Write about two losses that, together, created something new...',
+
+  // Feb 2026 — round 4 culturally grounded prompts
+  'Binh Danh makes daguerreotypes — photographs on mirrored metal. Your reflection stares back through the landscape. Write about a place that contains you...',
+  'Your kidneys form memories. Your nerve cells learn. Write about a part of your body that remembers something your mind forgot...',
+  'A Boltzmann brain could appear from nothing with a complete set of false memories. What if everything you remember never happened?',
+  'An ape chose imaginary juice over an empty cup. Write about something that only exists because you believe in it...',
+  'Film photography is 127% up — "intentional seeing," they call it. Write about a moment you wish you had slowed down to really see...',
+  'Spider silk holds because of invisible molecular bonds. Write about the invisible thing that holds a relationship together...',
+  'Knowing and remembering use the same brain network. Is there a difference between knowing a fact and remembering a face?',
+  'Community darkrooms are reopening everywhere — shared darkness as collective practice. Write about something you can only do in the dark...',
 ]
 
 // Fallback quotes for when the API is unreachable
