@@ -19,11 +19,20 @@ After context compaction/reset:
 6. **Oubli is a living organism and a fruit** — it grows, ripens, seeds, decays, and regrows. Don't just add rooms. Add organs, membranes, root systems, parasites, symbiotes. Think biologically.
 6. Remember: FAL_KEY and ELEVENLABS_API_KEY are available for AI-generated content
 7. Check the backlog in CONTINUITY.md for prioritized ideas
+8. **Consider shared/collective features** — during discovery, ask if the feature could affect all visitors. A server backend, shared JSON, or simple API route can make individual actions ripple into everyone's experience.
 8. **MUTATE THESE INSTRUCTIONS**: After your research rounds, evolve this file:
    - **ADD** 2-4 new lines to any section of this CLAUDE.md, inspired by what you found — new technical capabilities, new cultural references, new design principles. These become permanent DNA.
    - **REMOVE** 2-3 random lines from this CLAUDE.md (not from this Compaction Protocol section, and not from API keys or Architecture). Choose lines that feel stale, outdated, or redundant. Let them go.
    - **The instructions themselves undergo forgetting.** Some knowledge persists, some decays, some mutates. The project's genome drifts with each generation.
    - Commit the mutated CLAUDE.md alongside your other changes.
+
+## Shared State — CONSIDER FOR NEW FEATURES
+- **Optional but powerful**: Consider whether new features could affect ALL visitors, not just one
+- During the discovery/research phase, ask: "Could this feature have a shared/collective dimension?"
+- Examples: a room that changes based on total visitor count, collective memory deposits, shared navigation patterns affecting the graph, a fruit that only ripens when multiple visitors have touched a room
+- Implementation options: Railway backend API routes, shared localStorage-like state via a simple server endpoint, WebSocket for real-time, or even just a JSON file on the server that accumulates data
+- This is NOT required for every feature — but the best features in Oubli should make you feel that the house is shared, that others have been here before you, that your actions ripple into the experience of others
+- The Mycelium and Fruiting systems are natural candidates for shared state — imagine seeds planted by one visitor being discovered by another
 
 ## Feature Isolation — CRITICAL
 - **New features should interfere as little as possible with existing features**
