@@ -136,6 +136,28 @@ export function createLoomRoom(deps: LoomDeps): Room {
   // --- Patina: completed weave develops warm aging tint ---
   let patinaAge = 0 // accumulates each frame, affects the tint
 
+  // --- Loose fibers: detach from degraded threads, drift downward ---
+  interface LooseFiber {
+    x: number
+    y: number
+    vx: number
+    vy: number
+    alpha: number
+    length: number
+    angle: number
+    rotSpeed: number
+    hue: number
+  }
+  let looseFibers: LooseFiber[] = []
+
+  // --- Shuttle trail: glowing trace behind shuttle ---
+  interface ShuttleTrailPoint {
+    x: number
+    y: number
+    alpha: number
+  }
+  let shuttleTrail: ShuttleTrailPoint[] = []
+
   // Audio state
   let audioInitialized = false
   let audioMaster: GainNode | null = null
@@ -700,6 +722,88 @@ export function createLoomRoom(deps: LoomDeps): Room {
     // Intersection pearl nodes
     drawIntersectionNodes(ctx, memories, margin, threadCount, threadSpacing, visibleCols, cellSize)
 
+    // --- Loose fibers: spawn from degraded threads ---
+    if (looseFibers.length < 20) {
+      for (let t = 0; t < threadCount; t++) {
+        const mem = memories[t % memories.length]
+        if (mem.degradation > 0.5 && Math.random() < 0.0008 * mem.degradation) {
+          const color = memoryToColor(mem)
+          const y = margin + (t + 1) * threadSpacing
+          const x = margin + Math.random() * Math.min(visibleCols * cellSize, weaveW)
+          looseFibers.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 0.15,
+            vy: 0.1 + Math.random() * 0.2,
+            alpha: 0.15 + Math.random() * 0.1,
+            length: 4 + Math.random() * 6,
+            angle: Math.random() * Math.PI,
+            rotSpeed: (Math.random() - 0.5) * 0.02,
+            hue: color.h,
+          })
+        }
+      }
+    }
+
+    // Update and draw loose fibers
+    for (let i = looseFibers.length - 1; i >= 0; i--) {
+      const f = looseFibers[i]
+      f.x += f.vx + Math.sin(time * 0.8 + f.y * 0.01) * 0.1
+      f.y += f.vy
+      f.angle += f.rotSpeed
+      f.alpha -= 0.0004
+      if (f.alpha <= 0 || f.y > h) {
+        looseFibers.splice(i, 1)
+        continue
+      }
+      ctx.save()
+      ctx.translate(f.x, f.y)
+      ctx.rotate(f.angle)
+      ctx.strokeStyle = `hsla(${f.hue}, 30%, 40%, ${f.alpha})`
+      ctx.lineWidth = 0.5
+      ctx.beginPath()
+      ctx.moveTo(-f.length / 2, 0)
+      ctx.lineTo(f.length / 2, 0)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // --- Shuttle trail ---
+    if (visibleCols < maxCols) {
+      const sx = margin + Math.min(shuttleX, visibleCols * cellSize)
+      const sy = margin + weaveH / 2
+      shuttleTrail.push({ x: sx, y: sy, alpha: 0.15 })
+    }
+    for (let i = shuttleTrail.length - 1; i >= 0; i--) {
+      shuttleTrail[i].alpha -= 0.003
+      if (shuttleTrail[i].alpha <= 0) {
+        shuttleTrail.splice(i, 1)
+        continue
+      }
+      const st = shuttleTrail[i]
+      ctx.beginPath()
+      ctx.arc(st.x, st.y, 2, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(200, 160, 80, ${st.alpha})`
+      ctx.fill()
+    }
+    if (shuttleTrail.length > 60) shuttleTrail.splice(0, 15)
+
+    // --- Warp thread vibration at high tension ---
+    if (tension > 0.5) {
+      const vibIntensity = (tension - 0.5) * 2 // 0 to 1
+      ctx.strokeStyle = `rgba(120, 80, 40, ${0.03 + vibIntensity * 0.03})`
+      ctx.lineWidth = 0.3
+      for (let col = 0; col < visibleCols; col += 2) {
+        const baseX = margin + col * cellSize
+        ctx.beginPath()
+        ctx.moveTo(baseX, margin)
+        for (let py = margin; py < margin + weaveH; py += 6) {
+          const vib = Math.sin(time * 12 + col * 0.7 + py * 0.03) * vibIntensity * 1.5
+          ctx.lineTo(baseX + vib, py)
+        }
+        ctx.stroke()
+      }
+    }
+
     // --- Spirit line indicator ---
     if (spiritLineCol >= 0 && spiritLineCol < visibleCols) {
       const slx = margin + spiritLineCol * cellSize + cellSize / 2
@@ -1133,6 +1237,8 @@ export function createLoomRoom(deps: LoomDeps): Room {
       hoveredThread = -1
       whisperOffset = 0
       patinaAge = 0
+      looseFibers = []
+      shuttleTrail = []
       // Spirit line: place at ~70% of the way through the weave (Navajo tradition)
       const weaveW = (canvas?.width || window.innerWidth) - 60 * 2 - 20
       const cs = Math.max(4, Math.min(12, weaveW / 80))
