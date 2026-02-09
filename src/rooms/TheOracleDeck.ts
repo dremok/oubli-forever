@@ -123,12 +123,18 @@ const CULTURAL_INSCRIPTIONS = [
   'tarot was a card game before it was divination. the arcana accumulated meaning through centuries of use.',
   'the delphic oracle breathed volcanic fumes and spoke in riddles. prophecy as altered state.',
   'borges: the library of babel contains every possible page. in infinite text, all prophecy is true.',
-  'isaac julien projects five versions of the same transformation. which screen holds the real future?',
   'john cage used the i ching to compose music. chance operations as liberation from ego.',
   'the urim and thummim: ancient hebrew divination stones. yes or no, cast in precious metal.',
-  'programmable self-destructing plastic: material designed with expiration dates. the future written into matter.',
-  'charli xcx\'s the moment: can a cultural phenomenon choose to end itself? the cards say maybe.',
-  'the great meme reset: TikTok declared 2026 a fresh start. collective divination by algorithm.',
+  'devan shimoyama reimagines the major arcana through black queerness. tarot as identity navigation.',
+  'tarot symbols originated from renaissance mnemonic arts — the same tradition as memory palaces.',
+  '"oracle, echo, or stochastic parrot?" — AI delivers pronouncements without understanding them, like the pythia.',
+  'AI hallucinations are pareidolia: finding patterns in noise. the grilled cheese virgin mary is a feature, not a bug.',
+  '"forgetting the future": entropy in the reflective age. collective time altered by technology.',
+  'all divination is structured randomness designed to spark self-recognition. the oracle generates frames, not truth.',
+  'confirmation bias IS the engine of tarot. the card selects which memories to surface.',
+  '47% of young adults seek guidance through divinatory practices. the hunger for oracles is at a peak.',
+  'leah ke yi zheng: 64 paintings, one for each i ching hexagram. a meditation on change as art.',
+  'the astrology app market: $3 billion and growing. "what does this symbol teach me about who i am becoming?"',
 ]
 
 export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
@@ -143,10 +149,27 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
 
   let deck: Card[] = []
   let drawnCard: Card | null = null
+  let isReversed = false // whether current card is drawn reversed (upside-down)
   let drawAnimation = 0 // 0-1 for flip animation
   let drawing = false
   let totalDraws = 0
   let deckIndex = 0
+
+  // Past reading ghosts — the last 3 drawn cards linger as faint echoes
+  interface GhostCard {
+    card: Card
+    reversed: boolean
+    x: number // fractional position
+    alpha: number // fades over time
+    age: number
+  }
+  let ghostCards: GhostCard[] = []
+
+  // Reversed reading modifiers
+  const REVERSED_PREFIXES = [
+    'inverted: ', 'shadow: ', 'blocked: ', 'resisted: ',
+    'denied: ', 'delayed: ', 'hidden: ', 'excess of: ',
+  ]
   // Portal cards for navigation — face-down tarot cards as doorways
   const portalCards = [
     { label: 'the s\u00e9ance', room: 'seance', hue: 275, pattern: 'spiral' as const },
@@ -470,6 +493,24 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
   function drawCard() {
     if (drawing) return
 
+    // Save current card as ghost before drawing new one
+    if (drawnCard && canvas) {
+      const w = canvas.width
+      ghostCards.push({
+        card: drawnCard,
+        reversed: isReversed,
+        x: 0.15 + ghostCards.length * 0.15,
+        alpha: 0.12,
+        age: 0,
+      })
+      // Keep only last 3 ghosts
+      if (ghostCards.length > 3) ghostCards.shift()
+      // Redistribute ghost positions
+      for (let i = 0; i < ghostCards.length; i++) {
+        ghostCards[i].x = 0.1 + i * 0.12
+      }
+    }
+
     const reshuffled = deckIndex >= deck.length
     if (reshuffled) {
       deck = generateDeck()
@@ -478,6 +519,8 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     }
 
     drawnCard = deck[deckIndex++]
+    // ~25% chance of reversed card
+    isReversed = Math.random() < 0.25
     drawing = true
     drawAnimation = 0
     revealTonePlayed = false
@@ -692,9 +735,9 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
         ctx.lineWidth = 1
         ctx.strokeRect(cardX + 12, cardY + 12, cardW - 24, cardH - 24)
 
-        // Symbol — slowly rotating and pulsing after reveal
+        // Reversed indicator — rotate the symbol 180 degrees if reversed
         const symbolAge = time - readingRevealTime
-        const symbolRotation = symbolAge * 0.15
+        const symbolRotation = symbolAge * 0.15 + (isReversed ? Math.PI : 0)
         const symbolPulse = 1 + Math.sin(symbolAge * 1.5) * 0.08
         const breathe = Math.sin(time * 0.8) * 0.05
 
@@ -708,24 +751,29 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
           w / 2, cardY + cardH * 0.35,
           cardW * 0.15,
           0.3 + breathe,
-          drawnCard.hue,
+          isReversed ? (drawnCard.hue + 180) % 360 : drawnCard.hue,
         )
         ctx.restore()
 
-        // Card name
+        // Card name (with reversed indicator)
         ctx.font = '14px "Cormorant Garamond", serif'
-        ctx.fillStyle = `hsla(${drawnCard.hue}, 30%, 65%, 0.5)`
+        const nameHue = isReversed ? (drawnCard.hue + 180) % 360 : drawnCard.hue
+        ctx.fillStyle = `hsla(${nameHue}, 30%, 65%, 0.5)`
         ctx.textAlign = 'center'
-        ctx.fillText(drawnCard.name, w / 2, cardY + cardH * 0.6)
+        const nameText = isReversed ? `${drawnCard.name} (reversed)` : drawnCard.name
+        ctx.fillText(nameText, w / 2, cardY + cardH * 0.6)
 
         // Suit
         ctx.font = '12px monospace'
-        ctx.fillStyle = `hsla(${drawnCard.hue}, 20%, 50%, 0.2)`
+        ctx.fillStyle = `hsla(${nameHue}, 20%, 50%, 0.2)`
         ctx.fillText(drawnCard.suit.toLowerCase(), w / 2, cardY + cardH * 0.65)
 
-        // Reading — sequential word fade-in
+        // Reading — sequential word fade-in (modified for reversed)
+        const readingText = isReversed
+          ? REVERSED_PREFIXES[totalDraws % REVERSED_PREFIXES.length] + drawnCard.reading
+          : drawnCard.reading
         ctx.font = '13px "Cormorant Garamond", serif'
-        const words = drawnCard.reading.split(' ')
+        const words = readingText.split(' ')
         const maxWidth = cardW - 40
         const timeSinceReveal = readingRevealed ? time - readingRevealTime : 0
         const wordDelay = 0.12 // seconds between each word appearing
@@ -813,6 +861,46 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       if (p.life >= p.maxLife) {
         particles.splice(i, 1)
       }
+    }
+
+    // Ghost cards — fading echoes of past readings
+    for (let gi = ghostCards.length - 1; gi >= 0; gi--) {
+      const gc = ghostCards[gi]
+      gc.age += 0.016
+      gc.alpha = Math.max(0, 0.12 - gc.age * 0.002) // slow fade over ~60 seconds
+      if (gc.alpha <= 0) {
+        ghostCards.splice(gi, 1)
+        continue
+      }
+      const gcx = w * gc.x
+      const gcy = h * 0.4
+      const gcW = 40
+      const gcH = 60
+
+      ctx.save()
+      ctx.globalAlpha = gc.alpha
+      if (gc.reversed) {
+        ctx.translate(gcx, gcy)
+        ctx.rotate(Math.PI)
+        ctx.translate(-gcx, -gcy)
+      }
+
+      // Ghost card outline
+      ctx.strokeStyle = `hsla(${gc.card.hue}, 30%, 50%, 1)`
+      ctx.lineWidth = 0.5
+      ctx.strokeRect(gcx - gcW / 2, gcy - gcH / 2, gcW, gcH)
+
+      // Ghost symbol
+      drawSymbol(ctx, gc.card.symbol, gcx, gcy - 5, 8, 1, gc.card.hue)
+
+      // Ghost name
+      ctx.font = '7px "Cormorant Garamond", serif'
+      ctx.fillStyle = `hsla(${gc.card.hue}, 30%, 60%, 1)`
+      ctx.textAlign = 'center'
+      ctx.fillText(gc.card.name.split(' ').slice(0, 2).join(' '), gcx, gcy + gcH / 2 - 8)
+
+      ctx.globalAlpha = 1
+      ctx.restore()
     }
 
     // Deck indicator
@@ -1104,8 +1192,10 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       deck = generateDeck()
       deckIndex = 0
       drawnCard = null
+      isReversed = false
       particles = []
       sigils = []
+      ghostCards = []
       revealTonePlayed = false
       readingRevealed = false
       readingRevealTime = 0
