@@ -153,6 +153,17 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
   // Pattern counter
   let patternsCreated = 0
 
+  // --- Decay sparks (shed when pattern is dying) ---
+  interface DecaySpark {
+    x: number; y: number; vx: number; vy: number
+    alpha: number; size: number; hue: number
+  }
+  const decaySparks: DecaySpark[] = []
+
+  // --- Energy ring (breathing ring at center showing total energy) ---
+  let energyRingRadius = 0
+  let energyRingTarget = 0
+
   // --- Gravitational wave ripple (GW250114 inspired) ---
   let gwRippleTime = 0        // time since last ripple
   let gwRippleActive = false
@@ -836,6 +847,18 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       ctx.arc(screenX, screenY, trailRadius, 0, Math.PI * 2)
       ctx.fill()
 
+      // Spawn decay sparks when amplitude is low (pattern dying)
+      if (decayFactor < 0.4 && decayFactor > 0.02 && Math.random() < 0.08 && decaySparks.length < 40) {
+        decaySparks.push({
+          x: screenX, y: screenY,
+          vx: (Math.random() - 0.5) * 1.5,
+          vy: (Math.random() - 0.5) * 1.5,
+          alpha: 0.3 + Math.random() * 0.2,
+          size: 0.5 + Math.random() * 1.5,
+          hue: traceHue,
+        })
+      }
+
       lastScreenX = screenX
       lastScreenY = screenY
 
@@ -882,6 +905,47 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     ctx.beginPath()
     ctx.arc(cx, cy, 2, 0, Math.PI * 2)
     ctx.fill()
+
+    // === ENERGY RING (breathing ring showing total system energy) ===
+    if (pendulums.length >= 4) {
+      const totalEnergy = pendulums.reduce((sum, p) =>
+        sum + p.amp * Math.exp(-p.decay * traceTime), 0)
+      energyRingTarget = totalEnergy * scale * 0.5
+      energyRingRadius += (energyRingTarget - energyRingRadius) * 0.03
+      if (energyRingRadius > 5) {
+        const ringAlpha = Math.min(0.06, totalEnergy * 0.08)
+        const breathe = 1 + Math.sin(time * 2) * 0.02
+        ctx.strokeStyle = `rgba(180, 160, 240, ${ringAlpha})`
+        ctx.lineWidth = 0.5
+        ctx.beginPath()
+        ctx.arc(cx, cy, energyRingRadius * breathe, 0, Math.PI * 2)
+        ctx.stroke()
+        // Dimmer second ring
+        ctx.strokeStyle = `rgba(160, 140, 220, ${ringAlpha * 0.4})`
+        ctx.beginPath()
+        ctx.arc(cx, cy, energyRingRadius * breathe * 1.15, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+    }
+
+    // === DECAY SPARKS ===
+    for (let si = decaySparks.length - 1; si >= 0; si--) {
+      const sp = decaySparks[si]
+      sp.x += sp.vx
+      sp.y += sp.vy
+      sp.vx *= 0.98
+      sp.vy *= 0.98
+      sp.alpha -= 0.004
+      sp.size *= 0.995
+      if (sp.alpha <= 0) {
+        decaySparks.splice(si, 1)
+        continue
+      }
+      ctx.fillStyle = `hsla(${sp.hue}, 60%, 75%, ${sp.alpha})`
+      ctx.beginPath()
+      ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2)
+      ctx.fill()
+    }
 
     // Pattern catalog label (appears when pattern fully decays, fades over 2s)
     if (catalogAlpha > 0.01) {
@@ -1192,6 +1256,8 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       active = true
       cymaticNodes.length = 0
       cymaticsGrid = new Float32Array(CYMATICS_GRID * CYMATICS_GRID)
+      decaySparks.length = 0
+      energyRingRadius = 0
       gwRippleTime = 0
       gwRippleActive = false
       gwNextRipple = 20 + Math.random() * 30
