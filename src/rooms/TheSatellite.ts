@@ -58,6 +58,12 @@ const CULTURAL_INSCRIPTIONS = [
   'the CMB: cosmic microwave background is the oldest light. the universe\'s first memory, 13.8 billion years old.',
   'self-destructing plastic: rutgers scientists made material programmed to break down on command. matter that forgets.',
   'perseverance drove 689 feet on mars, path planned by AI. memory persisting in places humans cannot reach.',
+  'JWST dark matter map: invisible cosmic filaments connecting galaxies. the universe remembers its own architecture.',
+  'crew-12 body adaptation: in zero gravity, bones thin, fluids redistribute. the body forgets what gravity feels like.',
+  'kessler syndrome: enough debris in orbit creates a chain reaction. a cloud of forgetting that traps us on earth.',
+  'the annular eclipse of feb 17 2026: ring of fire visible only from antarctica. 16 scientists and penguins watched.',
+  'pale blue dot: voyager 1 turned its camera back at earth from 6 billion km. everything you know, a pixel.',
+  'S4 solar storm (jan 2026): largest radiation event in 20 years. aurora at low latitudes. GPS forgot where it was.',
 ]
 
 export function createSatelliteRoom(deps: SatelliteDeps): Room {
@@ -80,6 +86,9 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
   let hoveredLandmark = -1
   let prevIssLat = 0
   let prevIssLon = 0
+
+  // --- ISS approach indicator ---
+  let approachLineAlpha = 0
 
   // --- Audio state ---
   let audioInitialized = false
@@ -1010,6 +1019,42 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
     c.stroke()
     c.setLineDash([])
 
+    // ISS approach indicator — pulsing line to nearest unreceived beacon
+    {
+      let nearestDist = Infinity
+      let nearestP: { x: number; y: number } | null = null
+      for (const beacon of beacons) {
+        if (beacon.received) continue
+        const bp = project(beacon.lat, beacon.lon, w, h)
+        const dx = issP.x - bp.x
+        const dy = issP.y - bp.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < nearestDist) {
+          nearestDist = dist
+          nearestP = bp
+        }
+      }
+      const maxApproachDist = footprintRadius * 2.5
+      if (nearestP && nearestDist < maxApproachDist) {
+        const proximity = 1 - nearestDist / maxApproachDist
+        const targetAlpha = proximity * 0.12
+        approachLineAlpha += (targetAlpha - approachLineAlpha) * 0.05
+        if (approachLineAlpha > 0.005) {
+          const pulse = Math.sin(time * 3) * 0.03
+          c.strokeStyle = `rgba(255, 20, 147, ${approachLineAlpha + pulse})`
+          c.lineWidth = 0.5
+          c.setLineDash([3, 6])
+          c.beginPath()
+          c.moveTo(issP.x, issP.y)
+          c.lineTo(nearestP.x, nearestP.y)
+          c.stroke()
+          c.setLineDash([])
+        }
+      } else {
+        approachLineAlpha *= 0.95
+      }
+    }
+
     // Check for beacon reception
     checkReception()
 
@@ -1277,6 +1322,7 @@ export function createSatelliteRoom(deps: SatelliteDeps): Room {
       radioBursts = []
       shootingStars = []
       orbitalRingAlpha = 0
+      approachLineAlpha = 0
       placeBeacons()
       initStarField()
       fetchISS()

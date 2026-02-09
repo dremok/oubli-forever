@@ -223,6 +223,13 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
   let involuntaryTimer = 0
   let involuntaryFlashActive = false
 
+  // --- Tea steam wisps: Proustian cup ---
+  interface SteamWisp {
+    x: number; y: number; vx: number; vy: number; alpha: number; size: number; curl: number
+  }
+  let steamWisps: SteamWisp[] = []
+  let steamSpawnTimer = 0
+
   // --- Audio state ---
   let audioInitialized = false
   let audioMaster: GainNode | null = null
@@ -1024,6 +1031,59 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       return true
     })
 
+    // --- Tea steam wisps ---
+    steamSpawnTimer += 0.016
+    if (steamSpawnTimer > 0.2 && steamWisps.length < 20) {
+      steamSpawnTimer = 0
+      steamWisps.push({
+        x: w / 2 + (Math.random() - 0.5) * 30,
+        y: h - 10,
+        vx: (Math.random() - 0.5) * 0.2,
+        vy: -(0.3 + Math.random() * 0.4),
+        alpha: 0.04 + Math.random() * 0.03,
+        size: 3 + Math.random() * 5,
+        curl: (Math.random() - 0.5) * 0.02,
+      })
+    }
+    for (let i = steamWisps.length - 1; i >= 0; i--) {
+      const sw = steamWisps[i]
+      sw.x += sw.vx + Math.sin(time * 1.5 + i * 0.7) * 0.3
+      sw.y += sw.vy
+      sw.vx += sw.curl
+      sw.size += 0.03
+      sw.alpha -= 0.0004
+      if (sw.alpha <= 0 || sw.y < h * 0.3) { steamWisps.splice(i, 1); continue }
+      const grad = c.createRadialGradient(sw.x, sw.y, 0, sw.x, sw.y, sw.size)
+      grad.addColorStop(0, `rgba(200, 180, 140, ${sw.alpha})`)
+      grad.addColorStop(1, 'rgba(200, 180, 140, 0)')
+      c.fillStyle = grad
+      c.beginPath()
+      c.arc(sw.x, sw.y, sw.size, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // --- Trigger resonance lines: connections between nearby triggers ---
+    if (triggers.length >= 2) {
+      for (let i = 0; i < triggers.length; i++) {
+        for (let j = i + 1; j < triggers.length; j++) {
+          const dx = triggers[i].x - triggers[j].x
+          const dy = triggers[i].y - triggers[j].y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist < 200 && dist > 30) {
+            const lineAlpha = (1 - dist / 200) * 0.03 * Math.min(triggers[i].alpha, triggers[j].alpha)
+            c.strokeStyle = `rgba(255, 215, 0, ${lineAlpha})`
+            c.lineWidth = 0.5
+            c.setLineDash([2, 6])
+            c.beginPath()
+            c.moveTo(triggers[i].x, triggers[i].y)
+            c.lineTo(triggers[j].x, triggers[j].y)
+            c.stroke()
+            c.setLineDash([])
+          }
+        }
+      }
+    }
+
     // --- Involuntary flash --- memory surfaces on its own
     involuntaryTimer += 0.016
     if (involuntaryTimer > 30 + Math.random() * 20 && !surfacedMemory && !involuntaryFlashActive) {
@@ -1255,6 +1315,8 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       afterimages = []
       involuntaryTimer = 0
       involuntaryFlashActive = false
+      steamWisps = []
+      steamSpawnTimer = 0
 
       // Initialize audio (warm drone + metronome)
       initAudio()
