@@ -234,11 +234,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   }
   const ghosts: Ghost[] = []
   let lastGhostSpawnTime = 0
-  const GHOST_SPAWN_INTERVAL = 18 // seconds between spawn attempts
+  const GHOST_SPAWN_INTERVAL = 12 // seconds between spawn attempts
   const GHOST_MAX = 3
-  const GHOST_APPEAR_DIST = 14   // visible from very far
-  const GHOST_DISSOLVE_DIST = 7  // start dissolving below this
-  const GHOST_GONE_DIST = 4      // fully gone well before you reach them
+  const GHOST_APPEAR_DIST = 10   // visible from far
+  const GHOST_DISSOLVE_DIST = 5  // start dissolving below this
+  const GHOST_GONE_DIST = 2.5    // fully gone before you reach them
 
   // Pre-rendered ghost sprite canvas
   let ghostSpriteCanvas: HTMLCanvasElement | null = null
@@ -319,10 +319,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function spawnGhost(): void {
     if (ghosts.length >= GHOST_MAX) return
-    // Find a random open cell 7-13 tiles from player — far enough to see approaching
-    for (let attempt = 0; attempt < 20; attempt++) {
+    // Find a random open cell 4-8 tiles from player
+    for (let attempt = 0; attempt < 30; attempt++) {
       const angle = Math.random() * Math.PI * 2
-      const dist = 7 + Math.random() * 6
+      const dist = 4 + Math.random() * 4
       const gx = Math.floor(px + Math.cos(angle) * dist)
       const gy = Math.floor(py + Math.sin(angle) * dist)
       // Must be an open cell (odd,odd = room)
@@ -486,8 +486,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // This is a wall — determine subtype
     const h2 = cellHash2(wx, wy)
-    if (h2 < 0.07) return INSCRIPTION  // ~7% of walls have text — sparse, not overwhelming
-    if (h2 < 0.12) return ANOMALY  // ~5% of walls are clickable anomalies
+    if (h2 < 0.10) return INSCRIPTION  // ~10% of walls have text
+    if (h2 < 0.15) return ANOMALY  // ~5% of walls are clickable anomalies
 
     return WALL
   }
@@ -2571,21 +2571,23 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       // Dissolution based on distance — closer = more transparent
       let opacity: number
       if (dist > GHOST_DISSOLVE_DIST) {
-        opacity = Math.min(0.55, (GHOST_APPEAR_DIST - dist) / 3)
+        // Visible range: fade in from appear dist, full brightness in middle
+        opacity = Math.min(0.8, (GHOST_APPEAR_DIST - dist) / 2)
       } else {
+        // Dissolving as player approaches
         const t = (dist - GHOST_GONE_DIST) / (GHOST_DISSOLVE_DIST - GHOST_GONE_DIST)
-        opacity = t * 0.55
+        opacity = t * 0.8
       }
 
-      // Fade in on spawn (first 4 seconds)
+      // Fade in on spawn (first 2 seconds)
       const age = time - ghost.spawnTime
-      if (age < 4) opacity *= age / 4
+      if (age < 2) opacity *= age / 2
 
       // Slight sway animation
       const sway = Math.sin(time * 0.6 + ghost.sway) * 3 * (1 / Math.max(1, perpDist))
 
-      // Distance fog
-      const fogFade = Math.max(0.2, 1 - dist / GHOST_APPEAR_DIST)
+      // Mild distance fog — don't make them too dim
+      const fogFade = Math.max(0.5, 1 - dist / (GHOST_APPEAR_DIST * 1.5))
 
       if (opacity < 0.01) continue
 
@@ -3250,7 +3252,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
 
       // Collect inscriptions
-      if (hit.cell === INSCRIPTION && correctedDist < 5) {
+      if (hit.cell === INSCRIPTION && correctedDist < 7) {
         const insc = getInscriptionText(hit.hitX, hit.hitY)
         visibleInscriptions.push({
           text: insc.text,
@@ -3294,14 +3296,14 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       const yHash = cellHash2(insc.wx + 17, insc.wy + 31)
       const wallY = insc.wallTop + insc.wallHeight * (0.3 + yHash * 0.4)
-      const fontSize = Math.max(7, Math.min(11, 13 / insc.dist))
-      const alpha = Math.min(0.4, insc.brightness * 0.5) * (0.6 + Math.sin(time * 0.3 + insc.wx * 0.7) * 0.15)
+      const fontSize = Math.max(10, Math.min(16, 22 / insc.dist))
+      const alpha = Math.min(0.7, insc.brightness * 0.9) * (0.7 + Math.sin(time * 0.3 + insc.wx * 0.7) * 0.1)
       const color = insc.isMemory
-        ? `rgba(200, 170, 100, ${alpha})`
-        : `rgba(150, 140, 170, ${alpha * 0.7})`
+        ? `rgba(220, 185, 100, ${alpha})`
+        : `rgba(170, 160, 190, ${alpha * 0.8})`
 
       ctx.save()
-      ctx.font = `${fontSize}px "Cormorant Garamond", serif`
+      ctx.font = `italic ${fontSize}px "Cormorant Garamond", serif`
       ctx.fillStyle = color
       ctx.textAlign = 'center'
       ctx.fillText(insc.text.substring(0, 30), insc.screenX, wallY)
