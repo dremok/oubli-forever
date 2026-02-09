@@ -566,6 +566,11 @@ export class Mycelium {
     return this.state.trails[this.trailKey(a, b)] || 0
   }
 
+  /** Get last visit timestamp for a room */
+  getLastVisit(room: string): number {
+    return this.state.lastVisit[room] || 0
+  }
+
   /** Get total system ripeness (average across all rooms) */
   getSystemRipeness(): number {
     const vals = Object.values(this.state.ripeness)

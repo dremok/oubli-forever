@@ -90,6 +90,7 @@ import { CollectiveWarmth } from './organisms/CollectiveWarmth'
 import { Membrane } from './organisms/Membrane'
 import { Phenotype } from './organisms/Phenotype'
 import { SeasonalClock } from './organisms/SeasonalClock'
+import { Parasites } from './organisms/Parasites'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -679,6 +680,16 @@ seasonalClock.onSeasonChange((season) => {
   }
 })
 
+// Parasites — organisms that colonize rooms and modify their behavior
+// Moss in unvisited rooms, barnacles on well-traveled rooms, scavengers on stagnant ones
+const parasites = new Parasites()
+parasites.setMyceliumSource({
+  getLastVisit: (room) => mycelium.getLastVisit(room),
+  getNutrients: (room) => mycelium.getNutrients(room),
+  getTrailStrength: (a, b) => mycelium.getTrailStrength(a, b),
+})
+parasites.start()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -695,6 +706,7 @@ roomManager.onRoomChange((room) => {
   fruiting.onRoomEnter(room)
   collectiveWarmth.onRoomEnter(room)
   phenotype.onRoomEnter(room)
+  parasites.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'
