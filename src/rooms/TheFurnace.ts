@@ -34,8 +34,10 @@ const CULTURAL_INSCRIPTIONS = [
   'a phoenix doesn\'t remember its past life. that\'s the point.',
   'marie kondo asks: does it spark joy? the furnace asks: does it still burn?',
   'thermodynamics: entropy always increases. order dissolves. fire is just entropy accelerating.',
-  'the milan olympics chose fire over screens. the opening ceremony was defiantly analog.',
-  'an ice-cold earth orbits a dim star 146 light-years away. even frozen worlds remember warmth.',
+  'besson\'s dracula (2026): an immortal who can\'t forget. 400 years of memory, burning him from inside.',
+  'iñárritu\'s SUEÑO PERRO: a million feet of discarded film resurrected. the furnace reversed.',
+  'alzheimer\'s doesn\'t delete memories. it scrambles the replay. the tape melts, but the grooves remain.',
+  'tracey emin, "a second life" (tate modern, feb 2026): reinvention after loss. what burns becomes fuel.',
 ]
 
 interface FurnaceDeps {
@@ -94,6 +96,23 @@ interface AshParticle {
   isEmber: boolean
 }
 
+interface SmokeParticle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  size: number
+  alpha: number
+  age: number
+}
+
+interface AshDeposit {
+  x: number
+  size: number
+  alpha: number
+  text: string
+}
+
 export function createFurnaceRoom(deps: FurnaceDeps): Room {
   let overlay: HTMLElement | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -128,6 +147,20 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
   // --- Floating ash/ember particles ---
   let ashParticles: AshParticle[] = []
   const ASH_COUNT_TARGET = 30
+
+  // --- Smoke system ---
+  let smokeParticles: SmokeParticle[] = []
+
+  // --- Ash floor deposits (persist per session) ---
+  let ashDeposits: AshDeposit[] = []
+
+  // --- Fire breathing rhythm ---
+  let breathPhase = 0
+  const BREATH_SPEED = 0.8 // cycles per second
+
+  // --- Wind drift ---
+  let windAngle = 0
+  let windStrength = 0
 
   // Iron brand portal navigation
   const ironPortals: IronPortal[] = [
@@ -429,6 +462,95 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     }
   }
 
+  // --- Smoke particle system ---
+  function updateSmoke() {
+    if (!canvas) return
+    const w = canvas.width
+    const fireX = w / 2
+    const fireY = canvas.height * 0.55
+
+    // Spawn smoke
+    if (smokeParticles.length < 25 + fireIntensity * 20) {
+      const breath = Math.sin(breathPhase)
+      smokeParticles.push({
+        x: fireX + (Math.random() - 0.5) * (30 + fireIntensity * 50) + breath * 10,
+        y: fireY - 20 - Math.random() * 20,
+        vx: (Math.random() - 0.5) * 0.3 + windStrength * Math.cos(windAngle) * 0.5,
+        vy: -0.5 - Math.random() * 0.8 - fireIntensity * 0.3,
+        size: 8 + Math.random() * 15 + fireIntensity * 10,
+        alpha: 0.02 + fireIntensity * 0.03,
+        age: 0,
+      })
+    }
+
+    // Update
+    for (let i = smokeParticles.length - 1; i >= 0; i--) {
+      const s = smokeParticles[i]
+      s.age += 0.016
+      s.x += s.vx + windStrength * Math.cos(windAngle) * 0.2
+      s.y += s.vy
+      s.vx *= 0.99
+      s.vy *= 0.995
+      s.size += 0.3 // smoke expands
+      s.alpha -= 0.0004
+
+      if (s.alpha <= 0 || s.y < -50 || s.age > 8) {
+        smokeParticles.splice(i, 1)
+      }
+    }
+  }
+
+  function renderSmoke() {
+    if (!ctx) return
+    for (const s of smokeParticles) {
+      const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size)
+      grad.addColorStop(0, `rgba(40, 30, 25, ${s.alpha})`)
+      grad.addColorStop(0.6, `rgba(30, 25, 22, ${s.alpha * 0.5})`)
+      grad.addColorStop(1, 'transparent')
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  // --- Ash floor deposits ---
+  function addAshDeposit(text: string) {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+    const fireX = w / 2
+    // Ash falls near the fire base
+    ashDeposits.push({
+      x: fireX + (Math.random() - 0.5) * 120,
+      size: 2 + Math.random() * 4,
+      alpha: 0.08 + Math.random() * 0.06,
+      text: text.substring(0, 12), // fragment of burned text
+    })
+    // Limit deposits
+    if (ashDeposits.length > 40) ashDeposits.shift()
+  }
+
+  function renderAshFloor() {
+    if (!ctx || !canvas) return
+    const h = canvas.height
+    const floorY = h * 0.55 + 40
+
+    for (const dep of ashDeposits) {
+      // Grey ash mound
+      ctx.fillStyle = `rgba(80, 70, 60, ${dep.alpha})`
+      ctx.beginPath()
+      ctx.ellipse(dep.x, floorY + Math.random() * 3, dep.size * 2, dep.size * 0.5, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Faint text fragment in the ash
+      ctx.font = '7px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(120, 100, 80, ${dep.alpha * 0.4})`
+      ctx.textAlign = 'center'
+      ctx.fillText(dep.text, dep.x, floorY + 6)
+    }
+  }
+
   // --- Heat shimmer effect ---
   function renderHeatShimmer() {
     if (!ctx || !canvas) return
@@ -459,6 +581,14 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     const fireX = w / 2
     const fireY = h * 0.55
 
+    // Update breathing and wind
+    breathPhase += BREATH_SPEED * 0.016 * Math.PI * 2
+    windAngle += (Math.random() - 0.5) * 0.02
+    windStrength += ((Math.random() * 0.3) - windStrength) * 0.01
+
+    // Update smoke
+    updateSmoke()
+
     ctx.clearRect(0, 0, w, h)
 
     // Background — dark with warm undertone
@@ -478,14 +608,15 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     ctx.fillStyle = `rgba(255, 80, 20, ${0.03 + fireIntensity * 0.04})`
     ctx.fill()
 
-    // Fire — layered flame shapes
+    // Fire — layered flame shapes with breathing rhythm
+    const breathMod = 0.85 + Math.sin(breathPhase) * 0.15 // 0.7 to 1.0
     const flameCount = 8 + Math.floor(fireIntensity * 12)
     for (let i = 0; i < flameCount; i++) {
       const seed = i * 137.5
       const phase = time * 3 + seed
-      const sway = Math.sin(phase) * (8 + fireIntensity * 15)
-      const flameH = (40 + Math.sin(phase * 0.7) * 15) * (0.5 + fireIntensity * 0.8)
-      const flameW = 6 + Math.sin(phase * 1.3) * 3 + fireIntensity * 8
+      const sway = Math.sin(phase) * (8 + fireIntensity * 15) + windStrength * Math.cos(windAngle) * 8
+      const flameH = (40 + Math.sin(phase * 0.7) * 15) * (0.5 + fireIntensity * 0.8) * breathMod
+      const flameW = (6 + Math.sin(phase * 1.3) * 3 + fireIntensity * 8) * breathMod
       const baseX = fireX + (Math.sin(seed) * 20 * fireIntensity)
 
       // Inner flame (yellow-white)
@@ -532,8 +663,14 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     ctx.fillStyle = glow
     ctx.fill()
 
+    // Smoke — dark billows above fire
+    renderSmoke()
+
     // Heat shimmer — subtle distortion above fire
     renderHeatShimmer()
+
+    // Ash floor — accumulated burned text fragments
+    renderAshFloor()
 
     // Floating ash and embers
     renderAshParticles()
@@ -832,6 +969,8 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
         clearInterval(burnInterval)
         // Accelerate degradation on the actual memory
         deps.accelerateDegradation(memory.id, 0.3)
+        // Leave ash deposit with fragments of the burned text
+        addAshDeposit(memory.currentText)
         selectedMemory = null
         // Final sizzle
         playEmberSizzle()
@@ -1098,6 +1237,10 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       clickedIron = -1
       ironSparks = []
       ashParticles = []
+      smokeParticles = []
+      breathPhase = 0
+      windAngle = Math.random() * Math.PI * 2
+      windStrength = 0
       heatTrail.length = 0
       for (const p of ironPortals) p.glowIntensity = 0
       rebuildList()
