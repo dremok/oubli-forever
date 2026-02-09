@@ -65,13 +65,19 @@ const CULTURAL_INSCRIPTIONS = [
   'the jacquard loom (1804): punch cards controlling thread patterns. the first binary programming.',
   'ada lovelace saw the analytical engine as a jacquard loom weaving algebraic patterns. code as textile.',
   'anni albers at the bauhaus: weaving as a language parallel to painting. thread as line, fabric as field.',
-  'the bayeux tapestry: 70 meters of embroidered history. conquest remembered in wool and linen.',
+  'the bayeux tapestry returns to england in 2026. insured for 800 million pounds. vibration sensors test the route.',
   'penelope wove by day and unwove by night. twenty years of deliberate forgetting, disguised as patience.',
   'navajo weavers intentionally leave a spirit line — a deliberate flaw — so the weaver\'s soul can escape.',
-  'chiharu shiota fills galleries with webs of red thread. beds, shoes, keys — all tangled in connection.',
+  'shiota threads of life: monumental red thread installations. shoes, keys, beds — all tangled in connection.',
   'the fates spin, measure, and cut the thread of life. memory as textile, destiny as weaving.',
-  'shape-shifting molecular devices: matter that remembers, thinks, learns. each thread a computing element.',
-  'the great meme reset of 2026: culture trying to unweave the brainrot pattern and start fresh.',
+  'MIT put a computer inside a single fiber. 32-bit processor, sensors, bluetooth. the fabric literally thinks.',
+  'yin xiuzhen built a human heart from collected clothing. each garment carries someone\'s lived experience.',
+  'phillip stearns weaves literal computer memory data into textiles. the binary can be decoded from the cloth.',
+  'anna lucia\'s algorithmic loom: weave patterns generated at the moment of transaction. distortion as decay.',
+  'the quilters of gee\'s bend: centuries of african american memory encoded in quilt patterns.',
+  '2026 textile tension: craft versus code. algorithmic precision colliding with deliberate imperfection.',
+  'physarum stores memories in tube thickness. a slime mold\'s network IS its memory. thicker paths are remembered.',
+  'kustaa saksi: a 15-meter jacquard-woven pine tree suspended in mid-air. washi paper yarns. uprootedness.',
 ]
 
 export function createLoomRoom(deps: LoomDeps): Room {
@@ -119,6 +125,16 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
   // Heddle state (per-column rise/fall)
   let heddlePhases: number[] = []
+
+  // --- Spirit line (Navajo tradition: deliberate flaw) ---
+  let spiritLineCol = -1 // column index of the spirit line, set on activate
+
+  // --- Thread whisper: hovering shows memory text flowing along thread ---
+  let hoveredThread = -1
+  let whisperOffset = 0 // scrolls along the thread
+
+  // --- Patina: completed weave develops warm aging tint ---
+  let patinaAge = 0 // accumulates each frame, affects the tint
 
   // Audio state
   let audioInitialized = false
@@ -624,7 +640,12 @@ export function createLoomRoom(deps: LoomDeps): Room {
       for (let col = 0; col < visibleCols; col++) {
         const x = margin + col * cellSize
         const patIdx = col % pattern.length
-        const isOver = pattern[patIdx] === 1
+        let isOver = pattern[patIdx] === 1
+
+        // Spirit line: at the spirit column, invert the pattern (the deliberate flaw)
+        if (col === spiritLineCol) {
+          isOver = !isOver
+        }
 
         // Hue gradient along thread length
         const hueShift = Math.sin(col * 0.05) * 8
@@ -678,6 +699,59 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
     // Intersection pearl nodes
     drawIntersectionNodes(ctx, memories, margin, threadCount, threadSpacing, visibleCols, cellSize)
+
+    // --- Spirit line indicator ---
+    if (spiritLineCol >= 0 && spiritLineCol < visibleCols) {
+      const slx = margin + spiritLineCol * cellSize + cellSize / 2
+      // Very faint vertical line with a subtle glow
+      ctx.strokeStyle = `rgba(255, 200, 100, ${0.04 + Math.sin(time * 0.7) * 0.015})`
+      ctx.lineWidth = 0.5
+      ctx.beginPath()
+      ctx.moveTo(slx, margin)
+      ctx.lineTo(slx, margin + weaveH)
+      ctx.stroke()
+      // Spirit line label (appears very faintly near top)
+      ctx.font = '8px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(255, 200, 100, ${0.04 + Math.sin(time * 0.5) * 0.01})`
+      ctx.textAlign = 'center'
+      ctx.fillText('spirit line', slx, margin - 8)
+    }
+
+    // --- Thread whisper: show memory text flowing along hovered thread ---
+    if (hoveredThread >= 0 && hoveredThread < threadCount) {
+      whisperOffset += 0.5
+      const mem = memories[hoveredThread % memories.length]
+      const txt = mem.currentText || mem.originalText
+      const ty = margin + (hoveredThread + 1) * threadSpacing
+      ctx.font = '9px monospace'
+      ctx.textAlign = 'left'
+      const charW = 7
+      for (let ci = 0; ci < txt.length; ci++) {
+        const cx = margin + ((ci * charW + whisperOffset) % Math.max(1, visibleCols * cellSize))
+        if (cx > margin + visibleCols * cellSize) continue
+        const fadeEdge = Math.min(
+          (cx - margin) / 30,
+          (margin + visibleCols * cellSize - cx) / 30,
+          1
+        )
+        const alpha = Math.max(0, 0.25 * fadeEdge)
+        const color = memoryToColor(mem)
+        ctx.fillStyle = `hsla(${color.h}, ${color.s}%, ${Math.min(70, color.l + 20)}%, ${alpha})`
+        ctx.fillText(txt[ci], cx, ty - 6)
+      }
+    } else {
+      whisperOffset = 0
+    }
+
+    // --- Patina: warm aging tint over completed weave area ---
+    if (visibleCols > 20) {
+      patinaAge = Math.min(1, patinaAge + 0.0001)
+      if (patinaAge > 0.01) {
+        const patinaAlpha = patinaAge * 0.03
+        ctx.fillStyle = `rgba(120, 90, 50, ${patinaAlpha})`
+        ctx.fillRect(margin, margin, visibleCols * cellSize, weaveH)
+      }
+    }
 
     // Shuttle animation
     if (visibleCols < maxCols) {
@@ -1018,6 +1092,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
         // Check weaving thread hover
         const threadIdx = hitTestThread(e.clientX, e.clientY)
+        hoveredThread = threadIdx
         canvas.style.cursor = threadIdx >= 0 ? 'pointer' : 'default'
       })
 
@@ -1030,6 +1105,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
       canvas.addEventListener('mouseleave', () => {
         pullingNavThread = -1
         hoveredNavThread = -1
+        hoveredThread = -1
       })
 
       overlay.appendChild(canvas)
@@ -1054,6 +1130,14 @@ export function createLoomRoom(deps: LoomDeps): Room {
       heddlePhases = []
       snapTimer = 10 + Math.random() * 10
       snappedThread = -1
+      hoveredThread = -1
+      whisperOffset = 0
+      patinaAge = 0
+      // Spirit line: place at ~70% of the way through the weave (Navajo tradition)
+      const weaveW = (canvas?.width || window.innerWidth) - 60 * 2 - 20
+      const cs = Math.max(4, Math.min(12, weaveW / 80))
+      const maxCols = Math.floor(weaveW / cs)
+      spiritLineCol = Math.floor(maxCols * 0.7) + Math.floor(Math.random() * 5)
       initAudio()
       render()
     },
