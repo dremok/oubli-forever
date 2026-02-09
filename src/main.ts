@@ -93,6 +93,7 @@ import { SeasonalClock } from './organisms/SeasonalClock'
 import { Parasites } from './organisms/Parasites'
 import { CroakDream } from './organisms/CroakDream'
 import { Methylation } from './organisms/Methylation'
+import { Narrator } from './organisms/Narrator'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -706,6 +707,22 @@ croakDream.setMyceliumSource({
 const methylation = new Methylation()
 methylation.setSeasonSource(() => seasonalClock.getSeason())
 methylation.start()
+
+// The Narrator — the house speaks about its own biology
+// Brief, poetic observations about the state of all organisms
+const narrator = new Narrator()
+narrator.setDeps({
+  getActiveRoom: () => roomManager.getActiveRoom(),
+  getSeason: () => seasonalClock.getSeason(),
+  getSeasonProgress: () => seasonalClock.getSeasonProgress(),
+  getSystemRipeness: () => mycelium.getSystemRipeness(),
+  getNutrients: (room) => mycelium.getNutrients(room),
+  getRipeness: (room) => mycelium.getRipeness(room),
+  getMethylation: (room) => methylation.getMethylation(room),
+  getParasitesInRoom: (room) => parasites.getParasitesInRoom(room),
+  getTotalDreams: () => croakDream.getTotalDreams(),
+})
+narrator.start()
 
 let _prevRoom = 'void'
 

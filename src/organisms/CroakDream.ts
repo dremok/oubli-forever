@@ -295,6 +295,11 @@ export class CroakDream {
     }
   }
 
+  /** Get total number of death dreams the house has had */
+  getTotalDreams(): number {
+    return this.state.totalDreams
+  }
+
   private save() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state))
