@@ -71,6 +71,16 @@ const PROMPTS_BASE = [
   'Devon Turnbull built a listening room as art. Describe the room where you listen best...',
   'An AI can now drive a rover on Mars. Write about a place only a machine has seen...',
   'The polar vortex is splitting. Write about something protective that broke apart...',
+
+  // Feb 2026 — round 3 culturally grounded prompts
+  'The Sagrada Familia has been building itself for 144 years. What in your life has been under construction that long?',
+  'Two black holes merged and the ripple took a billion years to reach us. Write about a message that arrived too late...',
+  'The universe is held together by something invisible. What invisible thing holds your life together?',
+  'They traveled 240,000 miles to look at a place they could not touch. Write about something you can see but never reach...',
+  '"Melted for love": what would you dissolve into if you could let go completely?',
+  'In zero gravity, the body begins to forget its own weight. What would your body forget first?',
+  'They built six buildings knowing everyone inside would leave in sixteen days. Write about a place built to be abandoned...',
+  'LIGO heard two absences collide. Write about two losses that, together, created something new...',
 ]
 
 // Fallback quotes for when the API is unreachable
@@ -202,6 +212,23 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
   let lastBlotTime = 0
   let streakEndTime = 0
 
+  // Word count milestones
+  const MILESTONES = [100, 250, 500, 1000, 2000]
+  let lastMilestone = 0
+  let milestoneFlash = 0
+  let milestoneLabel = ''
+
+  // Margin notes (memory fragments that appear as you write)
+  interface MarginNote {
+    text: string
+    y: number
+    side: 'left' | 'right'
+    alpha: number
+    targetAlpha: number
+  }
+  const marginNotes: MarginNote[] = []
+  let lastMarginNoteWord = 0
+
   function loadText(): string {
     try {
       return localStorage.getItem(STORAGE_KEY) || ''
@@ -252,6 +279,35 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
     const words = text.trim() ? text.trim().split(/\s+/).length : 0
     const chars = text.length
     countEl.textContent = `${words} words \u00b7 ${chars} characters`
+
+    // Check milestones
+    for (const m of MILESTONES) {
+      if (words >= m && lastMilestone < m) {
+        lastMilestone = m
+        milestoneFlash = 1.0
+        milestoneLabel = `${m} words`
+        playPageTurn()
+        break
+      }
+    }
+
+    // Spawn margin notes every ~50 words
+    if (words >= lastMarginNoteWord + 50 && marginNotes.length < 12) {
+      lastMarginNoteWord = words
+      const memories = getMemories()
+      if (memories.length > 0) {
+        const mem = memories[Math.floor(Math.random() * memories.length)]
+        const fragment = mem.currentText.split(' ').slice(0, 4).join(' ') + '...'
+        const h = atmosCanvas?.height || window.innerHeight
+        marginNotes.push({
+          text: fragment,
+          y: 80 + Math.random() * (h - 200),
+          side: Math.random() < 0.5 ? 'left' : 'right',
+          alpha: 0,
+          targetAlpha: 0.06 + Math.random() * 0.04,
+        })
+      }
+    }
   }
 
   function newPrompt() {
@@ -742,6 +798,33 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       atmosCtx.fill()
     }
 
+    // --- Word count milestone flash ---
+    if (milestoneFlash > 0.01) {
+      const ringR = (1 - milestoneFlash) * Math.min(w, h) * 0.3
+      atmosCtx.strokeStyle = `rgba(255, 215, 0, ${milestoneFlash * 0.15})`
+      atmosCtx.lineWidth = 1
+      atmosCtx.beginPath()
+      atmosCtx.arc(w / 2, h / 2, ringR, 0, Math.PI * 2)
+      atmosCtx.stroke()
+      // Label
+      atmosCtx.font = '13px "Cormorant Garamond", serif'
+      atmosCtx.fillStyle = `rgba(255, 215, 0, ${milestoneFlash * 0.3})`
+      atmosCtx.textAlign = 'center'
+      atmosCtx.fillText(milestoneLabel, w / 2, h / 2 + ringR + 20)
+      milestoneFlash *= 0.985
+    }
+
+    // --- Margin notes (memory fragments in margins) ---
+    for (const note of marginNotes) {
+      note.alpha += (note.targetAlpha - note.alpha) * 0.01
+      if (note.alpha < 0.003) continue
+      atmosCtx.font = '11px "Cormorant Garamond", serif'
+      atmosCtx.fillStyle = `rgba(180, 160, 120, ${note.alpha})`
+      atmosCtx.textAlign = note.side === 'left' ? 'left' : 'right'
+      const nx = note.side === 'left' ? 16 : w - 16
+      atmosCtx.fillText(note.text, nx, note.y)
+    }
+
     // --- Warm quote proximity glow (via cursor affecting quote container) ---
     updateQuoteWarmth()
 
@@ -1134,10 +1217,20 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
 
     async activate() {
       active = true
+      milestoneFlash = 0
+      milestoneLabel = ''
+      marginNotes.length = 0
+      lastMarginNoteWord = 0
       // Track word count for new text emissions
       if (textarea) {
         const text = textarea.value.trim()
         lastWordCount = text ? text.split(/\s+/).length : 0
+        // Set milestone to current word count to avoid immediate triggers
+        const currentWords = text ? text.split(/\s+/).length : 0
+        lastMilestone = 0
+        for (const m of MILESTONES) {
+          if (currentWords >= m) lastMilestone = m
+        }
       }
       // Auto-save every 5 seconds
       saveInterval = window.setInterval(() => {
