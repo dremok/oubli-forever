@@ -142,6 +142,20 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
   // --- Scrape depth visualization ---
   let totalScrapePixels = 0
 
+  // --- Metamorphoses ghost text (Ovid / Rijksmuseum 2026) ---
+  const OVID_LINES = [
+    'all things change; nothing perishes',
+    'she felt herself becoming bark',
+    'his tears became the river',
+    'the face dissolved into feathers',
+    'what was a body became stone',
+    'the voice remained after the form was gone',
+    'every surface hides another surface',
+  ]
+  let ovidIndex = 0
+  let ovidTimer = 0
+  let ovidDriftX = 0
+
   // Painting draw rect — cached for hit testing
   let paintDrawX = 0
   let paintDrawY = 0
@@ -845,6 +859,25 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
         const patinaIntensity = Math.min(0.06, (patinaAge - 3) * 0.0005)
         c.fillStyle = `rgba(180, 150, 80, ${patinaIntensity})`
         c.fillRect(drawX, drawY, drawW, drawH)
+      }
+
+      // --- Metamorphoses ghost text (drifts slowly across painting) ---
+      ovidTimer += 0.016
+      if (ovidTimer > 30) { // change every 30s
+        ovidTimer = 0
+        ovidIndex = (ovidIndex + 1) % OVID_LINES.length
+        ovidDriftX = 0
+      }
+      ovidDriftX += 0.08
+      {
+        const ovidAlpha = Math.min(0.04, (ovidTimer < 3 ? ovidTimer / 3 : ovidTimer > 27 ? (30 - ovidTimer) / 3 : 1) * 0.04)
+        c.globalAlpha = ovidAlpha
+        c.font = 'italic 13px "Cormorant Garamond", serif'
+        c.fillStyle = 'rgba(200, 180, 140, 1)'
+        c.textAlign = 'center'
+        c.fillText(OVID_LINES[ovidIndex], drawX + drawW / 2 + ovidDriftX, drawY + drawH * 0.85)
+        c.globalAlpha = 1
+        c.textAlign = 'left'
       }
 
       // --- Scrape depth cross-section (left edge of painting) ---

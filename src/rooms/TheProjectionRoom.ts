@@ -112,6 +112,22 @@ const CULTURAL_INSCRIPTIONS = [
   'the last blockbuster in bend, oregon. a temple to physical media in a streaming world.',
 ]
 
+// Found footage fragments — real lost film discoveries
+const FOUND_FOOTAGE = [
+  'REEL 47B — SALT MINE VAULT, KANSAS — RECOVERED 2024',
+  '68 BOXES OF UNSEEN FOOTAGE — THOUGHT PERMANENTLY LOST',
+  'NITRATE DECOMPOSITION: 75% — FRAGMENTS ONLY',
+  'UNKNOWN ACTRESS — NO CREDITS — CIRCA 1952',
+  'CUT BY EDITOR — REASON UNKNOWN — SEE PRODUCTION NOTES',
+  'THIS SCENE WAS NEVER MEANT TO BE SHOWN',
+  'FOOTAGE FOUND IN ATTIC — FAMILY DONATION — 2026',
+  'CAMERA ROLL 12 — DAILIES — CONTINUITY ERROR AT 00:47',
+  'OUTTAKE — ACTOR BREAKS CHARACTER — GENUINE EMOTION',
+  'TEST REEL — COLOR CALIBRATION — BEFORE SHOOTING BEGAN',
+  'REDACTED BY STUDIO — CENSORSHIP BOARD ORDER #4471',
+  'LEADER DAMAGED — RECONSTRUCTED FROM ADJACENT FRAMES',
+]
+
 export function createProjectionRoom(deps: ProjectionDeps): Room {
   let inscriptionTimer = 0
   let inscriptionIdx = 0
@@ -562,7 +578,12 @@ export function createProjectionRoom(deps: ProjectionDeps): Room {
       c.arc(w / 2, h / 2, 50, 0, Math.PI * 2)
       c.stroke()
 
+      // Found footage fragment — flashes during leader like archival metadata
+      const fragIdx = (currentFrame + Math.floor(flashPhase * 3)) % FOUND_FOOTAGE.length
+      c.font = '11px monospace'
+      c.fillStyle = `rgba(180, 160, 120, ${0.12 * flicker})`
       c.textBaseline = 'alphabetic'
+      c.fillText(FOUND_FOOTAGE[fragIdx], w / 2, h / 2 + 80)
     } else {
       // Phase 3: fade back in — end reel change
       const fadeIn = (reelChangeTime - 0.7) / 0.3

@@ -14,7 +14,10 @@
  *
  * Inspired by: zen brushwork, blackboard, etch-a-sketch,
  * Harold and the Purple Crayon, cave paintings (the first art
- * was drawn in darkness), light painting photography
+ * was drawn in darkness), light painting photography,
+ * wabi-sabi TikTok trend (2026) — beauty in imperfection,
+ * Lucian Freud's 170 obsessive redrawings, GENUARY 2026
+ * "intentional imperfection" prompt
  */
 
 import type { Room } from './RoomManager'
@@ -1140,6 +1143,35 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
       currentStroke.width = pressureW
 
       currentStroke.points.push({ x, y })
+
+      // Wabi-sabi celebration: detect sharp angle changes (imperfection)
+      // and reward them with golden particles
+      const pts = currentStroke.points
+      if (pts.length >= 3) {
+        const p0 = pts[pts.length - 3]
+        const p1 = pts[pts.length - 2]
+        const p2 = pts[pts.length - 1]
+        const ax = p1.x - p0.x, ay = p1.y - p0.y
+        const bx = p2.x - p1.x, by = p2.y - p1.y
+        const dot = ax * bx + ay * by
+        const cross = ax * by - ay * bx
+        const angle = Math.abs(Math.atan2(cross, dot))
+        // Sharp turns (>50°) get golden celebration particles
+        if (angle > 0.87) { // ~50 degrees
+          const intensity = Math.min(1, (angle - 0.87) / 1.5)
+          const count = 2 + Math.floor(intensity * 5)
+          for (let gi = 0; gi < count; gi++) {
+            const spread = 1.5 + intensity * 2
+            spawnParticle(
+              p1.x + (Math.random() - 0.5) * 8,
+              p1.y + (Math.random() - 0.5) * 8,
+              45 + Math.random() * 15, // golden hue (45-60)
+              (Math.random() - 0.5) * spread,
+              -(Math.random() * spread * 0.5 + 0.3),
+            )
+          }
+        }
+      }
 
       if (mirrorStroke) {
         mirrorStroke.points.push({ x, y })
