@@ -349,6 +349,63 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     return { text, isMemory }
   }
 
+  // ===== INSCRIPTION TEXTURE CACHE =====
+  // Pre-render text to offscreen canvases, then sample per-column during raycasting
+  // for perspective-correct wall text that appears genuinely ON the surface
+  const INSC_TEX_W = 256
+  const INSC_TEX_H = 128
+  const inscriptionTextures = new Map<string, HTMLCanvasElement>()
+
+  function getInscriptionTexture(wx: number, wy: number): HTMLCanvasElement | null {
+    const key = `${wx},${wy}`
+    const cached = inscriptionTextures.get(key)
+    if (cached) return cached
+
+    const insc = getInscriptionText(wx, wy)
+    if (!insc.text) return null
+
+    const texCanvas = document.createElement('canvas')
+    texCanvas.width = INSC_TEX_W
+    texCanvas.height = INSC_TEX_H
+    const texCtx = texCanvas.getContext('2d')
+    if (!texCtx) return null
+
+    texCtx.clearRect(0, 0, INSC_TEX_W, INSC_TEX_H)
+
+    // Vertical position — hash-determined, like real graffiti at various heights
+    const yHash = cellHash2(wx + 17, wy + 31)
+    const textY = INSC_TEX_H * (0.25 + yHash * 0.5)
+
+    if (insc.isMemory) {
+      texCtx.save()
+      texCtx.translate(INSC_TEX_W / 2, textY)
+      drawHandwrittenText(texCtx, insc.text.substring(0, 28), 22, 0.85, wx, wy)
+      texCtx.restore()
+    } else {
+      texCtx.save()
+      texCtx.font = '15px "Cormorant Garamond", serif'
+      texCtx.fillStyle = 'rgba(180, 160, 200, 0.55)'
+      texCtx.textAlign = 'center'
+      texCtx.textBaseline = 'middle'
+      texCtx.fillText(insc.text.substring(0, 24), INSC_TEX_W / 2, textY)
+      texCtx.restore()
+    }
+
+    inscriptionTextures.set(key, texCanvas)
+
+    // LRU eviction — keep cache bounded
+    if (inscriptionTextures.size > 80) {
+      const first = inscriptionTextures.keys().next().value
+      if (first) inscriptionTextures.delete(first)
+    }
+
+    return texCanvas
+  }
+
+  function clearInscriptionTextures() {
+    inscriptionTextures.clear()
+  }
+
   // ===== REGION MANAGEMENT =====
 
   function updateRegions(): void {
@@ -363,13 +420,17 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
 
     // Increment salt for regions that just left the active set (the labyrinth forgets)
+    let regionsEvicted = false
     for (const key of activeRegions) {
       if (!newActive.has(key)) {
         const currentSalt = regionSalts.get(key) ?? 0
         regionSalts.set(key, currentSalt + 1)
         ghostRegions.add(key)
+        regionsEvicted = true
       }
     }
+    // Clear texture cache when maze topology changes
+    if (regionsEvicted) clearInscriptionTextures()
 
     activeRegions.clear()
     for (const key of newActive) {
@@ -386,6 +447,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     cell: number
     hitX: number
     hitY: number
+    wallU: number // 0-1 fractional position along wall face
   }
 
   function castRay(ox: number, oy: number, angle: number): RayHit {
@@ -424,11 +486,24 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         const dist = side === 0
           ? (mapX - ox + (1 - stepX) / 2) / dx
           : (mapY - oy + (1 - stepY) / 2) / dy
-        return { dist: Math.abs(dist), side, cell, hitX: mapX, hitY: mapY }
+        const absDist = Math.abs(dist)
+        // Calculate wallU — fractional position along wall face (0-1)
+        let wallU: number
+        if (side === 0) {
+          wallU = oy + absDist * dy
+        } else {
+          wallU = ox + absDist * dx
+        }
+        wallU = wallU - Math.floor(wallU)
+        // Flip U for correct text orientation
+        if ((side === 0 && dx > 0) || (side === 1 && dy < 0)) {
+          wallU = 1 - wallU
+        }
+        return { dist: absDist, side, cell, hitX: mapX, hitY: mapY, wallU }
       }
     }
 
-    return { dist: 30, side: 0, cell: 0, hitX: mapX, hitY: mapY }
+    return { dist: 30, side: 0, cell: 0, hitX: mapX, hitY: mapY, wallU: 0 }
   }
 
   // ===== AUDIO =====
@@ -831,23 +906,26 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function checkScare(): void {
     if (currentScare) return
-    // Cooldown decreases with scareCount (min 12s)
-    const cooldown = Math.max(12, 30 - scareCount * 2)
+    // No scares during first 20 seconds — let the atmosphere build
+    if (time < 20) return
+    // Cooldown decreases with insanity (min 10s at full insanity, 35s at zero)
+    const cooldown = Math.max(10, 35 - insanity * 25 - scareCount * 2)
     if (time - lastScareTime < cooldown) return
 
     const exits = countExits(Math.floor(px), Math.floor(py))
 
-    // Build tension faster
+    // Build tension — faster at higher insanity
+    const insanityAccel = 1 + insanity * 2
     if (exits <= 1) {
-      tensionTarget = Math.min(1, tensionTarget + 0.004)
+      tensionTarget = Math.min(1, tensionTarget + 0.004 * insanityAccel)
     } else if (exits === 2) {
-      tensionTarget = Math.min(1, tensionTarget + 0.001)
+      tensionTarget = Math.min(1, tensionTarget + 0.001 * insanityAccel)
     } else {
       tensionTarget = Math.max(0, tensionTarget - 0.003)
     }
 
-    // Random tension spikes — more frequent
-    if (Math.random() < 0.001) {
+    // Random tension spikes — more frequent at high insanity
+    if (Math.random() < 0.001 + insanity * 0.002) {
       tensionTarget = Math.min(1, tensionTarget + 0.3)
     }
 
@@ -858,13 +936,16 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     tension += (tensionTarget - tension) * 0.02
 
-    // Trigger at lower threshold, more likely
-    if (tension > 0.4 && Math.random() < 0.015) {
+    // Scare probability scales with insanity — at 0 insanity almost never, at 1 very frequent
+    const scareChance = 0.002 + insanity * 0.02
+    const scareThreshold = 0.6 - insanity * 0.3 // threshold drops from 0.6 to 0.3
+
+    if (tension > scareThreshold && Math.random() < scareChance) {
       triggerScare()
     }
 
-    // Rare random scare even at low tension (after 60s)
-    if (time > 60 && time - lastScareTime > 45 && Math.random() < 0.002) {
+    // Rare random scare at high insanity even at low tension
+    if (insanity > 0.3 && time - lastScareTime > 45 && Math.random() < insanity * 0.003) {
       triggerScare()
     }
   }
@@ -2903,7 +2984,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Raycasting
     const stripW = w / numRays
-    const visibleInscriptions: { text: string; isMemory: boolean; screenX: number; dist: number; brightness: number; wx: number; wy: number }[] = []
     const visibleObjects: { obj: typeof WALL_OBJECTS[0]; screenX: number; wallTop: number; wallHeight: number; dist: number; brightness: number; wx: number; wy: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
@@ -2937,18 +3017,25 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillStyle = `rgb(${Math.floor(Math.max(0, r))}, ${Math.floor(Math.max(0, g))}, ${Math.floor(Math.max(0, b))})`
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
-      // Collect inscription text from nearby walls
+      // Texture-mapped inscription rendering — text is ON the wall surface
       if (hit.cell === INSCRIPTION && correctedDist < 6) {
-        const insc = getInscriptionText(hit.hitX, hit.hitY)
-        visibleInscriptions.push({
-          text: insc.text,
-          isMemory: insc.isMemory,
-          screenX: i * stripW + stripW / 2,
-          dist: correctedDist,
-          brightness,
-          wx: hit.hitX,
-          wy: hit.hitY,
-        })
+        const tex = getInscriptionTexture(hit.hitX, hit.hitY)
+        if (tex) {
+          const texX = Math.floor(hit.wallU * INSC_TEX_W)
+          // Brightness fade with distance + side dimming
+          const texAlpha = brightness * sideDim * flicker * 0.9
+          if (texAlpha > 0.02) {
+            ctx.save()
+            ctx.globalAlpha = texAlpha
+            // Draw one column from the texture onto the wall strip
+            ctx.drawImage(
+              tex,
+              texX, 0, 1, INSC_TEX_H,               // source: 1-pixel column
+              i * stripW, wallTop, stripW + 1, wallHeight  // dest: full wall strip
+            )
+            ctx.restore()
+          }
+        }
       }
 
       // Collect wall objects on anomaly walls (skip used ones)
@@ -2969,46 +3056,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
             })
           }
         }
-      }
-    }
-
-    // Render wall inscriptions — drawn HORIZONTALLY like graffiti on walls
-    const shownTexts = new Set<string>()
-    for (const insc of visibleInscriptions) {
-      if (shownTexts.has(insc.text)) continue
-      shownTexts.add(insc.text)
-
-      // Calculate wall vertical extents for this inscription's ray position
-      const wallH = h / Math.max(0.3, insc.dist)
-      const wallTop = midLine - wallH / 2
-      // Vertical position on the wall — seeded per wall cell
-      const yHash = cellHash2(insc.wx + 17, insc.wy + 31)
-      const wallY = wallTop + wallH * (0.25 + yHash * 0.5)
-
-      if (insc.isMemory) {
-        // Large painted memory text — horizontal, like someone painted it on the wall
-        const paintSize = Math.max(16, Math.min(36, 42 / insc.dist))
-        const paintAlpha = Math.min(0.9, insc.brightness * 1.3) * (0.65 + Math.sin(time * 0.3 + insc.wx * 0.7) * 0.15)
-
-        ctx.save()
-        ctx.translate(insc.screenX, wallY)
-        // Slight tilt per wall for organic feel
-        const tilt = (cellHash2(insc.wx + 5, insc.wy + 9) - 0.5) * 0.12
-        ctx.rotate(tilt)
-        drawHandwrittenText(ctx, insc.text.substring(0, 28), paintSize, paintAlpha, insc.wx, insc.wy)
-        ctx.restore()
-      } else {
-        // Standard inscription — also horizontal now
-        const fontSize = Math.max(9, Math.min(15, 18 / insc.dist))
-        const alpha = Math.min(0.5, insc.brightness * 0.7) * (0.5 + Math.sin(time * 0.5 + insc.screenX * 0.01) * 0.25)
-
-        ctx.save()
-        ctx.translate(insc.screenX, wallY)
-        ctx.font = `${fontSize}px "Cormorant Garamond", serif`
-        ctx.fillStyle = `rgba(180, 160, 200, ${alpha})`
-        ctx.textAlign = 'center'
-        ctx.fillText(insc.text.substring(0, 22), 0, 0)
-        ctx.restore()
       }
     }
 
@@ -3302,6 +3349,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     activate() {
       active = true
+      time = 0
       px = 1.5
       py = 1.5
       pa = 0
@@ -3334,8 +3382,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       lastFetchTime = time
       fetchIntervalSec = 8 + Math.random() * 10
 
-      // Reset used anomalies and ambient sounds for fresh session
+      // Reset used anomalies, textures, and ambient sounds for fresh session
       usedAnomalies.clear()
+      clearInscriptionTextures()
       lastCreepySoundTime = time + 20 // first ambient sound after 20s
 
       initAudio()
