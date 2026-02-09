@@ -618,35 +618,51 @@ phenotype.start()
 const seasonalClock = new SeasonalClock()
 seasonalClock.start()
 
-// Wire seasonal clock to the void's particle system
-// Each season subtly modulates the void's appearance
+// Wire seasonal clock to the void's particle system AND sound
+// Each season modulates both the visual and sonic atmosphere
 seasonalClock.onSeasonChange((season) => {
   switch (season) {
     case 'seed':
+      // Visual: sparse, muted, potential energy
       voidRenderer.setDriftSpeed(0.7)
       voidRenderer.setDriftSaturation(0.6)
       voidRenderer.setBloomStrength(0.8)
       voidRenderer.setFogDensity(0.003)
+      // Sound: quiet, sparse, low
+      drone.setFrequencyMultiplier(0.8)
+      drone.setVolumeMultiplier(0.5)
+      drone.setDissonance(0)
       break
     case 'growth':
       voidRenderer.setDriftSpeed(1.0)
       voidRenderer.setDriftSaturation(1.0)
       voidRenderer.setBloomStrength(1.2)
       voidRenderer.setFogDensity(0.002)
+      drone.setFrequencyMultiplier(1.0)
+      drone.setVolumeMultiplier(0.7)
+      drone.setDissonance(0)
       break
     case 'ripe':
       voidRenderer.setDriftSpeed(0.9)
-      voidRenderer.setDriftHueShift(0.08) // golden warmth
+      voidRenderer.setDriftHueShift(0.08)
       voidRenderer.setDriftSaturation(1.3)
       voidRenderer.setBloomStrength(1.6)
       voidRenderer.setFogDensity(0.001)
+      // Sound: warm, full, harmonically rich
+      drone.setFrequencyMultiplier(1.05)
+      drone.setVolumeMultiplier(0.9)
+      drone.setDissonance(0)
       break
     case 'fall':
       voidRenderer.setDriftSpeed(1.3)
-      voidRenderer.setDriftHueShift(0.12) // amber
+      voidRenderer.setDriftHueShift(0.12)
       voidRenderer.setDriftSaturation(0.8)
       voidRenderer.setBloomStrength(1.0)
       voidRenderer.setGrainIntensity(0.1)
+      // Sound: slightly dissonant, scattered
+      drone.setFrequencyMultiplier(0.95)
+      drone.setVolumeMultiplier(0.75)
+      drone.setDissonance(0.15)
       break
     case 'decay':
       voidRenderer.setDriftSpeed(0.5)
@@ -655,6 +671,10 @@ seasonalClock.onSeasonChange((season) => {
       voidRenderer.setBloomStrength(0.6)
       voidRenderer.setFogDensity(0.004)
       voidRenderer.setGrainIntensity(0.12)
+      // Sound: deep, slow, sub-bass, dissonant
+      drone.setFrequencyMultiplier(0.7)
+      drone.setVolumeMultiplier(0.6)
+      drone.setDissonance(0.25)
       break
   }
 })
