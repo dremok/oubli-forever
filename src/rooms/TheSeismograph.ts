@@ -75,6 +75,11 @@ const CULTURAL_INSCRIPTIONS = [
   'seven thousand atoms held in quantum superposition. the largest schrödinger\'s cat ever — memory in two states at once.',
   'CRISPR reactivates silenced memory genes in aging brains. what was forgotten can be switched back on.',
   'a molecular sensor eavesdrops on the brain\'s synaptic whispers. we can finally hear neurons remembering.',
+  'ENSO returns to neutral by april 2026. the pacific\'s thermostat resets. the baseline was always an illusion.',
+  'muonium-to-antimuonium conversion: matter becoming antimatter. if detected, the standard model cracks.',
+  'the MACE experiment hunts for a forbidden transformation. particles changing identity when no one looks.',
+  'south korea drought, feb 2026: gyeongsang wildfire season returns. the earth remembers its burns.',
+  'a metasurface chip makes invisible light visible. infrared becomes green. what was hidden, revealed.',
 ]
 
 // Simplified continent outlines (lat, lon pairs) — just enough to be recognizable
@@ -1003,6 +1008,36 @@ export function createSeismographRoom(deps?: SeismographDeps): Room {
     const mins = Math.floor((Date.now() - lastFetch) / 60000)
     ctx.fillText(`updated ${mins}m ago`, w - 12, h - 30)
     ctx.fillText('usgs.gov', w - 12, h - 18)
+
+    // --- ENSO oscillation indicator (inspired by WMO forecast, Feb 2026) ---
+    // Pacific thermal state returning to neutral — a damping sine wave
+    const ensoX = w - 90
+    const ensoY = 55
+    const ensoW = 70
+    const ensoH = 16
+    ctx.strokeStyle = 'rgba(40, 180, 255, 0.06)'
+    ctx.lineWidth = 0.5
+    // Baseline
+    ctx.beginPath()
+    ctx.moveTo(ensoX, ensoY)
+    ctx.lineTo(ensoX + ensoW, ensoY)
+    ctx.stroke()
+    // Damping oscillation: amplitude decreasing over time (toward neutral)
+    ctx.strokeStyle = 'rgba(40, 180, 255, 0.12)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    for (let ex = 0; ex <= ensoW; ex++) {
+      const t = ex / ensoW
+      const damping = Math.exp(-t * 2.5) // exponential decay
+      const osc = Math.sin(t * Math.PI * 5 + time * 0.3) * ensoH * damping
+      if (ex === 0) ctx.moveTo(ensoX + ex, ensoY + osc)
+      else ctx.lineTo(ensoX + ex, ensoY + osc)
+    }
+    ctx.stroke()
+    ctx.font = '8px monospace'
+    ctx.fillStyle = 'rgba(40, 180, 255, 0.06)'
+    ctx.textAlign = 'center'
+    ctx.fillText('ENSO', ensoX + ensoW / 2, ensoY + ensoH + 10)
 
     // Title
     ctx.font = '12px "Cormorant Garamond", serif'

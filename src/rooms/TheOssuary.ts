@@ -80,6 +80,12 @@ const CULTURAL_INSCRIPTIONS = [
   'the seabed grows one thousandth of a millimeter per year. we scarred it in an afternoon.',
   'christian boltanski archived the dead. what are we archiving?',
   'felix gonzalez-torres let the candy pile shrink. the viewer takes a piece of someone\u2019s weight.',
+  'menopause erases grey matter in the hippocampus. the gateway between memory and self narrows.',
+  'the nihilist penguin walked toward a mountain. it never came back. we watched and understood.',
+  'see memory: 30,000 hand-painted frames of how forgetting looks. each frame a bone.',
+  'judit polgar broke fischer\'s record at 15. the first and only woman in the world top 10. memory is strategy.',
+  'silver ions heal nano-fissures at 3 nanometers. between holding and shattering: a coat of silver.',
+  'lab-grown brain circuits wire themselves in real time. without the thalamus, neurons stay immature.',
 ]
 
 export function createOssuaryRoom(deps: OssuaryDeps): Room {
@@ -943,6 +949,22 @@ export function createOssuaryRoom(deps: OssuaryDeps): Room {
 
     // Wall texture — sedimentary strata + cracks
     drawWallTexture(w, h)
+
+    // --- Gateway narrowing (inspired by menopause grey matter erosion, Cambridge 2026) ---
+    // The hippocampal gateway narrows as more memories die. Vignette tightens.
+    const deadCount = memories.filter(m => m.degradation > 0.4).length
+    const totalCount = Math.max(1, memories.length)
+    const erosion = Math.min(0.6, (deadCount / totalCount) * 0.8) // 0 = no erosion, 0.6 = severe
+    if (erosion > 0.05) {
+      const vignetteGrad = ctx.createRadialGradient(
+        w / 2, h / 2, Math.min(w, h) * (0.4 - erosion * 0.25),
+        w / 2, h / 2, Math.min(w, h) * 0.6
+      )
+      vignetteGrad.addColorStop(0, 'rgba(0, 0, 0, 0)')
+      vignetteGrad.addColorStop(1, `rgba(0, 0, 0, ${erosion * 0.3})`)
+      ctx.fillStyle = vignetteGrad
+      ctx.fillRect(0, 0, w, h)
+    }
 
     // Ambient dust
     spawnAmbientDust()
