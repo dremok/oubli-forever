@@ -1675,6 +1675,45 @@ Keywords in user memories trigger procedural symbol drawings on walls: sun (with
 - **Lucas Museum**: $1B spaceship-shaped building for narrative art (MAD Architects, LA)
 - **Milan Olympics Village**: Architecture designed for abandonment in 16 days
 
+### 161. Labyrinth Performance Fix — Round 2
+Critical performance fixes for the Labyrinth (user-reported lag after 30-60s):
+- Frame-rate independent timing: `dtScale = actualFrameMs / 16` prevents movement slowdown when frames drop
+- Pre-created noise/breath/scrape AudioBuffers at init (was creating new buffers per phantom sound)
+- Gain automation on audio thread for whisper/breath envelopes (was filling buffers on main thread)
+- Inlined `isDoorMinForRoom` to eliminate ~20,000 array allocations per frame
+- Increased DOOR_THRESHOLD 0.38→0.50 and WALL_OPEN_INTERVAL 20→10 for more open maze
+- Expanded wall-opening search radius 6→10
+
+### 162. Cultural Inscriptions — TheMidnight, TheLibrary, TheSeance, TheObservatory
+Added 16 culturally-grounded inscriptions to each room:
+- TheMidnight: Doomsday Clock, time cells, Tehching Hsieh, polar vortex, Marclay's The Clock
+- TheLibrary: Borges, Bayeux Tapestry, CRISPR memory reversal, Kryptos K4, Voynich manuscript
+- TheSeance: Oracle at Delphi, ELIZA chatbot, Boltzmann brain, kidney cell memory, Turing test
+- TheObservatory: Pandora telescope, JWST dark matter, Artemis 2, five sleep profiles, Voyager record
+
+### 163. Feb 2026 Cultural Content Update (Round 18)
+Fresh cultural research findings:
+- **Rijksmuseum FAKE!**: Photo manipulation exhibition — scissors and glue before Photoshop (1860s)
+- **Parkinson's blood test**: Disease detectable 20 years before symptoms (80% neurons gone)
+- **Five sleep-wake profiles**: Consciousness isn't binary — five modes (McGill University)
+- **"2026 is the new 2016"**: Mass nostalgia trend, millions mourning pre-algorithmic internet
+- **Amsterdam fossil fuel ad ban**: First capital city banning meat/fossil fuel advertising
+- **Puma Blue "Croak Dream"**: Improvising to tape loop fragments at Real World Studios
+- **Wabi-sabi TikTok**: 500K videos celebrating imperfection, then immediately becoming meaningless
+- **DeepSeek R1**: $6M open-source model matching trillion-dollar labs
+- **Ovid's Metamorphoses at Rijksmuseum**: 80 works on transformation (Titian to Bourgeois)
+- **Tracey Emin "A Second Life"**: Largest retrospective at Tate Modern (Feb 27)
+- **Duchamp retrospective at MoMA**: 300 works, first US show in 53 years
+- **Snow drought 2026**: Worst on record in Upper Colorado Basin
+- **Robotaxi production**: Lucid/Nuro/Uber autonomous vehicles shipping
+- **BLACKPINK "DEADLINE"**: Four years of silence broken
+- 17 new whisper fragments + 10 new DigitalDecay meditations from this research
+
+### 164. Room Deepening — Sketchpad, ProjectionRoom, PalimpsestGallery
+- TheSketchpad: **Wabi-sabi celebration mechanic** — sharp angle changes in strokes spawn golden particles, celebrating imperfection. Inspired by wabi-sabi TikTok trend (2026), Lucian Freud's obsessive redrawings, GENUARY "intentional imperfection" prompt.
+- TheProjectionRoom: **Found footage fragments** — archival metadata text ("REEL 47B — SALT MINE VAULT — RECOVERED 2024") flashes during SMPTE reel changes. Inspired by EPiC Elvis discovery (68 boxes in Kansas salt mine), Iñárritu's SUEÑO PERRO (resurrected cutting room floor).
+- ThePalimpsestGallery: **Ovid's Metamorphoses ghost text** — quotes from Ovid drift slowly across paintings as barely-visible overlay. Inspired by Rijksmuseum Metamorphoses exhibition (Feb 2026), 80 works on transformation from Titian to Bourgeois.
+
 ---
-*Last updated: Era 9, Feature 160 — Five rooms deepened with architecture/space/sound research*
-*"the walls have been listening since before you arrived."*
+*Last updated: Era 9, Feature 164 — Labyrinth performance fixed, 4 rooms inscribed, 3 rooms deepened with cultural research*
+*"every photograph was already a lie. — Rijksmuseum FAKE!, 2026"*
