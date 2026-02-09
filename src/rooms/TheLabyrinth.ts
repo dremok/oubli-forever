@@ -48,20 +48,50 @@ const WALL_FRAGMENTS = [
   'which turn did I take?',
   'walls remember what feet forget',
   'the way out is the way through',
-  'corridors of grey matter',
   'one does not reach the center',
   'the thread is broken',
   'all labyrinths are one labyrinth',
-  'I thought I saw an exit',
   'the walls are shifting',
   'breadcrumbs dissolve',
-  'each passage a synapse',
   'forgetting the way back',
   'the maze dreams itself',
   'the corridor behind you has changed',
   'this wall was not here before',
   'you are the minotaur',
-  '3600 years of memory stored in wood, burning',
+  'something followed me here',
+  'the exit was inside you',
+  'who built this',
+  'do not look behind you',
+  'the walls are warm',
+  'I can hear it breathing',
+  'this is not a place',
+  'the floor remembers your weight',
+  'someone wrote this before you did',
+  'you forgot why you entered',
+  'the door you came through is gone',
+  'memory is a corridor that narrows',
+  'names dissolve first',
+  'the minotaur is also lost',
+  'time moves differently in here',
+  'the ceiling is lower than before',
+  'nothing here stays found',
+  'you were here yesterday',
+  'the walls are listening',
+  'forgetting is the oldest architecture',
+  'every dead end was once a door',
+  'the map is not the territory',
+  'you are being remembered',
+  'the labyrinth does not end',
+  'what you seek has already left',
+  'the echo knows your name',
+  'there is no minotaur. there is only the maze.',
+  'the passage behind you just closed',
+  'something in the walls is dreaming',
+  'you have been walking for years',
+  'the stone tastes like salt',
+  'each turn erases the last',
+  'the light source does not exist',
+  'who are you looking for',
 ]
 
 const CULTURAL_INSCRIPTIONS = [
@@ -456,8 +486,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // This is a wall — determine subtype
     const h2 = cellHash2(wx, wy)
-    if (h2 < 0.14) return INSCRIPTION  // ~14% of walls have text/memories
-    if (h2 < 0.19) return ANOMALY  // ~5% of walls are clickable anomalies
+    if (h2 < 0.07) return INSCRIPTION  // ~7% of walls have text — sparse, not overwhelming
+    if (h2 < 0.12) return ANOMALY  // ~5% of walls are clickable anomalies
 
     return WALL
   }
@@ -3182,6 +3212,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Raycasting
     const stripW = w / numRays
+    const visibleInscriptions: { text: string; isMemory: boolean; screenX: number; dist: number; brightness: number; wallTop: number; wallHeight: number; wx: number; wy: number }[] = []
     const visibleObjects: { obj: typeof WALL_OBJECTS[0]; screenX: number; wallTop: number; wallHeight: number; dist: number; brightness: number; wx: number; wy: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
@@ -3216,6 +3247,22 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
 
+      // Collect inscriptions
+      if (hit.cell === INSCRIPTION && correctedDist < 5) {
+        const insc = getInscriptionText(hit.hitX, hit.hitY)
+        visibleInscriptions.push({
+          text: insc.text,
+          isMemory: insc.isMemory,
+          screenX: i * stripW + stripW / 2,
+          dist: correctedDist,
+          brightness,
+          wallTop,
+          wallHeight,
+          wx: hit.hitX,
+          wy: hit.hitY,
+        })
+      }
+
       // Collect wall objects on anomaly walls (skip used ones)
       if (hit.cell === ANOMALY && correctedDist < 7) {
         const objKey = `${hit.hitX},${hit.hitY}`
@@ -3235,6 +3282,28 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           }
         }
       }
+    }
+
+    // Render wall inscriptions — simple font text on walls
+    const shownTexts = new Set<string>()
+    for (const insc of visibleInscriptions) {
+      if (shownTexts.has(`${insc.wx},${insc.wy}`)) continue
+      shownTexts.add(`${insc.wx},${insc.wy}`)
+
+      const yHash = cellHash2(insc.wx + 17, insc.wy + 31)
+      const wallY = insc.wallTop + insc.wallHeight * (0.3 + yHash * 0.4)
+      const fontSize = Math.max(7, Math.min(11, 13 / insc.dist))
+      const alpha = Math.min(0.4, insc.brightness * 0.5) * (0.6 + Math.sin(time * 0.3 + insc.wx * 0.7) * 0.15)
+      const color = insc.isMemory
+        ? `rgba(200, 170, 100, ${alpha})`
+        : `rgba(150, 140, 170, ${alpha * 0.7})`
+
+      ctx.save()
+      ctx.font = `${fontSize}px "Cormorant Garamond", serif`
+      ctx.fillStyle = color
+      ctx.textAlign = 'center'
+      ctx.fillText(insc.text.substring(0, 30), insc.screenX, wallY)
+      ctx.restore()
     }
 
     // Render wall objects — procedurally drawn 2D graphics
