@@ -85,6 +85,7 @@ import { SpacetimeRipple } from './effects/SpacetimeRipple'
 import { MemoryBleed } from './effects/MemoryBleed'
 import { VacuumFluctuations } from './effects/VacuumFluctuations'
 import { Mycelium } from './organisms/Mycelium'
+import { Fruiting } from './organisms/Fruiting'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -581,6 +582,14 @@ vacuumFluctuations.start()
 const mycelium = new Mycelium()
 mycelium.start()
 
+// The Fruiting — emergent events born from the Mycelium
+// When enough rooms ripen, the house bears fruit.
+const fruiting = new Fruiting({
+  mycelium,
+  getActiveRoom: () => roomManager.getActiveRoom(),
+})
+fruiting.start()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -593,6 +602,7 @@ roomManager.onRoomChange((room) => {
   spacetimeRipple.triggerRoomEvent(room)
   _prevRoom = room
   mycelium.onRoomEnter(room)
+  fruiting.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'
