@@ -1546,8 +1546,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // Wall breathing — walls expand and contract
     breathePhase = insanity > 0.1 ? Math.sin(time * 0.8) * insanity * 0.15 : 0
 
-    // Corridor stretch — disabled (made movement feel slow)
-    corridorStretch = 1
+    // Corridor stretch — distant walls appear further (visual only)
+    corridorStretch = insanity > 0.35 ? 1 + (insanity - 0.35) * 0.8 : 1
 
     // Horizon shift — the ground plane moves
     horizonShift = insanity > 0.4 ? Math.sin(time * 0.25) * (insanity - 0.4) * 40 : 0
@@ -1613,7 +1613,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       pa += effectiveTurnSpeed
     }
 
-    // Involuntary micro-movements — disabled (caused stutter)
+    // At high insanity, involuntary micro-movements (creepy ambient drift)
+    if (insanity > 0.6 && !moving) {
+      const driftAmount = (insanity - 0.6) * 0.008
+      px += Math.cos(time * 1.3) * driftAmount
+      py += Math.sin(time * 1.7) * driftAmount
+    }
 
     // Collision detection against world cells
     const margin = 0.2
