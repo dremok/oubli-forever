@@ -29,13 +29,21 @@ const STORAGE_KEY = 'oubli-cipher-progress'
 
 const CULTURAL_INSCRIPTIONS = [
   'the enigma machine had 158,962,555,217,826,360,000 possible settings. bletchley park tried them all.',
-  'the voynich manuscript has resisted decryption for 600 years. some codes are meant to stay locked.',
+  'the voynich manuscript may have been encrypted with dice and playing cards. a naibbe cipher, 600 years old.',
   "the zodiac killer's 340 cipher took 51 years to crack. the answer was disappointingly banal.",
-  'edward snowden proved that every message is being read. encryption is the last privacy.',
-  'quantum computers will break RSA encryption. post-quantum cryptography is already being deployed.',
-  "iGluSnFR4: a molecular sensor that eavesdrops on the brain's synaptic whispers in real time",
+  'kryptos K4: the solution was sold for $962,500 but remains secret. solving it reveals a hidden K5.',
+  'quantum no-cloning bypass: you can copy a message infinitely, but only read it once. then the key self-destructs.',
+  'JUMPSEAT: seven spy satellites orbited in secret for 35 years, listening. entire constellations no one knew existed.',
+  'algospeak: "unaliving" means killing, "corn" means porn. language mutates in real-time to evade machine surveillance.',
+  'harvest now, decrypt later. nation-states stockpile encrypted messages, waiting for quantum computers to crack them.',
+  "microsoft's majorana 1 chip uses a new state of matter. Q-day approaches — when all current encryption breaks.",
+  'poetics of encryption: black site, black box, black hole. three chapters of technological concealment.',
+  'AI cracks caesar and vigenère ciphers easily. against modern encryption, it sees only random noise.',
+  'polish SIGINT ships are named after the enigma codebreakers. rejewski, zygalski, rozycki — heroes who broke the unbreakable.',
+  'city-scale quantum encryption: two trapped atoms, entangled across 100km of fiber. unhackable whispers between cities.',
   "the brain's memory center has four hidden layers. 330,000 RNA molecules map the architecture of remembering.",
   'CRISPR can now silence genes without cutting them. memories can be mechanically un-silenced.',
+  'jim sanborn accidentally included the kryptos solution in files donated during cancer treatment. secrets leak through illness.',
 ]
 
 interface CipherPuzzle {
@@ -199,6 +207,51 @@ export function createCipherRoom(deps?: CipherDeps): Room {
   let enigmaGain2: GainNode | null = null
   let noiseSource: AudioBufferSourceNode | null = null
   let noiseGain: GainNode | null = null
+
+  // --- Intercepted signals (JUMPSEAT-inspired) ---
+  interface InterceptedSignal {
+    text: string
+    x: number
+    y: number
+    alpha: number // fades from 0.3 to 0
+    age: number
+    speed: number // drift speed
+  }
+  let interceptedSignals: InterceptedSignal[] = []
+  let interceptTimer = 0
+  const INTERCEPT_FRAGMENTS = [
+    'OBKR UOXOGHULBSOLIFBBWFLRVQQPRNGKS...',
+    'SIGINT RELAY 7: ANOMALY DETECTED',
+    'HARVEST PROTOCOL: STORE. WAIT. DECRYPT LATER.',
+    '01001101 01000101 01001101 01001111 01010010 01011001',
+    'MOLNIYA ORBIT: 63.4° INCLINATION',
+    '...the key self-destructs after one reading...',
+    'QKD HANDSHAKE: TWO TRAPPED ATOMS ENTANGLED',
+    'NAIBBE TABLE: ROLL 3d6, CONSULT CARD IX',
+    'K4: SOLUTION EXISTS. ACCESS DENIED.',
+    'ALGOSPEAK MUTATION: seggs → 5399s → /////',
+    'TOPOCONDUCTOR: NEW STATE OF MATTER DETECTED',
+    '...decryption window closing in 0:03...',
+  ]
+
+  // --- Frequency analysis ---
+  const ENGLISH_FREQ: Record<string, number> = {
+    a: 8.167, b: 1.492, c: 2.782, d: 4.253, e: 12.702, f: 2.228,
+    g: 2.015, h: 6.094, i: 6.966, j: 0.153, k: 0.772, l: 4.025,
+    m: 2.406, n: 6.749, o: 7.507, p: 1.929, q: 0.095, r: 5.987,
+    s: 6.327, t: 9.056, u: 2.758, v: 0.978, w: 2.360, x: 0.150,
+    y: 1.974, z: 0.074,
+  }
+  let showFreqAnalysis = false // toggle with 'f' key
+
+  // --- Solved message decay (quantum no-cloning) ---
+  // Each solved puzzle decays slightly each time you visit
+  const DECAY_KEY = 'oubli-cipher-decay'
+  let decayMap: Record<number, number> = {} // puzzleIdx -> decay level (0 = pristine, 1 = fully corrupted)
+
+  // --- Morse tapping ---
+  let morseTimer = 0
+  let morseQueue: number[] = [] // durations: short=0.06, long=0.18, gap=0.12
 
   // --- Visual: ink fade-in ---
   let inkFadeStartTime = 0 // time when current puzzle started
@@ -455,6 +508,174 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     } catch { /* ignore */ }
   }
 
+  // --- Intercepted signals ---
+
+  function spawnInterceptedSignal() {
+    if (!canvas) return
+    const w = canvas.width
+    const h = canvas.height
+    const text = INTERCEPT_FRAGMENTS[Math.floor(Math.random() * INTERCEPT_FRAGMENTS.length)]
+    interceptedSignals.push({
+      text,
+      x: Math.random() * w * 0.6 + w * 0.2,
+      y: Math.random() * h * 0.4 + h * 0.1,
+      alpha: 0.25 + Math.random() * 0.1,
+      age: 0,
+      speed: 0.2 + Math.random() * 0.4,
+    })
+    if (interceptedSignals.length > 3) interceptedSignals.shift()
+  }
+
+  function updateAndDrawInterceptedSignals(c: CanvasRenderingContext2D) {
+    for (let i = interceptedSignals.length - 1; i >= 0; i--) {
+      const sig = interceptedSignals[i]
+      sig.age += 0.016
+      sig.alpha -= 0.003
+      sig.x += sig.speed * 0.3
+      sig.y -= sig.speed * 0.1
+      if (sig.alpha <= 0) {
+        interceptedSignals.splice(i, 1)
+        continue
+      }
+      // Glitchy rendering — characters jitter
+      c.font = '10px monospace'
+      c.textAlign = 'left'
+      for (let ci = 0; ci < sig.text.length; ci++) {
+        const jitterY = (Math.random() - 0.5) * 1.5
+        const charAlpha = sig.alpha * (0.7 + Math.random() * 0.3)
+        // Some chars randomly replaced with static
+        const ch = Math.random() < 0.05 ? String.fromCharCode(33 + Math.floor(Math.random() * 60)) : sig.text[ci]
+        c.fillStyle = `rgba(120, 200, 160, ${charAlpha})`
+        c.fillText(ch, sig.x + ci * 7, sig.y + jitterY)
+      }
+    }
+  }
+
+  // --- Frequency analysis drawing ---
+
+  function getLetterFrequencies(text: string): Record<string, number> {
+    const counts: Record<string, number> = {}
+    let total = 0
+    for (const ch of text) {
+      if (ch >= 'a' && ch <= 'z') {
+        counts[ch] = (counts[ch] || 0) + 1
+        total++
+      }
+    }
+    const freq: Record<string, number> = {}
+    for (let i = 0; i < 26; i++) {
+      const ch = String.fromCharCode(97 + i)
+      freq[ch] = total > 0 ? ((counts[ch] || 0) / total) * 100 : 0
+    }
+    return freq
+  }
+
+  function drawFrequencyAnalysis(c: CanvasRenderingContext2D, w: number, h: number, attempt: string) {
+    if (!showFreqAnalysis) return
+    const freq = getLetterFrequencies(attempt)
+    const barW = Math.min(16, (w * 0.7) / 26)
+    const startX = w * 0.15
+    const baseY = h * 0.96
+    const maxH = h * 0.08
+
+    c.globalAlpha = 0.6
+    for (let i = 0; i < 26; i++) {
+      const ch = String.fromCharCode(97 + i)
+      const x = startX + i * barW
+      const textH = (freq[ch] / 15) * maxH
+      const engH = ((ENGLISH_FREQ[ch] || 0) / 15) * maxH
+
+      // English expected (dim outline)
+      c.strokeStyle = 'rgba(200, 180, 140, 0.15)'
+      c.lineWidth = 0.5
+      c.strokeRect(x + 1, baseY - engH, barW - 2, engH)
+
+      // Current text frequency (filled)
+      const match = Math.abs(freq[ch] - (ENGLISH_FREQ[ch] || 0))
+      const r = match < 2 ? 80 : 200
+      const g = match < 2 ? 220 : 100
+      c.fillStyle = `rgba(${r}, ${g}, 100, 0.3)`
+      c.fillRect(x + 1, baseY - textH, barW - 2, textH)
+
+      // Letter label
+      c.font = '8px monospace'
+      c.fillStyle = 'rgba(200, 180, 140, 0.15)'
+      c.textAlign = 'center'
+      c.fillText(ch, x + barW / 2, baseY + 8)
+    }
+    c.globalAlpha = 1.0
+
+    // Label
+    c.font = '9px monospace'
+    c.fillStyle = 'rgba(200, 180, 140, 0.1)'
+    c.textAlign = 'left'
+    c.fillText('frequency analysis [F]', startX, baseY - maxH - 4)
+  }
+
+  // --- Decay system ---
+
+  function loadDecay() {
+    try {
+      const stored = localStorage.getItem(DECAY_KEY)
+      if (stored) decayMap = JSON.parse(stored)
+    } catch { /* ignore */ }
+  }
+
+  function saveDecay() {
+    try {
+      localStorage.setItem(DECAY_KEY, JSON.stringify(decayMap))
+    } catch { /* ignore */ }
+  }
+
+  function incrementDecay(puzzleIdx: number) {
+    const current = decayMap[puzzleIdx] || 0
+    decayMap[puzzleIdx] = Math.min(1, current + 0.08) // 8% more corrupted each visit
+    saveDecay()
+  }
+
+  function applyDecay(text: string, decayLevel: number): string {
+    if (decayLevel <= 0) return text
+    const chars = text.split('')
+    for (let i = 0; i < chars.length; i++) {
+      if (chars[i] >= 'a' && chars[i] <= 'z' && Math.random() < decayLevel * 0.7) {
+        // Replace with static/corruption
+        const corruptions = ['░', '▒', '▓', '█', '·', '∿', '◌', '?']
+        chars[i] = corruptions[Math.floor(Math.random() * corruptions.length)]
+      }
+    }
+    return chars.join('')
+  }
+
+  // --- Morse tapping ---
+
+  function scheduleMorseTap() {
+    if (morseQueue.length > 0 || !audioInitialized || !audioMaster) return
+    // Random morse-like pattern: 3-7 taps
+    const count = 3 + Math.floor(Math.random() * 5)
+    for (let i = 0; i < count; i++) {
+      morseQueue.push(Math.random() < 0.6 ? 0.06 : 0.18) // short or long
+      morseQueue.push(0.1) // gap
+    }
+  }
+
+  function playMorseTap(duration: number) {
+    if (!audioInitialized || !audioMaster) return
+    try {
+      const ac = audioMaster.context
+      const now = ac.currentTime
+      const osc = ac.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = 600 + Math.random() * 100
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.004, now)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+      osc.connect(g)
+      g.connect(audioMaster)
+      osc.start(now)
+      osc.stop(now + duration + 0.01)
+    } catch { /* ignore */ }
+  }
+
   // --- Visual helpers ---
 
   function initCodeColumns() {
@@ -648,6 +869,13 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     }
   }
 
+  /** When revisiting a previously solved puzzle, increment its decay */
+  function applyVisitDecay() {
+    if (currentPuzzle < solvedCount) {
+      incrementDecay(currentPuzzle)
+    }
+  }
+
   function nextPuzzle() {
     if (currentPuzzle < PUZZLES.length - 1) {
       currentPuzzle++
@@ -674,6 +902,24 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     // Cipher wheel rotation
     wheelAngle += 0.0003
 
+    // Intercepted signals
+    interceptTimer += 0.016
+    if (interceptTimer > 6 + Math.random() * 8) {
+      interceptTimer = 0
+      spawnInterceptedSignal()
+    }
+
+    // Morse tapping
+    morseTimer += 0.016
+    if (morseTimer > 0.15 && morseQueue.length > 0) {
+      morseTimer = 0
+      const dur = morseQueue.shift()!
+      if (dur > 0.08) playMorseTap(dur) // only play actual taps, not gaps
+    }
+    if (morseQueue.length === 0 && Math.random() < 0.003) {
+      scheduleMorseTap()
+    }
+
     const w = canvas.width
     const h = canvas.height
 
@@ -683,6 +929,9 @@ export function createCipherRoom(deps?: CipherDeps): Room {
 
     // Scrolling code background (Matrix-style, barely visible)
     drawScrollingCode(ctx, w, h)
+
+    // Intercepted signal flashes
+    updateAndDrawInterceptedSignals(ctx)
 
     // Cipher wheel background decoration
     drawCipherWheel(ctx, w, h)
@@ -779,10 +1028,13 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     ctx.fillText('\u25C0', w / 2 - 60, alphaY + 58)
     ctx.fillText('\u25B6', w / 2 + 60, alphaY + 58)
 
-    // Decoded attempt — with character shimmer for correct chars
+    // Decoded attempt — with character shimmer for correct chars + decay
     ctx.font = '20px monospace'
     const decodeY = h * 0.62
-    const attemptLines = wrapText(attempt, maxCharsPerLine)
+    // Apply decay to previously solved puzzles
+    const decayLevel = decayMap[currentPuzzle] || 0
+    const displayAttempt = solved && decayLevel > 0 ? applyDecay(attempt, decayLevel) : attempt
+    const attemptLines = wrapText(displayAttempt, maxCharsPerLine)
 
     for (let li = 0; li < attemptLines.length; li++) {
       const line = attemptLines[li]
@@ -798,8 +1050,14 @@ export function createCipherRoom(deps?: CipherDeps): Room {
         const globalIdx = lineOffset + ci
 
         if (solved) {
-          // Solved — golden glow
-          ctx.fillStyle = `rgba(255, 215, 0, ${0.6 + Math.sin(time * 1.5 + ci * 0.2) * 0.15})`
+          // Solved — golden glow, but corrupted chars show as red
+          const ch = line[ci]
+          const isCorrupted = ch === '░' || ch === '▒' || ch === '▓' || ch === '█' || ch === '·' || ch === '∿' || ch === '◌'
+          if (isCorrupted) {
+            ctx.fillStyle = `rgba(180, 60, 60, ${0.3 + Math.sin(time * 3 + ci * 0.5) * 0.1})`
+          } else {
+            ctx.fillStyle = `rgba(255, 215, 0, ${0.6 + Math.sin(time * 1.5 + ci * 0.2) * 0.15})`
+          }
         } else {
           // Working — characters that match the real plaintext are brighter
           const isCorrectChar = globalIdx < puzzle.plaintext.length && attempt[globalIdx] === puzzle.plaintext[globalIdx]
@@ -934,6 +1192,18 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       ctx.fillText('type a destination...', w / 2, h - 22)
     }
 
+    // Frequency analysis overlay
+    drawFrequencyAnalysis(ctx, w, h, attempt)
+
+    // Decay status — show corruption warning for heavily decayed puzzles
+    if (solved && decayLevel > 0.2) {
+      ctx.font = '10px monospace'
+      ctx.fillStyle = `rgba(180, 60, 60, ${0.06 + decayLevel * 0.08})`
+      ctx.textAlign = 'right'
+      const pct = Math.floor(decayLevel * 100)
+      ctx.fillText(`signal degradation: ${pct}%`, w - 12, 25)
+    }
+
     // Cultural inscription — cycling every 20 seconds near bottom
     drawCulturalInscription(ctx, w, h)
 
@@ -941,7 +1211,7 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(200, 180, 140, 0.04)'
     ctx.textAlign = 'center'
-    ctx.fillText('\u2190 \u2192 or click arrows to shift \u00b7 each cipher hides a fragment of the creation myth', w / 2, h - 8)
+    ctx.fillText('\u2190 \u2192 shift \u00b7 F frequency analysis \u00b7 each cipher hides a fragment of the creation myth', w / 2, h - 8)
 
     // Stats
     ctx.font = '12px monospace'
@@ -1011,6 +1281,12 @@ export function createCipherRoom(deps?: CipherDeps): Room {
     if (e.key === 'Enter' && solved) {
       nextPuzzle()
       e.preventDefault()
+    }
+    // Toggle frequency analysis with F key (only when not typing a nav destination)
+    if ((e.key === 'f' || e.key === 'F') && navBuffer.length === 0 && !navMatchFound) {
+      showFreqAnalysis = !showFreqAnalysis
+      e.preventDefault()
+      return
     }
     // Navigation by typing room names (letter keys only)
     if (e.key.length === 1 && /[a-z]/i.test(e.key) && !navMatchFound && deps?.switchTo) {
@@ -1096,10 +1372,17 @@ export function createCipherRoom(deps?: CipherDeps): Room {
       inkFadeStartTime = 0
       wheelAngle = 0
       decryptionParticles = []
+      interceptedSignals = []
+      interceptTimer = 0
+      morseTimer = 0
+      morseQueue = []
+      showFreqAnalysis = false
       inscriptionTimer = 0
       currentInscriptionIdx = 0
       ghostLabelAlphas = ghostLabels.map(() => 0.05)
       loadProgress()
+      loadDecay()
+      applyVisitDecay()
       initCodeColumns()
       initAudio().then(() => fadeAudioIn())
       render()
