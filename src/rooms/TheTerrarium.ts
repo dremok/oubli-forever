@@ -35,6 +35,18 @@ interface Creature {
   senseRange: number
   hue: number
   generation: number
+  isPredator: boolean
+  huntCooldown: number
+}
+
+interface EnvironmentalEvent {
+  type: 'toxic_bloom' | 'drought' | 'temperature_spike' | 'mutation_wave'
+  x: number
+  y: number
+  radius: number
+  duration: number
+  elapsed: number
+  label: string
 }
 
 interface Food {
@@ -60,7 +72,12 @@ const CULTURAL_INSCRIPTIONS = [
   'craig venter created the first synthetic life form in 2010. JCVI-syn1.0. life, authored.',
   'tardigrades survive in space, boiling water, and radiation. memory encoded in survival itself.',
   'the alerce trees of patagonia have lived 3,600 years. this winter, they burned.',
-  'USC pacific asia museum: mythical creatures as immigrant memory. 12 immersive rooms, 5000 years of objects.',
+  'art basel qatar 2026, theme: "becoming." humanity\'s ongoing transformation. the creatures are always becoming.',
+  'MIT focused ultrasound: sound waves aimed at the brain to map consciousness. even awareness lives in a terrarium.',
+  'neuralink blindsight: a chip that writes images directly to the visual cortex. seeing without eyes.',
+  'weather whiplash, jan 2026: 50°C in australia and -40°C in the US. the terrarium of earth, out of balance.',
+  'CRISPR memory reversal: silenced genes reactivated. even DNA remembers what it was told to forget.',
+  'lotka-volterra equations: predator and prey locked in an eternal oscillation. neither wins. both persist.',
 ]
 
 export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
@@ -82,6 +99,20 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
   let maxGeneration = 0
   let gardenLink: HTMLElement | null = null
   let gardenLinkVisible = false
+
+  // Predator-prey ecosystem
+  let predatorCount = 0
+
+  // Environmental events
+  let envEvents: EnvironmentalEvent[] = []
+  let eventTimer = 0
+  const EVENT_INTERVAL = 35 // seconds between events
+
+  // Day/night cycle
+  let dayNightPhase = 0 // 0→1 full cycle
+  const DAY_NIGHT_SPEED = 0.0008 // ~20 min full cycle
+  let nightFactor = 0
+  let isNight = false
 
   // Audio state
   let ac: AudioContext | null = null
@@ -305,12 +336,26 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Seed initial creatures
+    predatorCount = 0
+    envEvents = []
+    eventTimer = 0
+    dayNightPhase = Math.random() // start at random time of day
+
+    // Seed initial creatures (herbivores)
     for (let i = 0; i < 20; i++) {
       creatures.push(spawnCreature(
         w * 0.2 + Math.random() * w * 0.6,
         h * 0.2 + Math.random() * h * 0.6,
         0,
+      ))
+    }
+
+    // Seed initial predators (3 red hunters)
+    for (let i = 0; i < 3; i++) {
+      creatures.push(spawnCreature(
+        w * 0.3 + Math.random() * w * 0.4,
+        h * 0.3 + Math.random() * h * 0.4,
+        0, undefined, true,
       ))
     }
 
@@ -320,26 +365,31 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     }
   }
 
-  function spawnCreature(x: number, y: number, gen: number, parentHue?: number): Creature {
-    const hue = parentHue !== undefined
-      ? parentHue + (Math.random() - 0.5) * 30 // mutation
-      : Math.random() * 360
+  function spawnCreature(x: number, y: number, gen: number, parentHue?: number, predator = false): Creature {
+    const hue = predator
+      ? 0 + (Math.random() - 0.5) * 20 // red-ish
+      : parentHue !== undefined
+        ? parentHue + (Math.random() - 0.5) * 30
+        : Math.random() * 360
 
     totalBorn++
     maxGeneration = Math.max(maxGeneration, gen)
+    if (predator) predatorCount++
 
     return {
       x, y,
       vx: (Math.random() - 0.5) * 2,
       vy: (Math.random() - 0.5) * 2,
-      energy: 50 + Math.random() * 30,
+      energy: predator ? 80 + Math.random() * 40 : 50 + Math.random() * 30,
       age: 0,
-      maxAge: 800 + Math.random() * 400,
-      speed: 0.8 + Math.random() * 0.8,
-      size: 3 + Math.random() * 2,
-      senseRange: 60 + Math.random() * 40,
+      maxAge: predator ? 600 + Math.random() * 300 : 800 + Math.random() * 400,
+      speed: predator ? 1.1 + Math.random() * 0.6 : 0.8 + Math.random() * 0.8,
+      size: predator ? 5 + Math.random() * 2 : 3 + Math.random() * 2,
+      senseRange: predator ? 100 + Math.random() * 50 : 60 + Math.random() * 40,
       hue: ((hue % 360) + 360) % 360,
       generation: gen,
+      isPredator: predator,
+      huntCooldown: 0,
     }
   }
 
@@ -358,8 +408,62 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Grow new food occasionally
-    if (food.length < 60 && Math.random() < 0.05) {
+    // Day/night cycle
+    dayNightPhase = (dayNightPhase + DAY_NIGHT_SPEED) % 1
+    isNight = dayNightPhase > 0.5
+    nightFactor = isNight ? 0.5 + 0.5 * Math.cos((dayNightPhase - 0.5) * Math.PI * 2) : 0
+    // Food grows faster during day, slower at night
+    const foodGrowthRate = isNight ? 0.02 : 0.07
+
+    // Environmental events
+    eventTimer += 0.016
+    if (eventTimer >= EVENT_INTERVAL && envEvents.length < 2) {
+      eventTimer = 0
+      const eventTypes: EnvironmentalEvent['type'][] = ['toxic_bloom', 'drought', 'temperature_spike', 'mutation_wave']
+      const type = eventTypes[Math.floor(Math.random() * eventTypes.length)]
+      const evt: EnvironmentalEvent = {
+        type,
+        x: w * 0.2 + Math.random() * w * 0.6,
+        y: h * 0.2 + Math.random() * h * 0.6,
+        radius: type === 'drought' ? w : 60 + Math.random() * 80,
+        duration: type === 'drought' ? 8 : type === 'mutation_wave' ? 10 : 6,
+        elapsed: 0,
+        label: type === 'toxic_bloom' ? 'toxic bloom' : type === 'drought' ? 'drought' : type === 'temperature_spike' ? 'heat wave' : 'mutation wave',
+      }
+      envEvents.push(evt)
+    }
+
+    // Update environmental events
+    for (let ei = envEvents.length - 1; ei >= 0; ei--) {
+      const evt = envEvents[ei]
+      evt.elapsed += 0.016
+      if (evt.elapsed >= evt.duration) {
+        envEvents.splice(ei, 1)
+        continue
+      }
+
+      // Apply event effects
+      if (evt.type === 'toxic_bloom') {
+        for (const c of creatures) {
+          const dx = c.x - evt.x
+          const dy = c.y - evt.y
+          if (dx * dx + dy * dy < evt.radius * evt.radius) {
+            c.energy -= 0.3 // poison damage
+          }
+        }
+      } else if (evt.type === 'temperature_spike') {
+        // Creatures near edges take damage (polar vortex)
+        for (const c of creatures) {
+          if (c.x < 40 || c.x > w - 40 || c.y < 40 || c.y > h - 40) {
+            c.energy -= 0.2
+          }
+        }
+      }
+    }
+
+    // Grow new food occasionally (affected by drought)
+    const isDrought = envEvents.some(e => e.type === 'drought')
+    if (food.length < 60 && Math.random() < (isDrought ? 0.005 : foodGrowthRate)) {
       food.push(spawnFood(w, h))
     }
 
@@ -375,37 +479,121 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       c.age++
       c.energy -= 0.1 + c.speed * 0.05 // metabolism cost
 
-      // Find nearest food
-      let nearestFood: Food | null = null
-      let nearestDist = Infinity
-      for (const f of food) {
-        const dx = f.x - c.x
-        const dy = f.y - c.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist < nearestDist && dist < c.senseRange) {
-          nearestFood = f
-          nearestDist = dist
+      // Night: creatures move slower
+      const speedMod = isNight ? 0.6 : 1.0
+
+      // Hunt cooldown
+      if (c.huntCooldown > 0) c.huntCooldown -= 0.016
+
+      if (c.isPredator) {
+        // Predators hunt herbivores
+        let nearestPrey: Creature | null = null
+        let nearestDist = Infinity
+        for (const prey of creatures) {
+          if (prey.isPredator || prey === c) continue
+          const dx = prey.x - c.x
+          const dy = prey.y - c.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist < nearestDist && dist < c.senseRange) {
+            nearestPrey = prey
+            nearestDist = dist
+          }
         }
-      }
 
-      // Steering
-      if (nearestFood) {
-        const dx = nearestFood.x - c.x
-        const dy = nearestFood.y - c.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        c.vx += (dx / dist) * 0.15
-        c.vy += (dy / dist) * 0.15
+        if (nearestPrey && c.huntCooldown <= 0) {
+          const dx = nearestPrey.x - c.x
+          const dy = nearestPrey.y - c.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          c.vx += (dx / dist) * 0.25 * speedMod
+          c.vy += (dy / dist) * 0.25 * speedMod
 
-        // Eat
-        if (dist < c.size + nearestFood.size) {
-          c.energy += nearestFood.energy
-          food.splice(food.indexOf(nearestFood), 1)
-          playChirp(c.hue)
+          // Kill prey on contact
+          if (dist < c.size + nearestPrey.size) {
+            c.energy += nearestPrey.energy * 0.6
+            nearestPrey.energy = -1 // mark for death
+            c.huntCooldown = 2 // 2 second cooldown between kills
+            playChirp(c.hue)
+          }
+        } else {
+          // Wander when no prey or on cooldown
+          c.vx += (Math.random() - 0.5) * 0.2
+          c.vy += (Math.random() - 0.5) * 0.2
+        }
+
+        // Predators also eat food but less efficiently
+        if (!nearestPrey) {
+          let nearestFood: Food | null = null
+          let fDist = Infinity
+          for (const f of food) {
+            const dx = f.x - c.x
+            const dy = f.y - c.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist < fDist && dist < c.senseRange * 0.5) {
+              nearestFood = f
+              fDist = dist
+            }
+          }
+          if (nearestFood && fDist < c.size + nearestFood.size) {
+            c.energy += nearestFood.energy * 0.3
+            food.splice(food.indexOf(nearestFood), 1)
+          }
         }
       } else {
-        // Wander
-        c.vx += (Math.random() - 0.5) * 0.3
-        c.vy += (Math.random() - 0.5) * 0.3
+        // Herbivores: flee from predators, seek food
+        let nearestPredator: Creature | null = null
+        let predDist = Infinity
+        for (const pred of creatures) {
+          if (!pred.isPredator) continue
+          const dx = pred.x - c.x
+          const dy = pred.y - c.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist < predDist && dist < c.senseRange * 0.8) {
+            nearestPredator = pred
+            predDist = dist
+          }
+        }
+
+        if (nearestPredator && predDist < c.senseRange * 0.5) {
+          // FLEE from predator (stronger than food attraction)
+          const dx = c.x - nearestPredator.x
+          const dy = c.y - nearestPredator.y
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          c.vx += (dx / dist) * 0.4 * speedMod
+          c.vy += (dy / dist) * 0.4 * speedMod
+        } else {
+          // Find nearest food
+          let nearestFood: Food | null = null
+          let nearestDist = Infinity
+          for (const f of food) {
+            const dx = f.x - c.x
+            const dy = f.y - c.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist < nearestDist && dist < c.senseRange) {
+              nearestFood = f
+              nearestDist = dist
+            }
+          }
+
+          // Steering
+          if (nearestFood) {
+            const dx = nearestFood.x - c.x
+            const dy = nearestFood.y - c.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            c.vx += (dx / dist) * 0.15 * speedMod
+            c.vy += (dy / dist) * 0.15 * speedMod
+
+            // Eat
+            if (dist < c.size + nearestFood.size) {
+              c.energy += nearestFood.energy
+              food.splice(food.indexOf(nearestFood), 1)
+              playChirp(c.hue)
+            }
+          } else {
+            // Wander
+            c.vx += (Math.random() - 0.5) * 0.3
+            c.vy += (Math.random() - 0.5) * 0.3
+          }
+        }
       }
 
       // Speed limit
@@ -440,14 +628,27 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       if (c.y > h - margin) { c.y = h - margin; c.vy *= -0.5 }
 
       // Reproduce when energy is high and population isn't too large
-      if (c.energy > 100 && creatures.length + newCreatures.length < 80 && Math.random() < 0.02) {
+      const reproThreshold = c.isPredator ? 130 : 100
+      const reproChance = c.isPredator ? 0.008 : 0.02
+      const maxPop = c.isPredator ? 12 : 80
+      const currentPop = c.isPredator ? predatorCount : creatures.length - predatorCount
+      if (c.energy > reproThreshold && currentPop + newCreatures.filter(n => n.isPredator === c.isPredator).length < maxPop && Math.random() < reproChance) {
         c.energy *= 0.5
-        newCreatures.push(spawnCreature(
+        const isMutationWave = envEvents.some(e => e.type === 'mutation_wave')
+        const child = spawnCreature(
           c.x + (Math.random() - 0.5) * 20,
           c.y + (Math.random() - 0.5) * 20,
           c.generation + 1,
-          c.hue,
-        ))
+          isMutationWave ? c.hue + (Math.random() - 0.5) * 120 : c.hue,
+          c.isPredator,
+        )
+        // Mutation wave: bigger size/speed variation
+        if (isMutationWave) {
+          child.speed *= 0.7 + Math.random() * 0.6
+          child.size *= 0.8 + Math.random() * 0.4
+          child.senseRange *= 0.8 + Math.random() * 0.4
+        }
+        newCreatures.push(child)
         playReproductionPop()
       }
 
@@ -467,6 +668,7 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     creatures = creatures.filter(c => {
       if (c.energy <= 0 || c.age > c.maxAge) {
         totalDied++
+        if (c.isPredator) predatorCount = Math.max(0, predatorCount - 1)
         playDeathSigh()
         creatureTrails.delete(c)
         // Death particles
@@ -510,6 +712,14 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
           0,
         ))
       }
+    }
+    // Reseed predators if they all die and herbivores are thriving
+    if (predatorCount === 0 && creatures.length > 15 && Math.random() < 0.002) {
+      creatures.push(spawnCreature(
+        w * 0.3 + Math.random() * w * 0.4,
+        h * 0.3 + Math.random() * h * 0.4,
+        0, undefined, true,
+      ))
     }
 
     // Compute zone densities — how many creatures are near each wall
@@ -619,8 +829,11 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     const w = canvas.width
     const h = canvas.height
 
-    // Background
-    ctx.fillStyle = 'rgba(8, 12, 8, 1)'
+    // Background — shifts with day/night cycle
+    const bgR = Math.floor(8 + nightFactor * 2)
+    const bgG = Math.floor(12 - nightFactor * 6)
+    const bgB = Math.floor(8 + nightFactor * 12)
+    ctx.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`
     ctx.fillRect(0, 0, w, h)
 
     // Terrarium glass (border)
@@ -708,29 +921,57 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
 
     // Draw creatures
     for (const c of creatures) {
-      const energyRatio = c.energy / 120
+      const energyRatio = c.energy / (c.isPredator ? 160 : 120)
       const ageRatio = c.age / c.maxAge
-      const alpha = Math.min(0.8, 0.3 + energyRatio * 0.5)
-      const sat = Math.max(20, 60 - ageRatio * 40)
+      const alpha = Math.min(0.8, 0.3 + energyRatio * 0.5) * (isNight ? 0.7 : 1)
+      const sat = Math.max(20, (c.isPredator ? 70 : 60) - ageRatio * 40)
 
-      // Body
-      ctx.fillStyle = `hsla(${c.hue}, ${sat}%, 55%, ${alpha})`
-      ctx.beginPath()
-      ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2)
-      ctx.fill()
+      if (c.isPredator) {
+        // Predator: angular body (triangle pointing in movement direction)
+        const angle = Math.atan2(c.vy, c.vx)
+        ctx.save()
+        ctx.translate(c.x, c.y)
+        ctx.rotate(angle)
+        ctx.beginPath()
+        ctx.moveTo(c.size * 1.5, 0) // nose
+        ctx.lineTo(-c.size, -c.size * 0.8)
+        ctx.lineTo(-c.size * 0.5, 0)
+        ctx.lineTo(-c.size, c.size * 0.8)
+        ctx.closePath()
+        ctx.fillStyle = `hsla(${c.hue}, ${sat}%, 45%, ${alpha})`
+        ctx.fill()
+        // Red eye
+        ctx.fillStyle = `rgba(255, 60, 30, ${alpha * 0.8})`
+        ctx.beginPath()
+        ctx.arc(c.size * 0.6, 0, 1.5, 0, Math.PI * 2)
+        ctx.fill()
+        // Faint danger aura
+        if (c.huntCooldown <= 0) {
+          ctx.beginPath()
+          ctx.arc(0, 0, c.size * 2.5, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(255, 30, 10, ${alpha * 0.03})`
+          ctx.fill()
+        }
+        ctx.restore()
+      } else {
+        // Herbivore: round body (original)
+        ctx.fillStyle = `hsla(${c.hue}, ${sat}%, 55%, ${alpha})`
+        ctx.beginPath()
+        ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2)
+        ctx.fill()
 
-      // Direction indicator (eye)
-      const angle = Math.atan2(c.vy, c.vx)
-      const eyeX = c.x + Math.cos(angle) * c.size * 0.6
-      const eyeY = c.y + Math.sin(angle) * c.size * 0.6
-      ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.6})`
-      ctx.beginPath()
-      ctx.arc(eyeX, eyeY, 1, 0, Math.PI * 2)
-      ctx.fill()
+        // Direction indicator (eye)
+        const angle = Math.atan2(c.vy, c.vx)
+        const eyeX = c.x + Math.cos(angle) * c.size * 0.6
+        const eyeY = c.y + Math.sin(angle) * c.size * 0.6
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.6})`
+        ctx.beginPath()
+        ctx.arc(eyeX, eyeY, 1, 0, Math.PI * 2)
+        ctx.fill()
+      }
 
-      // Sense range (very faint)
+      // Sense range (very faint) — hungry creatures
       if (c.energy < 30) {
-        // Hungry — show sense range
         ctx.strokeStyle = `hsla(${c.hue}, 30%, 50%, 0.03)`
         ctx.beginPath()
         ctx.arc(c.x, c.y, c.senseRange, 0, Math.PI * 2)
@@ -756,6 +997,97 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
       ctx.fill()
     }
 
+    // Environmental event rendering
+    for (const evt of envEvents) {
+      const progress = evt.elapsed / evt.duration
+      const fadeIn = Math.min(1, progress * 5)
+      const fadeOut = Math.min(1, (1 - progress) * 5)
+      const alpha = fadeIn * fadeOut
+
+      if (evt.type === 'toxic_bloom') {
+        // Sickly green cloud
+        const grad = ctx.createRadialGradient(evt.x, evt.y, 0, evt.x, evt.y, evt.radius)
+        grad.addColorStop(0, `rgba(40, 180, 20, ${alpha * 0.12})`)
+        grad.addColorStop(0.5, `rgba(80, 200, 40, ${alpha * 0.06})`)
+        grad.addColorStop(1, 'transparent')
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.arc(evt.x, evt.y, evt.radius, 0, Math.PI * 2)
+        ctx.fill()
+        // Spore particles
+        for (let s = 0; s < 3; s++) {
+          const sx = evt.x + (Math.random() - 0.5) * evt.radius * 2
+          const sy = evt.y + (Math.random() - 0.5) * evt.radius * 2
+          ctx.fillStyle = `rgba(80, 200, 40, ${alpha * 0.15})`
+          ctx.beginPath()
+          ctx.arc(sx, sy, 1 + Math.random() * 2, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      } else if (evt.type === 'drought') {
+        // Amber overlay across whole terrarium
+        ctx.fillStyle = `rgba(180, 120, 40, ${alpha * 0.04})`
+        ctx.fillRect(20, 20, w - 40, h - 40)
+        // Cracked earth lines
+        for (let d = 0; d < 6; d++) {
+          const dx = w * 0.15 + Math.sin(d * 1.7 + time * 0.1) * w * 0.35
+          const dy = h * 0.4 + Math.cos(d * 2.3 + time * 0.05) * h * 0.3
+          ctx.strokeStyle = `rgba(160, 100, 30, ${alpha * 0.06})`
+          ctx.lineWidth = 0.5
+          ctx.beginPath()
+          ctx.moveTo(dx, dy)
+          ctx.lineTo(dx + 15 + Math.random() * 20, dy + (Math.random() - 0.5) * 10)
+          ctx.stroke()
+        }
+      } else if (evt.type === 'temperature_spike') {
+        // Red heat at edges
+        const edgeGrad = ctx.createLinearGradient(0, 0, 60, 0)
+        edgeGrad.addColorStop(0, `rgba(255, 40, 10, ${alpha * 0.1})`)
+        edgeGrad.addColorStop(1, 'transparent')
+        ctx.fillStyle = edgeGrad
+        ctx.fillRect(0, 0, 60, h)
+        const edgeGrad2 = ctx.createLinearGradient(w, 0, w - 60, 0)
+        edgeGrad2.addColorStop(0, `rgba(255, 40, 10, ${alpha * 0.1})`)
+        edgeGrad2.addColorStop(1, 'transparent')
+        ctx.fillStyle = edgeGrad2
+        ctx.fillRect(w - 60, 0, 60, h)
+      } else if (evt.type === 'mutation_wave') {
+        // Shimmering rainbow pulse
+        const grad = ctx.createRadialGradient(evt.x, evt.y, 0, evt.x, evt.y, evt.radius * 2)
+        const shimmerHue = (time * 60) % 360
+        grad.addColorStop(0, `hsla(${shimmerHue}, 70%, 50%, ${alpha * 0.08})`)
+        grad.addColorStop(0.5, `hsla(${shimmerHue + 60}, 60%, 40%, ${alpha * 0.04})`)
+        grad.addColorStop(1, 'transparent')
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.arc(evt.x, evt.y, evt.radius * 2, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // Event label
+      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(200, 180, 140, ${alpha * 0.2})`
+      ctx.textAlign = 'center'
+      ctx.fillText(evt.label, evt.type === 'drought' ? w / 2 : evt.x, evt.type === 'drought' ? 50 : evt.y - evt.radius - 8)
+    }
+
+    // Day/night indicator — subtle moon or sun
+    if (nightFactor > 0.2) {
+      const moonX = w - 50
+      const moonY = 50
+      ctx.beginPath()
+      ctx.arc(moonX, moonY, 8, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(180, 200, 240, ${nightFactor * 0.1})`
+      ctx.fill()
+      // Moonlight glow
+      const moonGlow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 40)
+      moonGlow.addColorStop(0, `rgba(150, 180, 220, ${nightFactor * 0.04})`)
+      moonGlow.addColorStop(1, 'transparent')
+      ctx.fillStyle = moonGlow
+      ctx.beginPath()
+      ctx.arc(moonX, moonY, 40, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
     // Title
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(120, 160, 120, ${0.08 + Math.sin(time * 0.3) * 0.02})`
@@ -763,14 +1095,19 @@ export function createTerrariumRoom(deps: TerrariumDeps = {}): Room {
     ctx.fillText('the terrarium', w / 2, 30)
 
     // Stats
+    const statAlpha = isNight ? 0.06 : 0.1
     ctx.font = '12px monospace'
-    ctx.fillStyle = 'rgba(120, 160, 120, 0.1)'
+    ctx.fillStyle = `rgba(120, 160, 120, ${statAlpha})`
     ctx.textAlign = 'left'
-    ctx.fillText(`population: ${creatures.length}`, 25, h - 35)
+    ctx.fillText(`herbivores: ${creatures.length - predatorCount}`, 25, h - 47)
+    ctx.fillText(`predators: ${predatorCount}`, 25, h - 35)
     ctx.fillText(`food: ${food.length}`, 25, h - 23)
 
     ctx.textAlign = 'center'
     ctx.fillText(`born: ${totalBorn} · died: ${totalDied}`, w / 2, h - 23)
+    // Time of day
+    const timeLabel = dayNightPhase < 0.15 ? 'dawn' : dayNightPhase < 0.35 ? 'day' : dayNightPhase < 0.5 ? 'dusk' : dayNightPhase < 0.85 ? 'night' : 'dawn'
+    ctx.fillText(timeLabel, w / 2, h - 35)
 
     ctx.textAlign = 'right'
     ctx.fillText(`gen ${maxGeneration}`, w - 25, h - 35)
