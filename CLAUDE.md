@@ -53,13 +53,14 @@ After context compaction/reset:
 - Each new room should feel genuinely different, but still part of the same house.
 - **WebGPU compute shaders** are now cross-browser (2026). Million-particle simulations at 60fps. Three.js TSL compiles to both WGSL and GLSL. Use `WebGPURenderer` with automatic WebGL 2 fallback for heavy rooms.
 - **Intentional imperfection is the 2026 aesthetic** — visible process marks, scan artifacts, hand-drawn textures over digital geometry. "Guaranteed human" is a premium. Oubli should feel made, not generated.
-- **The Temporal API** is now in browsers — timezone-aware, immutable date/time. Use for precise decay calculations, duration tracking, cross-timezone synchronization.
+- **Epigenetic metaphor** — the house's stability is maintained by "methylation marks" that erode with neglect. Content transposes between rooms uninvited when marks decay. Attention protects; absence degrades.
+- **Premonitions and croak dreams** — Puma Blue's "Croak Dream" (Feb 2026): the house occasionally shows you what a room will look like when fully forgotten. Death flashes. The house dreams of its own end.
+- **Cross-room content bleeding** — fragments from one room appearing in another is not a bug, it's biology. Transposable elements, methylation decay, memory bleed. The house's genome is becoming unstable.
 
 ## Cultural Grounding — CRITICAL
 - **Every new feature must be inspired by something real** — current events, cultural trends, scientific discoveries, art movements, technological shifts, social phenomena happening NOW (2025-2026).
 - Do NOT build generic rooms. Build rooms that could only exist in this specific moment in time.
 - **Web search BEFORE building.** Find what's happening in the world — new research, cultural moments, emerging technologies, viral phenomena, political shifts, environmental events — and let those inspire features.
-- **Use external data innovatively.** Don't just fetch and display data — transform it, let it drive aesthetics, make it emotional, combine it with the memory system, use it as a metaphor.
 - The goal: someone visiting Oubli should feel they are experiencing THIS moment in time, not a timeless generic art piece.
 
 ## Navigation — GRAPH + IN-ROOM PORTALS (Restructured)
@@ -76,8 +77,6 @@ After context compaction/reset:
 - The passage bar exists so NO ONE gets lost, but the rich navigation is IN the rooms
 - Every surface room must be reachable within 4 hops from the void
 - Hidden rooms still require discovery through in-room actions
-- **IMPORTANT: Most rooms still LACK in-room portals.** The passage bar is contextual but still just text links. The PRIMARY navigation should be in-room elements — objects, portals, objectives, thematic triggers. Every room needs its own unique way of connecting to neighbors. This is ongoing work — keep adding in-room navigation to every room you touch.
-
 ## Evolution — LIVING ORGANISM, NOT STATIC COLLECTION
 - Oubli is a **living organism**, not a static collection of rooms with features
 - It will evolve and change over time — eventually becoming something completely different
