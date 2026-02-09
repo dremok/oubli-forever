@@ -1624,6 +1624,57 @@ Keywords in user memories trigger procedural symbol drawings on walls: sun (with
 - **47% of young adults** seek guidance through divinatory practices, astrology app market at $3 billion
 - **Forgetting the Future**: Torrance Art Museum exhibition on entropy in the reflective age
 
+### 156. TheClockTower Deepened — Time Cells, Distortion Ring, Time Crystals (1148→1315 lines)
+- Hippocampal time cells: 60 neurons around clock edge fire as second hand sweeps, creating green neural timestamp spikes that decay
+- Chronometric distortion ring: outer ring warps based on user activity — stretches blue when time slows (mouse active), amber when compresses (idle)
+- Time crystal particles: 12 blue-cyan perpetual orbiting particles that never decay (NYU levitating time crystal)
+- 16 cultural inscriptions (was 8): NYU time crystals, second redefinition, leap seconds abolished, time cells in hippocampus, Tehching Hsieh, Marclay's The Clock, time dilation during fear, CANYON museum
+
+### Cultural Research Round 15 — Time & Clocks (Feb 2026)
+- **NYU levitating time crystal**: State that repeats forever without energy, trapped in magnetic field
+- **Second being redefined**: Optical atomic clocks measure 430 trillion oscillations per second
+- **Leap seconds abolished by 2035**: World decided to let clocks drift from the sun
+- **Hippocampal time cells**: Brain timestamps every memory with sequential neural firing
+- **Tehching Hsieh**: Punched time clock every hour for one year, 8760 photographs, 133 gaps
+- **Marclay's The Clock**: 24-hour film where every frame shows a clock matching real time
+- **CANYON museum**: NYC museum dedicated to time-based art, nothing permanent
+
+### 157. ThePendulum Deepened — Gravitational Waves, Cymatics, Sympathetic Resonance (1083→1223 lines)
+- Gravitational wave ripple: periodic spacetime distortion passes through harmonograph, stretching x while compressing y, with expanding violet rings
+- Cymatics node accumulation: bright warm dots appear where trace repeatedly crosses itself, revealing standing wave patterns
+- Sympathetic resonance (Huygens' effect): nav bobs that swing in sync get connected by golden threads and gently entrain each other's phase
+- 16 cultural inscriptions (was 10): GW250114, cymatics, Sonic Acts "Melted for Love", Sagrada Familia, entrainment, Tacoma Narrows
+
+### 158. TheArchive Deepened — Cultural Inscriptions, Phantom Shelves, Search Ghosts (1150→1310 lines)
+- 16 cultural inscriptions (new, had none!): Borges Library of Babel, Alexandria, "Walls Have Ears" (Sonic Acts), Alba's Citadel, Lucian Freud, Lucas Museum, Dead Sea Scrolls, Internet Archive, Sebald, LIGO GW250114, muscle memory
+- Phantom shelves: faint receding bookshelf outlines with book spines along left and right edges
+- Search echo ghosts: previous search queries linger as slowly drifting, fading text in the background
+
+### 159. ThePalimpsestGallery Deepened — Ghost Frames, Patina, Scrape Depth (1160→1237 lines)
+- Ghost frame: when switching paintings, previous frame outline persists briefly as dashed golden trace
+- Patina accumulation: golden varnish overlay develops with observation time
+- Scrape depth cross-section: parchment layer visualization at painting edge (paint/gesso/text/vellum)
+- 16 cultural inscriptions (was 10): Lucian Freud, Alba's Citadel, muscle memory, Rauschenberg erasing de Kooning, multispectral imaging, Jenny Holzer
+
+### 160. TheStudy Deepened — Culturally Grounded Prompts, Milestones, Margin Notes (1178→1271 lines)
+- 8 new writing prompts from Feb 2026 research (Sagrada Familia, LIGO, JWST dark matter, Artemis 2, Sonic Acts, Milan Olympics, zero gravity)
+- Word count milestones: golden ring flash at 100/250/500/1000/2000 words (365 Buttons phenomenon)
+- Margin notes: memory fragments appear in margins every 50 words, like medieval manuscript marginalia
+
+### Cultural Research Round 16 — Architecture, Space, Sound (Feb 2026)
+- **Sagrada Familia completion**: Tallest tower completing 2026, 100 years after Gaudi's death
+- **JWST dark matter map**: Most detailed map of invisible cosmic filaments (COSMOS-Web survey)
+- **GW250114**: Clearest gravitational wave ever — two black holes merging, SNR 77-80
+- **Sonic Acts "Melted for Love"**: 200+ artists, 60-speaker Acousmonium, "Ecologies of Endurance"
+- **"Walls Have Ears"**: Sound studies residency — architecture as listening device
+- **Lucian Freud drawings**: 170 drawings shown for first time, obsessive re-drawing of same faces
+- **Crew-12 body adaptation**: Body forgets gravity — bones thin, fluids redistribute
+- **Artemis 2**: Humans return to lunar orbit after 54-year gap, but won't land
+- **Alba's Citadel**: Demolished 300 years ago, still being fought over in memory (Antwerp exhibition)
+- **Muscle Memory exhibition**: Photography as "tracing what the body remembers"
+- **Lucas Museum**: $1B spaceship-shaped building for narrative art (MAD Architects, LA)
+- **Milan Olympics Village**: Architecture designed for abandonment in 16 days
+
 ---
-*Last updated: Era 9, Feature 155 — Four rooms deepened with fresh cultural research*
-*"the oracle remembers what it told you. the cipher forgets what you solved."*
+*Last updated: Era 9, Feature 160 — Five rooms deepened with architecture/space/sound research*
+*"the walls have been listening since before you arrived."*
