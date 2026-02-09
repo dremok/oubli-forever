@@ -40,6 +40,18 @@ const KEEP_RADIUS = 3
 // Maze parameters
 const DOOR_THRESHOLD = 0.38
 
+// Numeric key encoding for Map/Set — avoids string allocation in hot paths
+// Handles coordinates in [-50000, 50000] without collision
+function numKey(x: number, y: number): number {
+  return (x + 50000) * 100001 + (y + 50000)
+}
+function numKeyX(key: number): number {
+  return Math.floor(key / 100001) - 50000
+}
+function numKeyY(key: number): number {
+  return (key % 100001) - 50000
+}
+
 // Text fragments on walls
 const WALL_FRAGMENTS = [
   'every path divides',
@@ -155,19 +167,19 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
 
   // Wall overrides — periodically opened walls to prevent getting stuck
-  const wallOverrides = new Map<string, number>()
+  const wallOverrides = new Map<number, number>()
   let lastWallOpenTime = 0
   const WALL_OPEN_INTERVAL = 20 // seconds between random wall openings
 
   // Region salts for the forgetting mechanic
-  const regionSalts = new Map<string, number>()
-  const activeRegions = new Set<string>()
+  const regionSalts = new Map<number, number>()
+  const activeRegions = new Set<number>()
 
   // Explored cells for minimap
-  const exploredCells = new Set<string>()
+  const exploredCells = new Set<number>()
 
   // Minimap ghost regions (evicted)
-  const ghostRegions = new Set<string>()
+  const ghostRegions = new Set<number>()
 
   // Tension system
   let tension = 0
@@ -198,7 +210,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let anomalyScreenX = 0
   let anomalyWX = 0
   let anomalyWY = 0
-  const usedAnomalies = new Set<string>() // walls that have been clicked already
+  const usedAnomalies = new Set<number>() // walls that have been clicked already
 
   // Ambient creepy sound system
   const ambientCreepyBuffers: AudioBuffer[] = []
@@ -443,16 +455,16 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   // ===== HASH-BASED INFINITE MAZE =====
 
-  function regionKey(wx: number, wy: number): string {
+  function regionKey(wx: number, wy: number): number {
     const rx = Math.floor(wx / REGION_SIZE)
     const ry = Math.floor(wy / REGION_SIZE)
-    return `${rx},${ry}`
+    return numKey(rx, ry)
   }
 
   function cellHash(wx: number, wy: number): number {
     const rx = Math.floor(wx / REGION_SIZE)
     const ry = Math.floor(wy / REGION_SIZE)
-    const salt = regionSalts.get(`${rx},${ry}`) ?? 0
+    const salt = regionSalts.get(numKey(rx, ry)) ?? 0
     let h = (wx * 374761393 + wy * 668265263 + (salt + sessionSeed) * 1013904223) | 0
     h = Math.imul(h ^ (h >>> 13), 1274126177)
     h = h ^ (h >>> 16)
@@ -462,7 +474,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   function cellHash2(wx: number, wy: number): number {
     const rx = Math.floor(wx / REGION_SIZE)
     const ry = Math.floor(wy / REGION_SIZE)
-    const salt = regionSalts.get(`${rx},${ry}`) ?? 0
+    const salt = regionSalts.get(numKey(rx, ry)) ?? 0
     let h = (wx * 668265263 + wy * 374761393 + (salt + sessionSeed) * 2654435769) | 0
     h = Math.imul(h ^ (h >>> 13), 2246822507)
     h = h ^ (h >>> 16)
@@ -484,7 +496,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function getWorldCell(wx: number, wy: number): number {
     // Check wall overrides first (manually opened walls)
-    const overrideKey = `${wx},${wy}`
+    const overrideKey = numKey(wx, wy)
     if (wallOverrides.has(overrideKey)) return wallOverrides.get(overrideKey)!
 
     const xOdd = (wx & 1) === 1
@@ -543,13 +555,20 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     return PORTAL_TARGETS[idx % PORTAL_TARGETS.length]
   }
 
+  // Cache inscription texts to avoid rebuilding arrays every frame
+  let cachedAllTexts: string[] | null = null
+  let cachedAllTextsTime = -1
+
   function getInscriptionText(wx: number, wy: number): { text: string; isMemory: boolean } {
-    const memTexts = deps.getMemories?.().map(m => m.currentText).filter(t => t.length > 3) ?? []
-    // Weight memories 3x heavier so they appear more often on walls
-    const weightedMems = [...memTexts.slice(0, 10), ...memTexts.slice(0, 10), ...memTexts.slice(0, 10)]
-    const allTexts = [...WALL_FRAGMENTS, ...weightedMems]
-    const idx = Math.floor(cellHash2(wx + 3, wy + 7) * allTexts.length)
-    const text = allTexts[idx % allTexts.length]
+    // Rebuild cache every 5 seconds (memories rarely change)
+    if (!cachedAllTexts || time - cachedAllTextsTime > 5) {
+      const memTexts = deps.getMemories?.().map(m => m.currentText).filter(t => t.length > 3) ?? []
+      const weightedMems = [...memTexts.slice(0, 10), ...memTexts.slice(0, 10), ...memTexts.slice(0, 10)]
+      cachedAllTexts = [...WALL_FRAGMENTS, ...weightedMems]
+      cachedAllTextsTime = time
+    }
+    const idx = Math.floor(cellHash2(wx + 3, wy + 7) * cachedAllTexts.length)
+    const text = cachedAllTexts[idx % cachedAllTexts.length]
     const isMemory = idx >= WALL_FRAGMENTS.length
     return { text, isMemory }
   }
@@ -560,10 +579,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const prx = Math.floor(px / REGION_SIZE)
     const pry = Math.floor(py / REGION_SIZE)
 
-    const newActive = new Set<string>()
+    const newActive = new Set<number>()
     for (let dx = -KEEP_RADIUS; dx <= KEEP_RADIUS; dx++) {
       for (let dy = -KEEP_RADIUS; dy <= KEEP_RADIUS; dy++) {
-        newActive.add(`${prx + dx},${pry + dy}`)
+        newActive.add(numKey(prx + dx, pry + dy))
       }
     }
 
@@ -1200,8 +1219,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (currentEffect) return
 
     // Mark this anomaly as used — can only click each wall once
-    const key = `${anomalyWX},${anomalyWY}`
-    usedAnomalies.add(key)
+    usedAnomalies.add(numKey(anomalyWX, anomalyWY))
 
     // Try object-specific interaction first
     if (triggerObjectInteraction()) return
@@ -1637,7 +1655,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (checkCellY === 0) py = newY
 
     // Track explored cells
-    exploredCells.add(`${Math.floor(px)},${Math.floor(py)}`)
+    exploredCells.add(numKey(Math.floor(px), Math.floor(py)))
 
     // Periodically open a random wall near the player to prevent dead ends
     if (time - lastWallOpenTime > WALL_OPEN_INTERVAL) {
@@ -1655,7 +1673,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
           const yOdd = (wy & 1) === 1
           // Only door positions (mixed parity) that are currently walls
           if (xOdd === yOdd) continue
-          if (wallOverrides.has(`${wx},${wy}`)) continue
+          if (wallOverrides.has(numKey(wx, wy))) continue
           const cell = getWorldCell(wx, wy)
           if (cell === WALL || cell === INSCRIPTION) {
             candidates.push([wx, wy])
@@ -1664,7 +1682,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       }
       if (candidates.length > 0) {
         const [owx, owy] = candidates[Math.floor(Math.random() * candidates.length)]
-        wallOverrides.set(`${owx},${owy}`, 0)
+        wallOverrides.set(numKey(owx, owy), 0)
       }
     }
 
@@ -1676,9 +1694,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const floorPx = Math.floor(px)
       const floorPy = Math.floor(py)
       for (const key of exploredCells) {
-        const comma = key.indexOf(',')
-        const cx = parseInt(key.substring(0, comma))
-        const cy = parseInt(key.substring(comma + 1))
+        const cx = numKeyX(key)
+        const cy = numKeyY(key)
         if (Math.abs(cx - floorPx) > 60 || Math.abs(cy - floorPy) > 60) {
           exploredCells.delete(key)
         }
@@ -1696,7 +1713,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Check what center ray hits (for anomaly clicking)
     const centerHit = castRay(px, py, pa)
-    const anomalyKey = `${centerHit.hitX},${centerHit.hitY}`
+    const anomalyKey = numKey(centerHit.hitX, centerHit.hitY)
     lookingAtAnomaly = centerHit.cell === ANOMALY && centerHit.dist < 3.5 && !usedAnomalies.has(anomalyKey)
     anomalyDist = centerHit.dist
     anomalyScreenX = canvas ? canvas.width / 2 : 400
@@ -2613,30 +2630,29 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const centerWX = Math.floor(px)
     const centerWY = Math.floor(py)
 
-    for (const key of exploredCells) {
-      const comma = key.indexOf(',')
-      const cwx = parseInt(key.substring(0, comma))
-      const cwy = parseInt(key.substring(comma + 1))
-      const ddx = cwx - centerWX
-      const ddy = cwy - centerWY
+    // Iterate view area instead of all explored cells — O(viewRadius²) vs O(n)
+    for (let ddx = -viewRadius; ddx <= viewRadius; ddx++) {
+      for (let ddy = -viewRadius; ddy <= viewRadius; ddy++) {
+        const cwx = centerWX + ddx
+        const cwy = centerWY + ddy
+        if (!exploredCells.has(numKey(cwx, cwy))) continue
 
-      if (Math.abs(ddx) > viewRadius || Math.abs(ddy) > viewRadius) continue
+        const rk = regionKey(cwx, cwy)
+        const isGhost = ghostRegions.has(rk)
 
-      const rk = regionKey(cwx, cwy)
-      const isGhost = ghostRegions.has(rk)
+        const screenX = mapX + (ddx + viewRadius) * cellSize
+        const screenY = mapY + (ddy + viewRadius) * cellSize
 
-      const screenX = mapX + (ddx + viewRadius) * cellSize
-      const screenY = mapY + (ddy + viewRadius) * cellSize
-
-      if (isGhost) {
-        ctx.fillStyle = 'rgba(60, 40, 60, 0.12)'
-      } else {
-        const cell = getWorldCell(cwx, cwy)
-        ctx.fillStyle = cell === 0
-          ? 'rgba(40, 80, 40, 0.25)'
-          : 'rgba(30, 60, 30, 0.45)'
+        if (isGhost) {
+          ctx.fillStyle = 'rgba(60, 40, 60, 0.12)'
+        } else {
+          const cell = getWorldCell(cwx, cwy)
+          ctx.fillStyle = cell === 0
+            ? 'rgba(40, 80, 40, 0.25)'
+            : 'rgba(30, 60, 30, 0.45)'
+        }
+        ctx.fillRect(screenX, screenY, cellSize + 0.5, cellSize + 0.5)
       }
-      ctx.fillRect(screenX, screenY, cellSize + 0.5, cellSize + 0.5)
     }
 
     // Player dot
@@ -3409,7 +3425,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       // Collect wall objects on anomaly walls (skip used ones)
       if (hit.cell === ANOMALY && correctedDist < 7) {
-        const objKey = `${hit.hitX},${hit.hitY}`
+        const objKey = numKey(hit.hitX, hit.hitY)
         if (!usedAnomalies.has(objKey)) {
           const obj = getWallObject(hit.hitX, hit.hitY)
           if (obj) {
@@ -3429,10 +3445,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
 
     // Render wall inscriptions — simple font text on walls
-    const shownTexts = new Set<string>()
+    const shownTexts = new Set<number>()
     for (const insc of visibleInscriptions) {
-      if (shownTexts.has(`${insc.wx},${insc.wy}`)) continue
-      shownTexts.add(`${insc.wx},${insc.wy}`)
+      const inscKey = numKey(insc.wx, insc.wy)
+      if (shownTexts.has(inscKey)) continue
+      shownTexts.add(inscKey)
 
       const yHash = cellHash2(insc.wx + 17, insc.wy + 31)
       const wallY = insc.wallTop + insc.wallHeight * (0.3 + yHash * 0.4)
@@ -3451,9 +3468,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
 
     // Render wall objects — procedurally drawn 2D graphics
-    const shownObjects = new Set<string>()
+    const shownObjects = new Set<number>()
     for (const vo of visibleObjects) {
-      const key = `${vo.wx},${vo.wy}`
+      const key = numKey(vo.wx, vo.wy)
       if (shownObjects.has(key)) continue
       shownObjects.add(key)
 
@@ -3768,7 +3785,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       inscriptionText = ''
       inscriptionAlpha = 0
 
-      // Reset wiki for fresh session
+      // Reset caches for fresh session
+      cachedAllTexts = null
       currentFragment = null
       lastFetchTime = time
       fetchIntervalSec = 8 + Math.random() * 10
