@@ -119,6 +119,12 @@ export function createGlaciariumRoom(deps: GlaciariumDeps): Room {
     'in some materials, electrons stop being particles. topology persists after identity dissolves.',
     'february 17, 2026: a ring of fire over antarctica. an eclipse that only penguins will witness.',
     'snow drought: colorado and utah at record-low snowpack. the mountains forgot how to hold winter.',
+    'lake powell at 26%, lake mead at 34%. the west\u2019s water runs on memory of snow that no longer falls.',
+    'calving: when a glacier sheds an iceberg, the sound is like thunder. memory breaks the same way.',
+    'the little ice age ended in 1850. we\u2019ve been forgetting winter for 176 years.',
+    'polar vortex split feb 2026: atmosphere\u2019s protective structure breaking apart.',
+    'glacial erratic: a boulder carried by ice thousands of miles. memory displaced by climate.',
+    'wabi-sabi: imperfection as beauty. a melting crystal is more beautiful than a perfect one.',
   ]
   let inscriptionIndex = 0
   let inscriptionTimer = 0

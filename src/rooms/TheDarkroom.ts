@@ -57,6 +57,9 @@ const CULTURAL_INSCRIPTIONS = [
   'empac\'s "staging grounds" restages experience across time — a thai myth evoked, a forbidden frontier field-recorded',
   'she speaks: black women artists encoding historical memory into art that outlives the forgetting',
   'every photograph is an act of embalming — you stop time, coat it in silver, and call it remembering',
+  'rijksmuseum FAKE! (2026): photo manipulation existed in the 1860s. scissors, glue, ink, pencil.',
+  'the composite photograph is older than the camera itself. every image was always a construction.',
+  'parkinson\'s blood test: the brain decays 20 years before you notice. the darkroom develops what was always there.',
 ]
 
 interface DustMote {
@@ -749,15 +752,31 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       const img = document.createElement('img')
       img.src = print.imageUrl
       // Age effect: sepia increases, contrast decreases
+      // FAKE! exhibition inspired: old prints develop composite artifacts
       const sepia = print.age * 80
       const contrast = 100 - print.age * 30
       const brightness = 100 - print.age * 15
+      const hueRotate = print.age > 0.4 ? Math.floor((print.age - 0.4) * 25) : 0
       img.style.cssText = `
         width: 100%; height: 100%; object-fit: cover;
-        filter: sepia(${sepia}%) contrast(${contrast}%) brightness(${brightness}%);
+        filter: sepia(${sepia}%) contrast(${contrast}%) brightness(${brightness}%) hue-rotate(${hueRotate}deg);
         transition: filter 0.3s ease;
       `
       card.appendChild(img)
+
+      // Composite seam artifact for aged prints (Rijksmuseum FAKE! 2026)
+      if (print.age > 0.3) {
+        const seam = document.createElement('div')
+        const seamY = 20 + ((print.id.charCodeAt(0) || 0) % 60)
+        const seamAlpha = Math.min(0.15, (print.age - 0.3) * 0.2)
+        seam.style.cssText = `
+          position: absolute; left: 0; width: 100%;
+          top: ${seamY}%; height: 1px;
+          background: linear-gradient(90deg, transparent 5%, rgba(200,180,140,${seamAlpha}) 20%, rgba(200,180,140,${seamAlpha * 0.5}) 80%, transparent 95%);
+          pointer-events: none;
+        `
+        card.appendChild(seam)
+      }
 
       // Prompt label on hover
       const label = document.createElement('div')
