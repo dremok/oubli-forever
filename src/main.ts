@@ -109,6 +109,10 @@ const journal = new MemoryJournal()
 const asciiVoid = new AsciiVoid()
 const constellations = new MemoryConstellations()
 
+// Episodic-semantic merger: the house whispers your own words back at you
+// The brain uses the same regions for all types of memory. So does the house.
+whispers.setMemorySource(() => journal.getMemories())
+
 // Connect ASCII void to the WebGL canvas and memory text
 asciiVoid.setSource(canvas)
 const allMemoryText = journal.getMemories().map(m => m.currentText).join(' ')

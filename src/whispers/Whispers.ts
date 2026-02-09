@@ -522,11 +522,17 @@ export class Whispers {
   private index = 0
   private intervalId: number | null = null
   private whisperCallback: ((text: string) => void) | null = null
+  private getMemories: (() => { currentText: string; degradation: number }[]) | null = null
 
   constructor() {
     this.el = document.getElementById('whisper-text')!
     // Shuffle fragments so each session is different
     this.shuffle()
+  }
+
+  /** Connect to visitor memories — dissolves episodic/semantic boundary */
+  setMemorySource(fn: () => { currentText: string; degradation: number }[]) {
+    this.getMemories = fn
   }
 
   private shuffle() {
@@ -547,21 +553,59 @@ export class Whispers {
   }
 
   private showNext() {
-    const text = fragments[this.index % fragments.length]
-    this.index++
+    // Episodic-semantic merger: ~15% chance of whispering the visitor's own words
+    // The brain uses the same regions for personal and cultural memory.
+    // The house does too. Your words become its whispers.
+    let text: string
+    let isPersonal = false
+
+    const memories = this.getMemories?.() ?? []
+    if (memories.length >= 3 && Math.random() < 0.15) {
+      // Pick a memory, prefer degraded ones (they drift loose more easily)
+      const weighted = memories.map(m => ({ m, w: 0.2 + m.degradation * 0.8 }))
+      const total = weighted.reduce((s, w) => s + w.w, 0)
+      let r = Math.random() * total
+      let selected = weighted[0].m
+      for (const w of weighted) {
+        r -= w.w
+        if (r <= 0) { selected = w.m; break }
+      }
+      // Extract a fragment
+      const words = selected.currentText.split(/\s+/).filter(w => w.length > 0)
+      if (words.length >= 2) {
+        const start = Math.floor(Math.random() * Math.max(1, words.length - 3))
+        const len = 2 + Math.floor(Math.random() * 3)
+        text = words.slice(start, start + len).join(' ').toLowerCase()
+        if (words.length > 3) text = '...' + text + '...'
+        isPersonal = true
+      } else {
+        text = fragments[this.index % fragments.length]
+        this.index++
+      }
+    } else {
+      text = fragments[this.index % fragments.length]
+      this.index++
+    }
 
     this.whisperCallback?.(text)
     this.el.textContent = text
     this.el.classList.remove('fading')
 
     // Golden fruit whispers glow amber-gold instead of the default color
-    const isGolden = GOLDEN_MARKERS.some(m => text.toLowerCase().includes(m))
-    if (isGolden) {
+    const isGolden = !isPersonal && GOLDEN_MARKERS.some(m => text.toLowerCase().includes(m))
+    if (isPersonal) {
+      // Personal memories whispered back — slightly pink-gold, italic emphasis
+      this.el.style.color = 'rgba(255, 180, 200, 0.3)'
+      this.el.style.textShadow = '0 0 10px rgba(255, 150, 180, 0.1)'
+      this.el.style.fontStyle = 'italic'
+    } else if (isGolden) {
       this.el.style.color = 'rgba(255, 200, 60, 0.35)'
       this.el.style.textShadow = '0 0 12px rgba(255, 180, 40, 0.15)'
+      this.el.style.fontStyle = ''
     } else {
       this.el.style.color = ''
       this.el.style.textShadow = ''
+      this.el.style.fontStyle = ''
     }
 
     // Force reflow
@@ -571,11 +615,12 @@ export class Whispers {
     setTimeout(() => {
       this.el.classList.remove('visible')
       this.el.classList.add('fading')
-      // Clean up golden styling during fade
-      if (isGolden) {
+      // Clean up special styling during fade
+      if (isGolden || isPersonal) {
         setTimeout(() => {
           this.el.style.color = ''
           this.el.style.textShadow = ''
+          this.el.style.fontStyle = ''
         }, 2000)
       }
     }, 5000)
