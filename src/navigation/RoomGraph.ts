@@ -147,9 +147,72 @@ for (const node of ROOM_GRAPH) {
   nodeMap.set(node.name, node)
 }
 
-/** Get connections for a room */
+// ─── Dynamic connections: neural pathways grown by the Mycelium ───
+// These don't exist in the original graph. The house grows them
+// based on how you move through it. Persisted in localStorage.
+
+const dynamicConnections = new Map<string, Set<string>>()
+const DYNAMIC_STORAGE_KEY = 'oubli_neural_pathways'
+
+// Load persisted dynamic connections
+try {
+  const raw = localStorage.getItem(DYNAMIC_STORAGE_KEY)
+  if (raw) {
+    const pairs: [string, string][] = JSON.parse(raw)
+    for (const [a, b] of pairs) {
+      if (!dynamicConnections.has(a)) dynamicConnections.set(a, new Set())
+      if (!dynamicConnections.has(b)) dynamicConnections.set(b, new Set())
+      dynamicConnections.get(a)!.add(b)
+      dynamicConnections.get(b)!.add(a)
+    }
+  }
+} catch { /* fresh start */ }
+
+/** Grow a new neural pathway between two rooms */
+export function growConnection(a: string, b: string) {
+  // Don't grow if already statically connected
+  const aConns = nodeMap.get(a)?.connections ?? []
+  if (aConns.includes(b)) return
+  // Don't grow connections to/from hidden rooms (those are earned)
+  if (nodeMap.get(a)?.hidden || nodeMap.get(b)?.hidden) return
+
+  if (!dynamicConnections.has(a)) dynamicConnections.set(a, new Set())
+  if (!dynamicConnections.has(b)) dynamicConnections.set(b, new Set())
+  dynamicConnections.get(a)!.add(b)
+  dynamicConnections.get(b)!.add(a)
+
+  // Persist
+  saveDynamicConnections()
+}
+
+/** Get all dynamic connections as pairs */
+export function getDynamicConnectionPairs(): [string, string][] {
+  const seen = new Set<string>()
+  const pairs: [string, string][] = []
+  for (const [room, conns] of dynamicConnections) {
+    for (const conn of conns) {
+      const key = room < conn ? `${room}-${conn}` : `${conn}-${room}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        pairs.push([room, conn])
+      }
+    }
+  }
+  return pairs
+}
+
+function saveDynamicConnections() {
+  try {
+    localStorage.setItem(DYNAMIC_STORAGE_KEY, JSON.stringify(getDynamicConnectionPairs()))
+  } catch { /* silent */ }
+}
+
+/** Get connections for a room (static graph + dynamic neural pathways) */
 export function getConnections(roomName: string): string[] {
-  return nodeMap.get(roomName)?.connections ?? []
+  const staticConns = nodeMap.get(roomName)?.connections ?? []
+  const dynConns = dynamicConnections.get(roomName)
+  if (!dynConns || dynConns.size === 0) return staticConns
+  return [...new Set([...staticConns, ...dynConns])]
 }
 
 /** Get room label by name */

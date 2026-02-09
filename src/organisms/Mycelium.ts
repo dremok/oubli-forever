@@ -27,7 +27,7 @@
  * Hosnedlova's living fungal art at White Cube (2026).
  */
 
-import { getConnections, ROOM_GRAPH } from '../navigation/RoomGraph'
+import { getConnections, ROOM_GRAPH, growConnection } from '../navigation/RoomGraph'
 
 // --- State types ---
 
@@ -211,13 +211,19 @@ export class Mycelium {
       }
     }
 
-    // 5. Update spores
+    // 5. Neural pathway growth — the graph topology evolves
+    // If two rooms share strong trails through an intermediate,
+    // the mycelium grows a direct connection (a new neural pathway).
+    // Checked rarely (~every 30 ticks) to avoid performance cost.
+    if (Math.random() < 0.03) this.checkNeuralGrowth()
+
+    // 6. Update spores
     this.updateSpores(dt)
 
-    // 6. Pulse phase
+    // 7. Pulse phase
     this.pulsePhase += dt * 0.8
 
-    // 7. Periodic save (every ~10 ticks)
+    // 8. Periodic save (every ~10 ticks)
     if (Math.random() < 0.1) this.save()
   }
 
@@ -243,6 +249,56 @@ export class Mycelium {
         size: 2 + Math.random() * 3,
         hue: 45 + Math.random() * 20, // golden
       })
+    }
+  }
+
+  // --- Neural pathway growth ---
+
+  private checkNeuralGrowth() {
+    // For each pair of non-adjacent rooms, check if there's a strong
+    // 2-hop trail path through an intermediate. If both legs are strong,
+    // grow a direct connection — a new neural pathway.
+    const GROWTH_THRESHOLD = 0.4 // both trail legs must be >= this
+
+    // Only check rooms near the active room (performance)
+    const neighbors = getConnections(this.activeRoom)
+    for (const mid of neighbors) {
+      const midNeighbors = getConnections(mid)
+      for (const far of midNeighbors) {
+        if (far === this.activeRoom) continue
+        // Check if active<->far already connected
+        const activeConns = getConnections(this.activeRoom)
+        if (activeConns.includes(far)) continue
+
+        // Check trail strengths for both legs
+        const leg1 = this.state.trails[this.trailKey(this.activeRoom, mid)] || 0
+        const leg2 = this.state.trails[this.trailKey(mid, far)] || 0
+
+        if (leg1 >= GROWTH_THRESHOLD && leg2 >= GROWTH_THRESHOLD) {
+          // Both legs are strong — grow the connection
+          growConnection(this.activeRoom, far)
+
+          // Spawn golden spores to celebrate new growth
+          const w = window.innerWidth
+          const h = window.innerHeight
+          for (let i = 0; i < 8; i++) {
+            this.spores.push({
+              x: w / 2 + (Math.random() - 0.5) * w * 0.6,
+              y: h / 2 + (Math.random() - 0.5) * h * 0.4,
+              vx: (Math.random() - 0.5) * 40,
+              vy: (Math.random() - 0.5) * 30,
+              life: 1,
+              decay: 0.08,
+              size: 3 + Math.random() * 3,
+              hue: 55 + Math.random() * 15, // bright gold
+            })
+          }
+
+          // Regenerate tendrils to show new connection
+          this.regenerateTendrils()
+          return // one growth per check
+        }
+      }
     }
   }
 
