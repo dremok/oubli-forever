@@ -1562,6 +1562,68 @@ Keywords in user memories trigger procedural symbol drawings on walls: sun (with
 - **Besson's Dracula**: Caleb Landry Jones as sympathetic immortal, gothic romance (Feb 2026)
 - **Italian brainrot (Bombardiro Crocodilo)**: AI-generated absurdist Italian creatures, massive viral phenomenon
 
+### 152. TheCipher Deepened — Intercepted Signals, Frequency Analysis, Message Decay (1124→1416 lines)
+- JUMPSEAT-inspired intercepted signal flashes: cipher fragments drift across background with glitchy rendering
+- Frequency analysis overlay (toggle F key): real-time letter frequency bars vs expected English, color-coded by match quality
+- Quantum no-cloning message decay: solved messages corrupt 8% more each visit, corrupted chars show as ░▒▓█·∿◌
+- Background morse tapping: subtle rhythmic sine taps at 600-700Hz
+- Signal degradation percentage display for decayed puzzles
+- 16 cultural inscriptions (was 8): Kryptos K4, algospeak, JUMPSEAT spy satellites, quantum no-cloning, Voynich Naibbe cipher, harvest-now-decrypt-later, Microsoft Majorana 1 chip, Poetics of Encryption exhibition
+
+### Cultural Research Round 11 — Cryptography (Feb 2026)
+- **Quantum no-cloning bypass**: Encrypted copies of qubits possible, key self-destructs after one read (Waterloo/Kyushu)
+- **City-scale quantum encryption**: DI-QKD between trapped atoms over 100km fiber (Chinese researchers)
+- **Microsoft Majorana 1**: Topological quantum chip, "topoconductor" material, Q-day discussion accelerates
+- **Kryptos K4 solution sold for $962,500**: Solution exists but remains secret, hidden K5 unlocked
+- **Voynich Naibbe cipher theory**: Playing cards + dice as encryption method matches Voynichese statistics
+- **JUMPSEAT declassified**: Seven SIGINT satellites in Molniya orbits, 1971-1987, secretly intercepting Soviet signals
+- **Algospeak as living cipher**: "Unaliving" = killing, language mutating to evade algorithmic surveillance
+- **Poetics of Encryption exhibition**: KW Berlin, 40+ artists, Black Site / Black Box / Black Hole chapters
+
+### 153. TheAutomaton Deepened — Physarum Memory Trails, Extinction Events (1069→1171 lines)
+- Physarum-inspired heat map: cells leave memory trails that fade slowly (HEAT_DECAY=0.997), rendered as warm amber-violet glow
+- Extinction event detection: >40% population drop triggers red flash + labeled counter
+- Oldest surviving cell age tracking
+- Heat map uses Float32Array for performance, rendered at half resolution
+- 17 cultural inscriptions (was 10): Physarum memory in tube thickness, reverse Game of Life, Flow-Lenia 400 species, xenobots, digital forgetting impossibility, slime mold externalized memory, neural cellular automata, JCVI minimal cell
+
+### Cultural Research Round 12 — Cellular Automata & Artificial Life (Feb 2026)
+- **Reverse Game of Life (Mordvintsev/Google)**: Neural CA works backwards, regeneration emerges without programming
+- **Flow-Lenia (MIT)**: Mass-conservative Lenia where creatures coexist, compete, and evolve — 400+ species
+- **Spontaneous replicators from noise**: Self-replicating patterns emerge without design (Phys Rev E)
+- **Physarum memory**: Slime mold stores memories as tube thickness, avoids own trails, memory persists through dormancy
+- **Right to be forgotten is dead**: LLMs retain patterns even after data deletion, retraining from scratch required
+- **MIT fiber computer**: 32-bit microcontroller inside a single textile fiber, Bluetooth, tested in Arctic
+
+### 154. TheLoom Deepened — Spirit Line, Thread Whispers, Patina (1076→1165 lines)
+- Navajo-inspired spirit line: one column at ~70% of weave has intentional pattern inversion, faint golden indicator
+- Thread memory whisper: hovering a thread shows its memory text scrolling along it as faint characters
+- Weave patina: completed textile develops subtle warm aging tint (amber overlay that accumulates)
+- 16 cultural inscriptions (was 10): Bayeux Tapestry returning to England 2026, Shiota Threads of Life, MIT fiber computer, Yin Xiuzhen clothing heart, Phillip Stearns binary textiles, Gee's Bend quilters, Kustaa Saksi jacquard pine tree
+
+### Cultural Research Round 13 — Textiles & Weaving (Feb 2026)
+- **Shiota Threads of Life**: Feb 17 Hayward Gallery, monumental red thread installations with live performers
+- **Yin Xiuzhen Heart to Heart**: Giant heart from collected clothing, "sculptural documents of memory"
+- **Bayeux Tapestry to England**: Insured for £800M, vibration sensors testing transport route
+- **MIT fiber computer**: Computer in a single fiber, woven/knitted into clothing, 4 fibers communicated via Bluetooth
+- **Anna Lucia's algorithmic loom**: Weave patterns generated at blockchain transaction moment, distortion as decay
+- **2026 textile tension**: Craft vs code — algorithmic precision colliding with deliberate imperfection
+
+### 155. TheOracleDeck Deepened — Reversed Cards, Ghost Echoes (1129→1232 lines)
+- Reversed cards: ~25% chance, symbol hue inverted, shadow-prefixed readings (inverted/blocked/delayed/hidden/excess)
+- Ghost card echoes: last 3 drawn cards linger as faint outlines, slowly fading over ~60 seconds
+- Ghost cards show symbol, abbreviated name, proper orientation (reversed ghosts drawn upside-down)
+- 16 cultural inscriptions (was 10): Shimoyama SHIFT tarot reimagining, tarot's mnemonic origins linked to memory palaces, AI as stochastic oracle, pareidolia/hallucination as divination, confirmation bias as tarot engine, Forgetting the Future exhibition
+
+### Cultural Research Round 14 — Divination & Tarot (Feb 2026)
+- **Devan Shimoyama SHIFT**: Major Arcana reimagined through Black queerness, sculptural swings (Rowan University)
+- **Leah Ke Yi Zheng**: 64 paintings for 64 I Ching hexagrams (Renaissance Society Chicago)
+- **Tarot's mnemonic origins**: Historically connected to Renaissance "art of memory" — same tradition as memory palaces
+- **AI as oracle**: "Oracle, Echo, or Stochastic Parrot?" — LLMs deliver pronouncements without understanding, like the Pythia
+- **AI hallucination as pareidolia**: Nature published that confabulations are "a feature, not a bug" — finding patterns in noise
+- **47% of young adults** seek guidance through divinatory practices, astrology app market at $3 billion
+- **Forgetting the Future**: Torrance Art Museum exhibition on entropy in the reflective age
+
 ---
-*Last updated: Era 9, Feature 151 — Terrarium predators + Furnace smoke*
-*"the predators and prey oscillate forever. neither wins. both persist."*
+*Last updated: Era 9, Feature 155 — Four rooms deepened with fresh cultural research*
+*"the oracle remembers what it told you. the cipher forgets what you solved."*
