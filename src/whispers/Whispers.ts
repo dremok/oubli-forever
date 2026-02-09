@@ -446,6 +446,25 @@ const fragments: string[] = [
   "helsinki analog festival 2026: theme is BODY. photography as something you do with your hands, in the dark.",
   "every photograph is an act of embalming. you stop time, coat it in silver, call it remembering.",
 
+  // Feb 2026 — photo manipulation, nostalgia, impermanence
+  "rijksmuseum FAKE!: 1860s photo manipulation. scissors and glue before photoshop. every image was always a lie.",
+  "parkinson's detected in blood 20 years before symptoms. 80% of neurons gone before you notice the forgetting.",
+  "five sleep-wake profiles: consciousness isn't binary. the brain has five modes of dreaming and forgetting.",
+  "'2026 is the new 2016': millions mourn a past they've already mythologized. nostalgia is memory's fiction.",
+  "amsterdam banned fossil fuel ads. a city choosing which futures to forget.",
+  "puma blue's 'croak dream': improvising to fragments you've never fully heard. music as incomplete memory.",
+  "wabi-sabi goes viral on tiktok, then immediately becomes meaningless. the lifecycle of meaning itself.",
+  "deepseek R1: a $6M model matching trillion-dollar ones. power emerging from scarcity, not abundance.",
+  "rijksmuseum metamorphoses: ovid's bodies becoming rivers, trees, stones. transformation is the oldest story.",
+  "duchamp's boîte-en-valise: a portable museum in a suitcase. memory you can carry.",
+  "the robotaxi has no driver. you move through the city without agency. the passenger as metaphor.",
+  "tracey emin 'a second life': what comes after near-death. 90 works spanning 40 years of exorcism.",
+  "elvis presley found footage: the dead performing for the living. las vegas has no clocks.",
+  "pandora telescope: peering through atmospheres of distant worlds. the box that cannot be closed.",
+  "snow drought 2026: the mountains forgot how to hold winter. infrastructure built on patterns that no longer hold.",
+  "the western reservoirs run on memory of snow. when the snowpack doesn't form, the rivers have nothing to remember.",
+  "BLACKPINK 'DEADLINE': four years of silence broken. a deadline is both ending and forcing function.",
+
   // Oubli fruit — the golden thread
   "oubli: in west africa, a sweet golden fruit. forgetting that nourishes.",
   "the oubli fruit ripens and falls. what is lost feeds the soil.",

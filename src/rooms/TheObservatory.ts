@@ -465,6 +465,25 @@ function animateZoom(
 }
 
 
+const CULTURAL_INSCRIPTIONS = [
+  'pandora telescope launched jan 2026. peering through atmospheres of distant worlds. memory travels at the speed of light.',
+  'parkinson\'s blood test detects disease 20 years before symptoms. 80% of neurons gone before you notice.',
+  'JWST dark matter map: invisible cosmic filaments shaping galaxies like memories shaping thought.',
+  'the pandora box: once opened, the telescope cannot unsee what it finds in the light.',
+  'refik anadol trained AI on 200 million nature images. the machine dreams landscapes it has never visited.',
+  'the cosmos-web survey: dark matter as the connective tissue of the universe. invisible but structural.',
+  'the hubble ultra deep field: 10,000 galaxies in a patch of sky the size of a grain of sand held at arm\'s length.',
+  'artemis 2 crew orbits the moon but won\'t land. the threshold without the crossing.',
+  'pulsars: dead stars that keep speaking. a lighthouse in the void, remembering rotation.',
+  'crew-12 body adaptation: bones thin, fluids shift, muscles waste. the body forgets gravity in weeks.',
+  'sagrada familia tower completing 2026: 144 years after gaudi\'s death, his cathedral still dreams itself into being.',
+  'the overview effect: astronauts see earth without borders and can never unsee it.',
+  'five sleep-wake profiles: consciousness isn\'t binary. the brain has five modes of dreaming.',
+  'NASA APOD: every day, one image. a 30-year archive of the universe looking at itself.',
+  'GW250114: clearest gravitational wave ever. two black holes merging. the sound of spacetime remembering.',
+  'the voyager golden record is 49 years old. still traveling. still remembering us.',
+]
+
 export function createObservatoryRoom(deps: ObservatoryDeps): Room {
   let overlay: HTMLElement | null = null
   let controls: OrbitControls | null = null
@@ -472,6 +491,9 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
   let focusedId: string | null = null
   let controlsRAF = 0
   let compassCanvases: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; draw: (t: number) => void; wrapper: HTMLElement }[] = []
+  let inscriptionEl: HTMLElement | null = null
+  let inscriptionIndex = 0
+  let inscriptionTimer: number | null = null
 
   // APOD elements
   let apodContainer: HTMLElement | null = null
@@ -1045,6 +1067,24 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
         }
       }
 
+      // Cultural inscription at bottom
+      inscriptionEl = document.createElement('div')
+      inscriptionEl.style.cssText = `
+        position: absolute; bottom: 30px;
+        left: 50%; transform: translateX(-50%);
+        max-width: 70vw;
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300; font-size: 11px;
+        color: rgba(180, 200, 255, 0.06);
+        letter-spacing: 1px;
+        text-align: center;
+        line-height: 1.5;
+        pointer-events: none;
+        transition: opacity 3s ease;
+      `
+      inscriptionEl.textContent = CULTURAL_INSCRIPTIONS[0]
+      overlay.appendChild(inscriptionEl)
+
       return overlay
     },
 
@@ -1052,6 +1092,12 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
       const camera = deps.getCamera()
       const canvas = deps.getCanvas()
       const scene = deps.getScene()
+
+      // Cycle cultural inscriptions every 24s
+      inscriptionTimer = window.setInterval(() => {
+        inscriptionIndex = (inscriptionIndex + 1) % CULTURAL_INSCRIPTIONS.length
+        if (inscriptionEl) inscriptionEl.textContent = CULTURAL_INSCRIPTIONS[inscriptionIndex]
+      }, 24000)
 
       // --- Add nebula particle system ---
       nebulaSystem = createNebulaSystem()
@@ -1339,6 +1385,10 @@ export function createObservatoryRoom(deps: ObservatoryDeps): Room {
     deactivate() {
       const canvas = deps.getCanvas()
       const scene = deps.getScene()
+
+      // Stop inscription cycling
+      if (inscriptionTimer) clearInterval(inscriptionTimer)
+      inscriptionTimer = null
 
       // Cleanup controls
       if (controls) {

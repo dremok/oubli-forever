@@ -166,6 +166,16 @@ const DECAY_MEDITATIONS = [
   'spider silk\'s strength: invisible molecular glue holds protein chains together. you can\'t see what makes it strong.',
   'an ape preferred imaginary juice. pretend play exists outside human minds. the boundary of imagination is thinner than we thought.',
   'community darkrooms reopening worldwide. shared darkness, shared chemicals, shared waiting. photography as communion.',
+  'rijksmuseum FAKE!: photo manipulation existed in the 1860s. scissors, glue, ink. the truth was always composite.',
+  'parkinson\'s blood test: disease detectable 20 years before symptoms. the brain forgets before you know it\'s forgetting.',
+  'five sleep-wake profiles discovered. consciousness isn\'t binary. the brain has five modes of being.',
+  '2026 is the new 2016: millions mourn an internet that felt personal. nostalgia for a past already mythologized.',
+  'amsterdam bans fossil fuel advertising. a city editing its own visual memory. the outlines remain.',
+  'puma blue\'s croak dream: improvising to tape loop fragments. music made from incomplete memories of songs.',
+  'wabi-sabi goes viral on tiktok. a thousand-year philosophy of impermanence becomes a 15-second trend. meaning decays too.',
+  'deepseek R1: $6M open-source model matching $100B labs. power from constraint. something from almost nothing.',
+  'ovid\'s metamorphoses at the rijksmuseum: bodies becoming rivers, becoming trees. 2000 years of transformation.',
+  'duchamp\'s boîte-en-valise: a museum in a suitcase. 69 miniature replicas of his own work. memory you can carry.',
 ]
 
 export class DigitalDecay {
