@@ -150,9 +150,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   // Input
   const keys = new Set<string>()
 
-  // Mouse position for torch light effect
-  let mouseX = 0
-  let mouseY = 0
 
   // Region salts for the forgetting mechanic
   const regionSalts = new Map<string, number>()
@@ -323,27 +320,42 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function spawnGhost(): void {
     if (ghosts.length >= GHOST_MAX) return
-    // Find a random open cell 4-8 tiles from player
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const angle = Math.random() * Math.PI * 2
-      const dist = 4 + Math.random() * 4
-      const gx = Math.floor(px + Math.cos(angle) * dist)
-      const gy = Math.floor(py + Math.sin(angle) * dist)
-      // Must be an open cell (odd,odd = room)
-      if ((gx & 1) === 1 && (gy & 1) === 1 && getWorldCell(gx, gy) === 0) {
-        // Check it's not too close to another ghost
-        const tooClose = ghosts.some(g => Math.hypot(g.x - (gx + 0.5), g.y - (gy + 0.5)) < 3)
-        if (tooClose) continue
-        ghosts.push({
-          x: gx + 0.5,
-          y: gy + 0.5,
-          spawnTime: time,
-          type: Math.floor(Math.random() * 5),
-          sway: Math.random() * Math.PI * 2,
-          height: 0.65 + Math.random() * 0.35,
-        })
-        return
-      }
+    // Spawn along visible corridors — cast rays near player's facing direction
+    // and place the ghost in an open cell the player can actually SEE
+    for (let attempt = 0; attempt < 12; attempt++) {
+      // Bias toward forward direction but allow some peripheral spawns
+      const angleOffset = (Math.random() - 0.5) * Math.PI * 0.8
+      const rayAngle = pa + angleOffset
+      const hit = castRay(px, py, rayAngle)
+      // Need at least 3 tiles of clear corridor
+      if (hit.dist < 3.5) continue
+      // Place ghost at 60-85% of the way to the wall — visible but distant
+      const placeDist = hit.dist * (0.6 + Math.random() * 0.25)
+      const gx = px + Math.cos(rayAngle) * placeDist
+      const gy = py + Math.sin(rayAngle) * placeDist
+      // Snap to nearest open cell center
+      const cellX = Math.floor(gx)
+      const cellY = Math.floor(gy)
+      // Check it's an open cell
+      if (getWorldCell(cellX, cellY) !== 0) continue
+      const cx = cellX + 0.5
+      const cy = cellY + 0.5
+      // Not too close to player or other ghosts
+      if (Math.hypot(cx - px, cy - py) < 3) continue
+      const tooClose = ghosts.some(g => Math.hypot(g.x - cx, g.y - cy) < 3)
+      if (tooClose) continue
+      // Verify line of sight from player
+      const verifyHit = castRay(px, py, Math.atan2(cy - py, cx - px))
+      if (verifyHit.dist < Math.hypot(cx - px, cy - py) * 0.9) continue
+      ghosts.push({
+        x: cx,
+        y: cy,
+        spawnTime: time,
+        type: Math.floor(Math.random() * 5),
+        sway: Math.random() * Math.PI * 2,
+        height: 0.65 + Math.random() * 0.35,
+      })
+      return
     }
   }
 
@@ -362,9 +374,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     }
 
     // Spawn new ghosts periodically
-    if (time - lastGhostSpawnTime > GHOST_SPAWN_INTERVAL && time > 15) {
-      // Higher insanity = more frequent spawns
-      const spawnChance = 0.3 + insanity * 0.5
+    const interval = ghosts.length === 0 ? 8 : GHOST_SPAWN_INTERVAL
+    if (time - lastGhostSpawnTime > interval && time > 10) {
+      // Higher insanity = more frequent spawns, first ghost is guaranteed
+      const spawnChance = ghosts.length === 0 ? 1 : 0.5 + insanity * 0.4
       if (Math.random() < spawnChance) {
         spawnGhost()
       }
@@ -3250,23 +3263,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         flicker *= 0.3 // random dark flash on individual strips
       }
 
-      // Torch light from mouse — brightens walls near cursor
-      const stripCenterX = i * stripW + stripW / 2
-      const stripCenterY = wallTop + wallHeight / 2
-      const mouseDx = stripCenterX - mouseX
-      const mouseDy = stripCenterY - mouseY
-      const mouseDist = Math.sqrt(mouseDx * mouseDx + mouseDy * mouseDy)
-      const torchRadius = 120
-      const torchBoost = mouseDist < torchRadius
-        ? (1 - mouseDist / torchRadius) * 0.4 * Math.max(0.2, 1 - correctedDist / 8)
-        : 0
-
       const [r, g, b] = getCellColor(hit.cell, brightness * flicker, sideDim)
-      // Add warm torch tint (pinkish-gold from cursor glow)
-      const tr = Math.floor(Math.max(0, Math.min(255, r + torchBoost * 180)))
-      const tg = Math.floor(Math.max(0, Math.min(255, g + torchBoost * 80)))
-      const tb = Math.floor(Math.max(0, Math.min(255, b + torchBoost * 60)))
-      ctx.fillStyle = `rgb(${tr}, ${tg}, ${tb})`
+      ctx.fillStyle = `rgb(${Math.floor(Math.max(0, r))}, ${Math.floor(Math.max(0, g))}, ${Math.floor(Math.max(0, b))})`
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
 
@@ -3398,18 +3396,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     fogGrad.addColorStop(1, `rgba(${3 + tension * 15 + insanity * 10}, 2, 6, ${0.4 + tension * 0.15 + insanity * 0.2})`)
     ctx.fillStyle = fogGrad
     ctx.fillRect(-20, -20, w + 40, h + 40)
-
-    // Torch glow — warm light around cursor that illuminates the scene
-    if (mouseX > 0 || mouseY > 0) {
-      const torchGrad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 130)
-      torchGrad.addColorStop(0, 'rgba(255, 140, 80, 0.06)')
-      torchGrad.addColorStop(0.5, 'rgba(255, 100, 60, 0.02)')
-      torchGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      ctx.globalCompositeOperation = 'screen'
-      ctx.fillStyle = torchGrad
-      ctx.fillRect(0, 0, w, h)
-      ctx.globalCompositeOperation = 'source-over'
-    }
 
     // Random visual glitch frames at high insanity
     if (Math.random() < glitchChance) {
@@ -3577,10 +3563,6 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       window.addEventListener('keydown', handleKeyDown)
       window.addEventListener('keyup', handleKeyUp)
       canvas.addEventListener('click', handleClick)
-      canvas.addEventListener('mousemove', (e) => {
-        mouseX = e.clientX
-        mouseY = e.clientY
-      })
 
       const onResize = () => {
         if (canvas) {
