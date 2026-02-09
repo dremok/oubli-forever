@@ -45,6 +45,26 @@ interface ArchiveDeps {
   switchTo?: (name: string) => void
 }
 
+// --- Cultural inscriptions ---
+const ARCHIVE_INSCRIPTIONS = [
+  "borges imagined a library containing every possible book. most of them are gibberish. the meaningful ones are indistinguishable from the rest.",
+  "the library of alexandria burned. we don't know what we lost. the absence is larger than any collection.",
+  "every wall in this house has been listening since before you arrived. — sonic acts, 'the walls have ears', 2026",
+  "they demolished alba's citadel three hundred years ago. the argument about what it meant has never stopped.",
+  "he drew her face sixty times. each drawing remembered a different woman. — lucian freud, 2026",
+  "a billion-dollar vessel landed in a park, full of every story anyone ever drew. — lucas museum, 2026",
+  "the card catalog is a map of everything we thought worth remembering. it is also a list of what we chose to forget.",
+  "the index of forbidden books: 4,000 titles the church wanted erased. banning a book is the strongest form of remembering.",
+  "the internet archive's wayback machine: 835 billion web pages saved. most of the sites no longer exist.",
+  "sebald filled his novels with photographs. some were real. some were found. some were lies. the archive does not distinguish.",
+  "your hands still remember the shape of things your mind has released. — 'muscle memory', phoenix art museum, 2026",
+  "every book is a message sent forward in time by someone who knew they would not be there to deliver it.",
+  "the dead sea scrolls survived 2,000 years in a cave. papyrus outlasted the civilization that wrote on it.",
+  "metadata: the memory of the memory. the card that points to the book that points to the thought.",
+  "a library is not a collection of books. it is a collection of silences between readers.",
+  "two absences collided. the ripple reached us a billion years later, clearer than anything. — LIGO GW250114",
+]
+
 export function createArchiveRoom(deps?: ArchiveDeps): Room {
   let overlay: HTMLElement | null = null
   let active = false
@@ -81,6 +101,32 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
 
   let resizeHandler: (() => void) | null = null
   let mouseMoveHandler: ((e: MouseEvent) => void) | null = null
+
+  // --- Search echo ghosts (previous queries as fading text) ---
+  interface SearchGhost {
+    text: string
+    x: number
+    y: number
+    alpha: number
+    vx: number
+    vy: number
+    age: number
+  }
+  const searchGhosts: SearchGhost[] = []
+
+  // --- Cultural inscriptions ---
+  let inscriptionIdx = 0
+  let inscriptionTimer = 0
+
+  // --- Phantom shelf geometry (receding bookshelf outlines) ---
+  interface PhantomShelf {
+    x: number     // x position of shelf left edge
+    yStart: number
+    width: number
+    bookCount: number
+    depth: number  // 0-1, affects alpha (farther = fainter)
+  }
+  const phantomShelves: PhantomShelf[] = []
 
   // ── Audio state ──
   let audioInitialized = false
@@ -421,6 +467,47 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
     }
   }
 
+  function initPhantomShelves() {
+    phantomShelves.length = 0
+    const w = effectCanvas?.width || window.innerWidth
+    const h = effectCanvas?.height || window.innerHeight
+    // Left side shelves receding into darkness
+    for (let i = 0; i < 6; i++) {
+      phantomShelves.push({
+        x: -10 + i * 2,
+        yStart: 30 + i * 80 + Math.random() * 40,
+        width: 60 + Math.random() * 40,
+        bookCount: 4 + Math.floor(Math.random() * 8),
+        depth: 0.3 + i * 0.12,
+      })
+    }
+    // Right side shelves
+    for (let i = 0; i < 6; i++) {
+      phantomShelves.push({
+        x: w - 60 - Math.random() * 40 - i * 2,
+        yStart: 50 + i * 85 + Math.random() * 40,
+        width: 60 + Math.random() * 40,
+        bookCount: 4 + Math.floor(Math.random() * 8),
+        depth: 0.3 + i * 0.12,
+      })
+    }
+  }
+
+  function spawnSearchGhost(query: string) {
+    const w = effectCanvas?.width || window.innerWidth
+    const h = effectCanvas?.height || window.innerHeight
+    searchGhosts.push({
+      text: query,
+      x: w * 0.15 + Math.random() * w * 0.7,
+      y: h * 0.2 + Math.random() * h * 0.5,
+      alpha: 0.15,
+      vx: (Math.random() - 0.5) * 0.1,
+      vy: -0.05 - Math.random() * 0.08,
+      age: 0,
+    })
+    if (searchGhosts.length > 8) searchGhosts.shift()
+  }
+
   function drawEffects(time: number) {
     if (!effectCtx || !effectCanvas || !active) return
     const w = effectCanvas.width
@@ -531,6 +618,75 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         effectCtx.arc(r.x, r.y, r.radius * 0.6, 0, Math.PI * 2)
         effectCtx.fillStyle = `rgba(15, 10, 5, ${r.alpha * 0.3})`
         effectCtx.fill()
+      }
+    }
+
+    // ── Phantom shelves — receding outlines of bookshelves along edges ──
+    for (const shelf of phantomShelves) {
+      const alpha = Math.max(0.01, 0.04 - shelf.depth * 0.03)
+      effectCtx.strokeStyle = `rgba(140, 120, 80, ${alpha})`
+      effectCtx.lineWidth = 0.5
+      // Shelf line
+      effectCtx.beginPath()
+      effectCtx.moveTo(shelf.x, shelf.yStart)
+      effectCtx.lineTo(shelf.x + shelf.width, shelf.yStart)
+      effectCtx.stroke()
+      // Book spines (vertical lines of varying height)
+      for (let b = 0; b < shelf.bookCount; b++) {
+        const bx = shelf.x + (b / shelf.bookCount) * shelf.width + Math.random() * 2
+        const bh = 15 + Math.random() * 25
+        effectCtx.beginPath()
+        effectCtx.moveTo(bx, shelf.yStart)
+        effectCtx.lineTo(bx, shelf.yStart - bh)
+        effectCtx.strokeStyle = `rgba(140, 120, 80, ${alpha * (0.5 + Math.random() * 0.5)})`
+        effectCtx.stroke()
+      }
+    }
+
+    // ── Search echo ghosts — previous queries floating as fading text ──
+    for (let i = searchGhosts.length - 1; i >= 0; i--) {
+      const ghost = searchGhosts[i]
+      ghost.x += ghost.vx
+      ghost.y += ghost.vy
+      ghost.age += 0.016
+      ghost.alpha *= 0.999
+      if (ghost.alpha < 0.005 || ghost.age > 60) {
+        searchGhosts.splice(i, 1)
+        continue
+      }
+      effectCtx.font = '13px "Courier New", monospace'
+      effectCtx.fillStyle = `rgba(180, 160, 120, ${ghost.alpha})`
+      effectCtx.textAlign = 'center'
+      effectCtx.fillText(ghost.text, ghost.x, ghost.y)
+    }
+
+    // ── Cultural inscriptions ──
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 25) {
+      inscriptionTimer = 0
+      inscriptionIdx = (inscriptionIdx + 1) % ARCHIVE_INSCRIPTIONS.length
+    }
+    const insText = ARCHIVE_INSCRIPTIONS[inscriptionIdx]
+    const insAlpha = inscriptionTimer < 2 ? inscriptionTimer / 2 * 0.06
+      : inscriptionTimer < 22 ? 0.06
+      : 0.06 * (1 - (inscriptionTimer - 22) / 3)
+    if (insAlpha > 0.003) {
+      effectCtx.font = '11px "Cormorant Garamond", serif'
+      effectCtx.fillStyle = `rgba(180, 160, 120, ${insAlpha})`
+      effectCtx.textAlign = 'center'
+      // Word-wrap
+      const insMaxW = w * 0.7
+      const insWords = insText.split(' ')
+      const insLines: string[] = []
+      let insLine = ''
+      for (const word of insWords) {
+        const test = insLine ? insLine + ' ' + word : word
+        if (effectCtx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+        else insLine = test
+      }
+      if (insLine) insLines.push(insLine)
+      for (let li = 0; li < insLines.length; li++) {
+        effectCtx.fillText(insLines[li], w / 2, h - 70 + li * 14)
       }
     }
 
@@ -1024,6 +1180,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
           const data = await searchBooks(query)
           renderResults(data, results, status)
           searchCount++
+          spawnSearchGhost(query)
           // Reveal restricted drawer after 5 searches
           if (searchCount >= 5 && restrictedDrawer) {
             restrictedDrawer.style.color = 'rgba(160, 100, 80, 0.2)'
@@ -1080,6 +1237,7 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
           effectCanvas.height = window.innerHeight
         }
         initDistantLights()
+        initPhantomShelves()
       }
       window.addEventListener('resize', resizeHandler)
 
@@ -1090,9 +1248,10 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
       }
       window.addEventListener('mousemove', mouseMoveHandler)
 
-      // Initialize particles
+      // Initialize particles and shelves
       initDustMotes()
       initDistantLights()
+      initPhantomShelves()
 
       return overlay
     },
