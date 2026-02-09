@@ -92,6 +92,7 @@ import { Phenotype } from './organisms/Phenotype'
 import { SeasonalClock } from './organisms/SeasonalClock'
 import { Parasites } from './organisms/Parasites'
 import { CroakDream } from './organisms/CroakDream'
+import { Methylation } from './organisms/Methylation'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -700,6 +701,12 @@ croakDream.setMyceliumSource({
   getSystemRipeness: () => mycelium.getSystemRipeness(),
 })
 
+// The Methylation — epigenetic stability marks that erode, releasing transposable elements
+// Fragments from neglected rooms drift into the room you're visiting
+const methylation = new Methylation()
+methylation.setSeasonSource(() => seasonalClock.getSeason())
+methylation.start()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -718,6 +725,7 @@ roomManager.onRoomChange((room) => {
   phenotype.onRoomEnter(room)
   parasites.onRoomEnter(room)
   croakDream.onRoomEnter(room)
+  methylation.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'
