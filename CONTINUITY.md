@@ -1810,6 +1810,24 @@ Fresh cultural research findings:
   "guaranteed human" premium, rare aesthetic, monkey philosophy, Tracey Emin retrospective,
   Art Basel Qatar, MIT consciousness ultrasound, million-qubit light traps
 
+### 176. THE SEASONAL CLOCK (`src/organisms/SeasonalClock.ts`)
+- The house has its own biological seasons, measured in cumulative visitor presence
+- Five seasons: SEED → GROWTH → RIPE → FALL → DECAY → back to SEED
+- Each season has distinct visual character (color tint, particle speed, atmosphere)
+- FALL season spawns falling leaf particles
+- Full cycle takes ~3.5 hours of actual visitor presence
+- Season + progress shown as nearly invisible indicator at bottom-left
+- Persists in localStorage — visitors return to find the house in a different season
+- Inspired by oubli fruit life cycle, polar vortex seasonal disruption
+
+### 177. EPISODIC-SEMANTIC MERGER (Whispers enhancement)
+- 15% chance each whisper uses a fragment of the VISITOR'S OWN memories
+- Degraded memories are more likely to bleed through as whispers
+- Personal whispers shown in soft pink-gold italic
+- The boundary between "the house's thoughts" and "your thoughts" dissolves
+- Inspired by Nottingham/Cambridge fMRI discovery (Nature Human Behaviour, Feb 2026):
+  episodic and semantic memory share the same brain regions
+
 ---
-*Last updated: Era 9, Feature 175 — Oubli now has 5 organisms (Mycelium, Fruiting, CollectiveWarmth, Membrane, Phenotype), a complete biological cycle, and adaptive coloration*
-*"the membrane between rooms is alive. it remembers what passed through."*
+*Last updated: Era 9, Feature 177 — Oubli has 6 organisms, seasonal cycles, adaptive phenotype, and episodic-semantic memory merger*
+*"episodic and semantic memory activate the same circuits. knowing and remembering are one."*
