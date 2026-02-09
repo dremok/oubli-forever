@@ -58,6 +58,8 @@ const CULTURAL_INSCRIPTIONS = [
   'korg phase8 (2026): touch a steel resonator and it sings. every surface is a potential instrument — or canvas.',
   'suno generates 7 million songs per day. what is a line worth when lines are infinite?',
   'the 365 buttons TikTok: "it only has to make sense to me." drawing as private language.',
+  'lucian freud drew the same faces 170 times. obsessive re-drawing. the hand remembers what the eye forgets.',
+  'genuary 2026 prompt: intentional imperfection. the algorithm trembles. the human line breathes.',
 ]
 
 export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
@@ -292,6 +294,24 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
   }
   const constellationLinks: ConstellationLink[] = []
   let constellationTimer = 0
+
+  // Evaporation wisps — tiny particles rising from aging strokes
+  interface EvapWisp {
+    x: number; y: number; vx: number; vy: number; alpha: number; size: number; hue: number
+  }
+  const evapWisps: EvapWisp[] = []
+  let evapSpawnTimer = 0
+
+  // Stroke echo replay — ghost strokes briefly re-trace themselves
+  interface StrokeEcho {
+    points: { x: number; y: number }[]
+    hue: number
+    width: number
+    replayProgress: number // 0-1 how far through the replay
+    alpha: number
+  }
+  const strokeEchoes: StrokeEcho[] = []
+  const echoedStrokes = new Set<Stroke>() // track which strokes have already echoed
 
   const FADE_TIME = 60 // seconds before stroke fully fades
   const GHOST_EXTRA = 45 // extra seconds ghosts linger after stroke fades (30-60s range)
@@ -847,6 +867,72 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     // Auto-sketch (ghost drawing)
     updateAutoSketch(c, w, h)
 
+    // Evaporation wisps — spawn from aging strokes
+    evapSpawnTimer += 0.016
+    if (evapSpawnTimer > 0.12) {
+      evapSpawnTimer = 0
+      for (const stroke of strokes) {
+        const age = now - stroke.birth
+        if (age > 30 && age < FADE_TIME && stroke.points.length >= 2 && Math.random() < 0.15) {
+          const pt = stroke.points[Math.floor(Math.random() * stroke.points.length)]
+          evapWisps.push({
+            x: pt.x + (Math.random() - 0.5) * 6,
+            y: pt.y,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: -(0.15 + Math.random() * 0.25),
+            alpha: 0.12 + Math.random() * 0.08,
+            size: 0.5 + Math.random() * 1.2,
+            hue: stroke.hue,
+          })
+        }
+      }
+      while (evapWisps.length > 60) evapWisps.shift()
+    }
+    for (let i = evapWisps.length - 1; i >= 0; i--) {
+      const ew = evapWisps[i]
+      ew.x += ew.vx
+      ew.y += ew.vy
+      ew.vy -= 0.001
+      ew.alpha -= 0.001
+      ew.size *= 0.998
+      if (ew.alpha <= 0) { evapWisps.splice(i, 1); continue }
+      c.fillStyle = `hsla(${ew.hue}, 50%, 70%, ${ew.alpha})`
+      c.beginPath()
+      c.arc(ew.x, ew.y, ew.size, 0, Math.PI * 2)
+      c.fill()
+    }
+
+    // Stroke echo replay — ghost strokes briefly re-trace during ghost phase
+    for (const stroke of strokes) {
+      const age = now - stroke.birth
+      if (age > FADE_TIME && age < FADE_TIME + 5 && !echoedStrokes.has(stroke) && stroke.points.length >= 4) {
+        echoedStrokes.add(stroke)
+        strokeEchoes.push({
+          points: stroke.points,
+          hue: stroke.hue,
+          width: stroke.width * 0.6,
+          replayProgress: 0,
+          alpha: 0.06,
+        })
+      }
+    }
+    for (let i = strokeEchoes.length - 1; i >= 0; i--) {
+      const echo = strokeEchoes[i]
+      echo.replayProgress += 0.008
+      if (echo.replayProgress >= 1) { strokeEchoes.splice(i, 1); continue }
+      const visibleCount = Math.floor(echo.replayProgress * echo.points.length)
+      if (visibleCount < 2) continue
+      const visiblePts = echo.points.slice(0, visibleCount)
+      const fadeAlpha = echo.alpha * (1 - echo.replayProgress * 0.5)
+      drawStrokePath(c, visiblePts, echo.hue, echo.width, fadeAlpha, false, 0)
+      // Bright tip at replay head
+      const tip = visiblePts[visiblePts.length - 1]
+      c.fillStyle = `hsla(${echo.hue}, 60%, 75%, ${fadeAlpha * 2})`
+      c.beginPath()
+      c.arc(tip.x, tip.y, echo.width + 1, 0, Math.PI * 2)
+      c.fill()
+    }
+
     // Alternative brush mode rendering for current stroke
     if (currentStroke && currentStroke.points.length >= 2 && drawMode !== 'solid') {
       for (const p of currentStroke.points) {
@@ -1202,6 +1288,9 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
         strokes = []
         particles = []
         bloomedStrokes.clear()
+        evapWisps.length = 0
+        strokeEchoes.length = 0
+        echoedStrokes.clear()
       })
 
       // Scroll to change hue, shift+scroll for width
@@ -1231,6 +1320,10 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
 
     activate() {
       active = true
+      evapWisps.length = 0
+      strokeEchoes.length = 0
+      echoedStrokes.clear()
+      evapSpawnTimer = 0
       render()
     },
 
