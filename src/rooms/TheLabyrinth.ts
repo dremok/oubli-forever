@@ -38,7 +38,7 @@ const REGION_SIZE = 12
 const KEEP_RADIUS = 3
 
 // Maze parameters
-const DOOR_THRESHOLD = 0.38
+const DOOR_THRESHOLD = 0.50
 
 // Numeric key encoding for Map/Set — avoids string allocation in hot paths
 // Handles coordinates in [-50000, 50000] without collision
@@ -151,6 +151,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let active = false
   let frameId = 0
   let time = 0
+  let lastFrameMs = 0
+  let dtScale = 1 // frame-rate compensation: 1.0 at 60fps, 2.0 at 30fps
 
   // Session seed — makes every visit a different labyrinth
   let sessionSeed = 0
@@ -169,7 +171,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   // Wall overrides — periodically opened walls to prevent getting stuck
   const wallOverrides = new Map<number, number>()
   let lastWallOpenTime = 0
-  const WALL_OPEN_INTERVAL = 20 // seconds between random wall openings
+  const WALL_OPEN_INTERVAL = 10 // seconds between random wall openings
 
   // Region salts for the forgetting mechanic
   const regionSalts = new Map<number, number>()
@@ -231,6 +233,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let reverbGain: GainNode | null = null
   let dripTimeout: ReturnType<typeof setTimeout> | null = null
   let lastStepTime = 0
+
+  // Pre-created noise buffers for phantom sounds (avoid main-thread blocking)
+  let sharedNoiseBuffer: AudioBuffer | null = null
+  let sharedBreathBuffer: AudioBuffer | null = null
+  let sharedScrapeBuffer: AudioBuffer | null = null
 
   // Wikipedia system
   const wikiCache = new Set<string>()
@@ -482,15 +489,12 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   }
 
   // Check if this door has the minimum hash among a room's 4 doors
+  // Inlined to avoid array allocations in hot path (~4000 calls/frame)
   function isDoorMinForRoom(roomX: number, roomY: number, doorX: number, doorY: number, doorHash: number): boolean {
-    const doors: [number, number][] = [
-      [roomX, roomY - 1], [roomX, roomY + 1],
-      [roomX - 1, roomY], [roomX + 1, roomY],
-    ]
-    for (const [dx, dy] of doors) {
-      if (dx === doorX && dy === doorY) continue
-      if (cellHash(dx, dy) < doorHash) return false
-    }
+    if (!(roomX === doorX && roomY - 1 === doorY) && cellHash(roomX, roomY - 1) < doorHash) return false
+    if (!(roomX === doorX && roomY + 1 === doorY) && cellHash(roomX, roomY + 1) < doorHash) return false
+    if (!(roomX - 1 === doorX && roomY === doorY) && cellHash(roomX - 1, roomY) < doorHash) return false
+    if (!(roomX + 1 === doorX && roomY === doorY) && cellHash(roomX + 1, roomY) < doorHash) return false
     return true
   }
 
@@ -789,6 +793,25 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       const firstDrip = 2000 + Math.random() * 4000
       dripTimeout = setTimeout(scheduleDrip, firstDrip)
+
+      // Pre-create noise buffers for phantom sounds (avoids main-thread blocking)
+      const sr = audioCtx.sampleRate
+      // 4-second white noise buffer (reused for whisper/breath/scrape sounds)
+      sharedNoiseBuffer = audioCtx.createBuffer(1, sr * 4, sr)
+      const nd = sharedNoiseBuffer.getChannelData(0)
+      for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1
+      // Breath-shaped noise (inhale/exhale envelope baked in)
+      sharedBreathBuffer = audioCtx.createBuffer(1, sr * 3, sr)
+      const bd = sharedBreathBuffer.getChannelData(0)
+      for (let i = 0; i < bd.length; i++) {
+        const t = i / bd.length
+        const env = t < 0.4 ? Math.sin((t / 0.4) * Math.PI * 0.5) : Math.sin(((t - 0.4) / 0.6) * Math.PI)
+        bd[i] = (Math.random() * 2 - 1) * env
+      }
+      // Scrape-shaped noise (decaying)
+      sharedScrapeBuffer = audioCtx.createBuffer(1, sr, sr)
+      const sd = sharedScrapeBuffer.getChannelData(0)
+      for (let i = 0; i < sd.length; i++) sd[i] = (Math.random() * 2 - 1) * (1 - i / sd.length)
 
       // Load scare sounds now that audioCtx is ready
       loadScareAssets()
@@ -1337,30 +1360,28 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     const roll = Math.random()
 
     if (roll < 0.18) {
-      // WHISPERING — breathy filtered noise, like someone speaking softly nearby
+      // WHISPERING — pre-created noise with bandpass filter for speech-like texture
+      if (!sharedNoiseBuffer) return
       const dur = 1.5 + Math.random() * 2
-      const len = audioCtx.sampleRate * dur
-      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate)
-      const d = buf.getChannelData(0)
-      // Syllable-like amplitude modulation
-      const syllableRate = 3 + Math.random() * 4
-      for (let i = 0; i < len; i++) {
-        const t = i / audioCtx.sampleRate
-        const env = Math.sin((i / len) * Math.PI)
-        const syllable = 0.4 + 0.6 * Math.abs(Math.sin(t * syllableRate * Math.PI))
-        d[i] = (Math.random() * 2 - 1) * env * syllable
-      }
       const src = audioCtx.createBufferSource()
-      src.buffer = buf
+      src.buffer = sharedNoiseBuffer
+      const offset = Math.random() * 2 // random start within buffer
       const f = audioCtx.createBiquadFilter()
       f.type = 'bandpass'
       f.frequency.value = 1800 + Math.random() * 800
       f.Q.value = 8 + Math.random() * 6
+      // Syllable-like modulation via gain automation (runs on audio thread)
       const g = audioCtx.createGain()
-      g.gain.value = vol * 1.2
+      const syllableRate = 3 + Math.random() * 4
+      for (let t = 0; t < dur; t += 0.04) {
+        const env = Math.sin((t / dur) * Math.PI)
+        const syllable = 0.4 + 0.6 * Math.abs(Math.sin(t * syllableRate * Math.PI))
+        g.gain.setValueAtTime(vol * 1.2 * env * syllable, now + t)
+      }
+      g.gain.setValueAtTime(0, now + dur)
       src.connect(f); f.connect(g); g.connect(dest)
       if (reverbNode) g.connect(reverbNode)
-      src.start(now)
+      src.start(now, offset, dur)
     } else if (roll < 0.33) {
       // CHILDREN'S SINGING — high sine tones with vibrato, like a distant lullaby
       const noteCount = 4 + Math.floor(Math.random() * 5)
@@ -1432,40 +1453,34 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         knock.start(t); knock.stop(t + 0.1)
       }
     } else if (roll < 0.68) {
-      // BREATH — slow inhale/exhale close to your ear
+      // BREATH — pre-created breath noise with gain envelope for inhale/exhale
+      if (!sharedBreathBuffer) return
       const dur = 2 + Math.random() * 1.5
-      const len = audioCtx.sampleRate * dur
-      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate)
-      const d = buf.getChannelData(0)
-      for (let i = 0; i < len; i++) {
-        const t = i / len
-        // Inhale then exhale shape
-        const breathEnv = t < 0.4
-          ? Math.sin((t / 0.4) * Math.PI * 0.5)
-          : Math.sin(((t - 0.4) / 0.6) * Math.PI)
-        d[i] = (Math.random() * 2 - 1) * breathEnv
-      }
       const src = audioCtx.createBufferSource()
-      src.buffer = buf
+      src.buffer = sharedBreathBuffer
+      const offset = Math.random() * 0.5
       const f = audioCtx.createBiquadFilter()
       f.type = 'bandpass'
       f.frequency.value = 600 + Math.random() * 400
       f.Q.value = 3
       const g = audioCtx.createGain()
-      g.gain.value = vol * 1.5
+      // Inhale/exhale envelope via gain automation (audio thread)
+      for (let t = 0; t < dur; t += 0.04) {
+        const p = t / dur
+        const breathEnv = p < 0.4
+          ? Math.sin((p / 0.4) * Math.PI * 0.5)
+          : Math.sin(((p - 0.4) / 0.6) * Math.PI)
+        g.gain.setValueAtTime(vol * 1.5 * breathEnv, now + t)
+      }
+      g.gain.setValueAtTime(0, now + dur)
       src.connect(f); f.connect(g); g.connect(dest)
       if (reverbNode) g.connect(reverbNode)
-      src.start(now)
+      src.start(now, offset, dur)
     } else if (roll < 0.78) {
-      // SCRAPING — something dragged along stone
-      const len = audioCtx.sampleRate * 0.8
-      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate)
-      const d = buf.getChannelData(0)
-      for (let i = 0; i < len; i++) {
-        d[i] = (Math.random() * 2 - 1) * (1 - i / len)
-      }
+      // SCRAPING — pre-created decay noise with sweeping bandpass
+      if (!sharedScrapeBuffer) return
       const src = audioCtx.createBufferSource()
-      src.buffer = buf
+      src.buffer = sharedScrapeBuffer
       const f = audioCtx.createBiquadFilter()
       f.type = 'bandpass'
       f.frequency.setValueAtTime(300, now)
@@ -1475,7 +1490,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       g.gain.value = vol * 2
       src.connect(f); f.connect(g); g.connect(dest)
       if (reverbNode) g.connect(reverbNode)
-      src.start(now)
+      src.start(now, 0, 0.8)
     } else if (roll < 0.88) {
       // HUMMING — single sustained tone, like someone humming in the dark
       const osc = audioCtx.createOscillator()
@@ -1578,7 +1593,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Phantom sounds — play from the start, with random pauses
     // Interval: 8-30s at low insanity, 3-10s at high insanity
-    phantomSoundTimer -= 0.016
+    phantomSoundTimer -= 0.016 * dtScale
     if (phantomSoundTimer <= 0) {
       const minInterval = Math.max(3, 10 - insanity * 8)
       const maxInterval = Math.max(8, 30 - insanity * 22)
@@ -1608,22 +1623,24 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     let moving = false
 
     // Movement with insanity-induced drift (mirror inverts controls temporarily)
+    // Scale by dtScale for frame-rate independence
     const inverted = time < invertMovementEnd
     const effectiveAngle = pa + moveDrift
     const moveDir = inverted ? -1 : 1
+    const scaledMoveSpeed = moveSpeed * dtScale
     if (keys.has('w') || keys.has('arrowup')) {
-      moveX += Math.cos(effectiveAngle) * moveSpeed * moveDir
-      moveY += Math.sin(effectiveAngle) * moveSpeed * moveDir
+      moveX += Math.cos(effectiveAngle) * scaledMoveSpeed * moveDir
+      moveY += Math.sin(effectiveAngle) * scaledMoveSpeed * moveDir
       moving = true
     }
     if (keys.has('s') || keys.has('arrowdown')) {
-      moveX -= Math.cos(effectiveAngle) * moveSpeed * moveDir
-      moveY -= Math.sin(effectiveAngle) * moveSpeed * moveDir
+      moveX -= Math.cos(effectiveAngle) * scaledMoveSpeed * moveDir
+      moveY -= Math.sin(effectiveAngle) * scaledMoveSpeed * moveDir
       moving = true
     }
 
-    // Turn speed — constant (insanity fluctuation removed, caused stutter)
-    const effectiveTurnSpeed = turnSpeed
+    // Turn speed — scaled by dtScale for frame-rate independence
+    const effectiveTurnSpeed = turnSpeed * dtScale
     if (keys.has('a') || keys.has('arrowleft')) {
       pa -= effectiveTurnSpeed
     }
@@ -1660,8 +1677,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // Periodically open a random wall near the player to prevent dead ends
     if (time - lastWallOpenTime > WALL_OPEN_INTERVAL) {
       lastWallOpenTime = time
-      // Search for a wall in the player's vicinity (radius ~6 cells) and open it
-      const searchRadius = 6
+      // Search for a wall in the player's vicinity and open it
+      const searchRadius = 10
       const candidates: [number, number][] = []
       const flPx = Math.floor(px)
       const flPy = Math.floor(py)
@@ -3322,7 +3339,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
-    time += 0.016
+
+    // Frame-rate independent timing — prevents slowdown when frames drop
+    const now = performance.now()
+    const frameDt = lastFrameMs > 0 ? Math.min(50, now - lastFrameMs) : 16
+    lastFrameMs = now
+    dtScale = frameDt / 16 // 1.0 at 60fps, 2.0 at 30fps
+    time += 0.016 * dtScale
 
     update()
 
