@@ -1860,6 +1860,29 @@ Fresh cultural research findings:
 - Inspired by: gut microbiome, Hosnedlova's living fungal art (White Cube 2026),
   lichen symbiosis, Toni Morrison "Our liberation from diminishing notions comes through language"
 
+### 182. CroakDream (`src/organisms/CroakDream.ts`) — ERA 9 ORGANISM
+- Room death premonitions — brief glitchy flash when entering neglected rooms
+- Shows inverted/scrambled "death state" of the room (200-400ms)
+- Probability scales with neglect (low nutrients) and system ripeness
+- Scan lines, horizontal glitch tears, scattered room name fragments
+- 30s cooldown between visions; the void never dreams
+- Inspired by: Puma Blue "Croak Dream" (Feb 6, 2026) — tape loop premonitions at Real World Studios
+
+### 183. Cultural Whispers Round 21
+- 10 new whispers: Puma Blue croak dreams, polar vortex split (50C anomaly),
+  Art Basel Qatar "Becoming", Rice quantum topology (CeRu4Sn6),
+  Stanford 500 light traps, parasites in the house
+
+### 184. Methylation (`src/organisms/Methylation.ts`) — ERA 9 ORGANISM
+- Epigenetic stability marks that erode when rooms go unvisited
+- Below threshold (0.4), "transposable elements" — text fragments from that room —
+  escape and drift into whichever room you're currently in
+- Decay rate modulated by seasonal clock (faster in fall/decay seasons)
+- Visiting a room restores its methylation (attention is protective)
+- Fragments labeled "from the [room name]" at very low alpha
+- Inspired by: DNA methylation decay in aging (Science, Jan 2026),
+  Fennell's "Wuthering Heights" quotation concept, Sonsbeek 2026 "Against Forgetting"
+
 ---
-*Last updated: Era 9, Feature 181 — 7 organisms, parasitic colonization, complete biological ecosystem*
-*"the house grows moss in rooms you forget. barnacles crust on paths you walk too often."*
+*Last updated: Era 9, Feature 184 — 9 organisms, epigenetic stability, room death premonitions, transposable content*
+*"fragments from rooms you neglected drift into the room you're in. the house's genome is destabilizing."*
