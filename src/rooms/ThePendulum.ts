@@ -43,6 +43,12 @@ const CULTURAL_INSCRIPTIONS = [
   'the metronome: tempo is just a pendulum counting time. music is regulated swing.',
   'galileo watched a chandelier swing in pisa cathedral. isochronism: big swings and small take the same time.',
   'hidden quantum geometry: the quantum metric bends electrons like pendulums bend space.',
+  'GW250114: two black holes merged. the ripple in spacetime reached us a billion years later, clearer than anything before.',
+  'cymatics: pour sand on a vibrating plate. the pattern reveals the frequency. oscillation makes geometry visible.',
+  'sonic acts 2026, amsterdam: "melted for love." what persists in the wake of erasure?',
+  'the sagrada familia has been oscillating between construction and decay for 144 years. the pendulum of architecture.',
+  'entrainment: fireflies synchronize. heartbeats synchronize. pendulums on the same shelf synchronize. nature prefers harmony.',
+  'the tacoma narrows bridge oscillated itself to death. resonance is beautiful until it is catastrophic.',
 ]
 
 export function createPendulumRoom(deps?: PendulumDeps): Room {
@@ -146,6 +152,23 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
 
   // Pattern counter
   let patternsCreated = 0
+
+  // --- Gravitational wave ripple (GW250114 inspired) ---
+  let gwRippleTime = 0        // time since last ripple
+  let gwRippleActive = false
+  let gwRipplePhase = 0       // expansion phase
+  let gwNextRipple = 20 + Math.random() * 30 // seconds until next ripple
+
+  // --- Cymatics nodes (standing wave accumulation) ---
+  interface CymaticNode {
+    x: number
+    y: number
+    intensity: number  // grows with repeated crossings
+    age: number
+  }
+  const cymaticNodes: CymaticNode[] = []
+  const CYMATICS_GRID = 24  // grid resolution for crossing detection
+  let cymaticsGrid: Float32Array = new Float32Array(CYMATICS_GRID * CYMATICS_GRID)
 
   // --- Audio ---
 
@@ -433,6 +456,44 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     }
   }
 
+  /** Check for sympathetic resonance between bob pairs (Huygens' effect) */
+  function checkSympatheticResonance(ctx: CanvasRenderingContext2D, w: number, h: number) {
+    for (let i = 0; i < navBobs.length; i++) {
+      for (let j = i + 1; j < navBobs.length; j++) {
+        const a = navBobs[i]
+        const b = navBobs[j]
+        // Check if both are swinging in roughly the same phase
+        // Compare normalized swing positions
+        const aNorm = a.swingAngle / Math.max(1, a.amplitude)
+        const bNorm = b.swingAngle / Math.max(1, b.amplitude)
+        const phaseDiff = Math.abs(aNorm - bNorm)
+        if (phaseDiff < 0.3 && a.amplitude > a.baseAmplitude + 3 && b.amplitude > b.baseAmplitude + 3) {
+          // They're in sync — draw a faint connection
+          const [ax, ay] = getBobPosition(a, w, h)
+          const [bx, by] = getBobPosition(b, w, h)
+          const syncStrength = (1 - phaseDiff / 0.3) * 0.12
+          ctx.strokeStyle = `rgba(255, 215, 0, ${syncStrength})`
+          ctx.lineWidth = 0.5
+          ctx.setLineDash([3, 6])
+          ctx.beginPath()
+          ctx.moveTo(ax, ay)
+          ctx.lineTo(bx, by)
+          ctx.stroke()
+          ctx.setLineDash([])
+          // Subtle entrainment: pull phases toward each other
+          const pull = 0.001
+          if (a.swingAngle > b.swingAngle) {
+            a.swingVel -= pull
+            b.swingVel += pull
+          } else {
+            a.swingVel += pull
+            b.swingVel -= pull
+          }
+        }
+      }
+    }
+  }
+
   /** Draw all nav bobs */
   function drawNavBobs(ctx: CanvasRenderingContext2D, w: number, h: number) {
     const cx = w / 2
@@ -609,6 +670,52 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
     // Update audio decay envelope
     updateAudioDecay()
 
+    // === GRAVITATIONAL WAVE RIPPLE ===
+    gwRippleTime += 0.016
+    if (!gwRippleActive && gwRippleTime > gwNextRipple) {
+      gwRippleActive = true
+      gwRipplePhase = 0
+    }
+    if (gwRippleActive) {
+      gwRipplePhase += 0.016
+      const rippleRadius = gwRipplePhase * 200
+      const rippleAlpha = Math.max(0, 0.12 - gwRipplePhase * 0.03)
+      if (rippleAlpha > 0.005) {
+        // Draw concentric expanding rings from center
+        for (let r = 0; r < 3; r++) {
+          const rr = rippleRadius - r * 40
+          if (rr > 0) {
+            ctx.strokeStyle = `rgba(180, 140, 255, ${rippleAlpha * (1 - r * 0.3)})`
+            ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.ellipse(cx, cy, rr, rr * (1 - gwRipplePhase * 0.1), 0, 0, Math.PI * 2)
+            ctx.stroke()
+          }
+        }
+      } else {
+        gwRippleActive = false
+        gwRippleTime = 0
+        gwNextRipple = 20 + Math.random() * 30
+      }
+    }
+
+    // === CYMATICS NODES (draw accumulated crossing points) ===
+    for (let i = cymaticNodes.length - 1; i >= 0; i--) {
+      const node = cymaticNodes[i]
+      node.age += 0.016
+      node.intensity *= 0.998 // slow decay
+      if (node.intensity < 0.02 || node.age > 30) {
+        cymaticNodes.splice(i, 1)
+        continue
+      }
+      const nodeSize = 1 + node.intensity * 3
+      const nodeAlpha = Math.min(0.4, node.intensity * 0.5)
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, nodeSize, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(255, 230, 180, ${nodeAlpha})`
+      ctx.fill()
+    }
+
     // Draw many points per frame for smooth trace
     const stepsPerFrame = 40
     const dt = 0.15
@@ -681,10 +788,37 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       let screenX = cx + x * scale
       let screenY = cy + y * scale
 
+      // Gravitational wave distortion: stretch x, compress y during ripple
+      if (gwRippleActive && gwRipplePhase < 3) {
+        const distortAmount = Math.sin(gwRipplePhase * 4) * 0.05 * (1 - gwRipplePhase / 3)
+        screenX = cx + (screenX - cx) * (1 + distortAmount)
+        screenY = cy + (screenY - cy) * (1 - distortAmount)
+      }
+
       // Cursor magnetic field: bend nearby trace toward cursor
       const [mx, my] = magneticPull(screenX, screenY)
       screenX += mx
       screenY += my
+
+      // Cymatics: track repeated crossings in a grid
+      const gx = Math.floor(((screenX / w) * CYMATICS_GRID))
+      const gy = Math.floor(((screenY / h) * CYMATICS_GRID))
+      if (gx >= 0 && gx < CYMATICS_GRID && gy >= 0 && gy < CYMATICS_GRID) {
+        const gi = gy * CYMATICS_GRID + gx
+        cymaticsGrid[gi] += 0.02
+        if (cymaticsGrid[gi] > 0.5 && cymaticNodes.length < 80) {
+          // Spawn a cymatics node at this grid cell
+          const existing = cymaticNodes.find(n =>
+            Math.abs(n.x - screenX) < 15 && Math.abs(n.y - screenY) < 15
+          )
+          if (existing) {
+            existing.intensity = Math.min(1, existing.intensity + 0.05)
+          } else {
+            cymaticNodes.push({ x: screenX, y: screenY, intensity: 0.3, age: 0 })
+          }
+          cymaticsGrid[gi] = 0 // reset grid cell after spawning
+        }
+      }
 
       // Phase-based trail color (warm in-phase, cool out-of-phase)
       const traceHue = getPhaseHue(traceTime)
@@ -819,6 +953,7 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
       }
 
       drawNavBobs(ctx, w, h)
+      checkSympatheticResonance(ctx, w, h)
     }
 
     // Hint
@@ -1055,6 +1190,11 @@ export function createPendulumRoom(deps?: PendulumDeps): Room {
 
     activate() {
       active = true
+      cymaticNodes.length = 0
+      cymaticsGrid = new Float32Array(CYMATICS_GRID * CYMATICS_GRID)
+      gwRippleTime = 0
+      gwRippleActive = false
+      gwNextRipple = 20 + Math.random() * 30
       randomize()
       render()
       initAudio().then(() => {
