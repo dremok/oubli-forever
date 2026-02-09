@@ -506,8 +506,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // This is a wall — determine subtype
     const h2 = cellHash2(wx, wy)
-    if (h2 < 0.10) return INSCRIPTION  // ~10% of walls have text
-    if (h2 < 0.15) return ANOMALY  // ~5% of walls are clickable anomalies
+    if (h2 < 0.13) return INSCRIPTION  // ~13% of walls have text
+    if (h2 < 0.18) return ANOMALY  // ~5% of walls are clickable anomalies
 
     return WALL
   }
@@ -1306,119 +1306,201 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     if (!audioCtx) return
     const dest = getAudioDestination()
     const now = audioCtx.currentTime
+    const vol = 0.015 + insanity * 0.025 // gentle base volume
     const roll = Math.random()
 
-    if (roll < 0.2) {
-      // Distant knocking — 3 sharp knocks
-      for (let i = 0; i < 3; i++) {
+    if (roll < 0.18) {
+      // WHISPERING — breathy filtered noise, like someone speaking softly nearby
+      const dur = 1.5 + Math.random() * 2
+      const len = audioCtx.sampleRate * dur
+      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate)
+      const d = buf.getChannelData(0)
+      // Syllable-like amplitude modulation
+      const syllableRate = 3 + Math.random() * 4
+      for (let i = 0; i < len; i++) {
+        const t = i / audioCtx.sampleRate
+        const env = Math.sin((i / len) * Math.PI)
+        const syllable = 0.4 + 0.6 * Math.abs(Math.sin(t * syllableRate * Math.PI))
+        d[i] = (Math.random() * 2 - 1) * env * syllable
+      }
+      const src = audioCtx.createBufferSource()
+      src.buffer = buf
+      const f = audioCtx.createBiquadFilter()
+      f.type = 'bandpass'
+      f.frequency.value = 1800 + Math.random() * 800
+      f.Q.value = 8 + Math.random() * 6
+      const g = audioCtx.createGain()
+      g.gain.value = vol * 1.2
+      src.connect(f); f.connect(g); g.connect(dest)
+      if (reverbNode) g.connect(reverbNode)
+      src.start(now)
+    } else if (roll < 0.33) {
+      // CHILDREN'S SINGING — high sine tones with vibrato, like a distant lullaby
+      const noteCount = 4 + Math.floor(Math.random() * 5)
+      const baseFreq = 400 + Math.random() * 200
+      const scale = [0, 2, 3, 5, 7, 8, 12] // minor scale semitones
+      for (let i = 0; i < noteCount; i++) {
+        const osc = audioCtx.createOscillator()
+        osc.type = 'sine'
+        const semitone = scale[Math.floor(Math.random() * scale.length)]
+        const freq = baseFreq * Math.pow(2, semitone / 12)
+        osc.frequency.value = freq
+        // Vibrato
+        const vib = audioCtx.createOscillator()
+        vib.frequency.value = 4 + Math.random() * 3
+        const vibGain = audioCtx.createGain()
+        vibGain.gain.value = freq * 0.02
+        vib.connect(vibGain); vibGain.connect(osc.frequency)
+        vib.start(now)
+        const noteStart = now + i * (0.3 + Math.random() * 0.25)
+        const noteDur = 0.25 + Math.random() * 0.2
+        const ng = audioCtx.createGain()
+        ng.gain.setValueAtTime(0, noteStart)
+        ng.gain.linearRampToValueAtTime(vol * 0.8, noteStart + 0.05)
+        ng.gain.linearRampToValueAtTime(vol * 0.6, noteStart + noteDur * 0.7)
+        ng.gain.linearRampToValueAtTime(0, noteStart + noteDur)
+        osc.connect(ng); ng.connect(dest)
+        if (reverbNode) ng.connect(reverbNode)
+        osc.start(noteStart); osc.stop(noteStart + noteDur + 0.1)
+        vib.stop(noteStart + noteDur + 0.1)
+      }
+    } else if (roll < 0.48) {
+      // HAUNTING VOICE — formant-like filtered sawtooth, speaking nonsense
+      const syllables = 3 + Math.floor(Math.random() * 4)
+      const baseFreq = 80 + Math.random() * 60 // deep voice
+      for (let i = 0; i < syllables; i++) {
+        const osc = audioCtx.createOscillator()
+        osc.type = 'sawtooth'
+        osc.frequency.value = baseFreq + (Math.random() - 0.5) * 20
+        // Formant filter — vowel-like resonance
+        const formant = audioCtx.createBiquadFilter()
+        formant.type = 'bandpass'
+        const vowelFreqs = [270, 530, 730, 1000, 1300] // a, e, i, o, u ish
+        formant.frequency.value = vowelFreqs[Math.floor(Math.random() * vowelFreqs.length)]
+        formant.Q.value = 5 + Math.random() * 5
+        const sStart = now + i * (0.2 + Math.random() * 0.15)
+        const sDur = 0.15 + Math.random() * 0.2
+        const sg = audioCtx.createGain()
+        sg.gain.setValueAtTime(0, sStart)
+        sg.gain.linearRampToValueAtTime(vol * 1.5, sStart + 0.03)
+        sg.gain.linearRampToValueAtTime(vol * 0.8, sStart + sDur * 0.6)
+        sg.gain.linearRampToValueAtTime(0, sStart + sDur)
+        osc.connect(formant); formant.connect(sg); sg.connect(dest)
+        if (reverbNode) sg.connect(reverbNode)
+        osc.start(sStart); osc.stop(sStart + sDur + 0.05)
+      }
+    } else if (roll < 0.58) {
+      // DISTANT KNOCKING
+      const knocks = 2 + Math.floor(Math.random() * 3)
+      for (let i = 0; i < knocks; i++) {
         const knock = audioCtx.createOscillator()
-        knock.frequency.value = 200 + Math.random() * 100
+        knock.frequency.value = 180 + Math.random() * 120
         knock.type = 'square'
         const kg = audioCtx.createGain()
-        const t = now + i * 0.18
-        kg.gain.setValueAtTime(0.03 + insanity * 0.04, t)
+        const t = now + i * (0.15 + Math.random() * 0.1)
+        kg.gain.setValueAtTime(vol * 2, t)
         kg.gain.exponentialRampToValueAtTime(0.001, t + 0.08)
         knock.connect(kg); kg.connect(dest)
         if (reverbNode) kg.connect(reverbNode)
         knock.start(t); knock.stop(t + 0.1)
       }
-    } else if (roll < 0.35) {
-      // Metal bang — sharp broadband hit
-      const bangLen = audioCtx.sampleRate * 0.15
-      const bangBuf = audioCtx.createBuffer(1, bangLen, audioCtx.sampleRate)
-      const bd = bangBuf.getChannelData(0)
-      for (let i = 0; i < bangLen; i++) {
-        bd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bangLen * 0.1))
+    } else if (roll < 0.68) {
+      // BREATH — slow inhale/exhale close to your ear
+      const dur = 2 + Math.random() * 1.5
+      const len = audioCtx.sampleRate * dur
+      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate)
+      const d = buf.getChannelData(0)
+      for (let i = 0; i < len; i++) {
+        const t = i / len
+        // Inhale then exhale shape
+        const breathEnv = t < 0.4
+          ? Math.sin((t / 0.4) * Math.PI * 0.5)
+          : Math.sin(((t - 0.4) / 0.6) * Math.PI)
+        d[i] = (Math.random() * 2 - 1) * breathEnv
       }
-      const bangSrc = audioCtx.createBufferSource()
-      bangSrc.buffer = bangBuf
-      const bangFilter = audioCtx.createBiquadFilter()
-      bangFilter.type = 'bandpass'
-      bangFilter.frequency.value = 800 + Math.random() * 600
-      bangFilter.Q.value = 3
-      const bangGain = audioCtx.createGain()
-      bangGain.gain.value = 0.06 + insanity * 0.06
-      bangSrc.connect(bangFilter); bangFilter.connect(bangGain)
-      bangGain.connect(dest)
-      if (reverbNode) bangGain.connect(reverbNode)
-      bangSrc.start(now)
-    } else if (roll < 0.5) {
-      // Haunting whisper — filtered noise with resonance
-      const whisperLen = audioCtx.sampleRate * 1.5
-      const wBuf = audioCtx.createBuffer(1, whisperLen, audioCtx.sampleRate)
-      const wd = wBuf.getChannelData(0)
-      for (let i = 0; i < whisperLen; i++) {
-        const env = Math.sin((i / whisperLen) * Math.PI) // fade in/out
-        wd[i] = (Math.random() * 2 - 1) * env * 0.5
+      const src = audioCtx.createBufferSource()
+      src.buffer = buf
+      const f = audioCtx.createBiquadFilter()
+      f.type = 'bandpass'
+      f.frequency.value = 600 + Math.random() * 400
+      f.Q.value = 3
+      const g = audioCtx.createGain()
+      g.gain.value = vol * 1.5
+      src.connect(f); f.connect(g); g.connect(dest)
+      if (reverbNode) g.connect(reverbNode)
+      src.start(now)
+    } else if (roll < 0.78) {
+      // SCRAPING — something dragged along stone
+      const len = audioCtx.sampleRate * 0.8
+      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate)
+      const d = buf.getChannelData(0)
+      for (let i = 0; i < len; i++) {
+        d[i] = (Math.random() * 2 - 1) * (1 - i / len)
       }
-      const wSrc = audioCtx.createBufferSource()
-      wSrc.buffer = wBuf
-      const wFilter = audioCtx.createBiquadFilter()
-      wFilter.type = 'bandpass'
-      wFilter.frequency.value = 1500 + Math.random() * 1000
-      wFilter.Q.value = 10
-      const wGain = audioCtx.createGain()
-      wGain.gain.value = 0.02 + insanity * 0.03
-      wSrc.connect(wFilter); wFilter.connect(wGain)
-      wGain.connect(dest)
-      if (reverbNode) wGain.connect(reverbNode)
-      wSrc.start(now)
-    } else if (roll < 0.65) {
-      // Low sinister laugh — descending glissando
-      const laugh = audioCtx.createOscillator()
-      laugh.type = 'sawtooth'
-      laugh.frequency.setValueAtTime(180, now)
-      laugh.frequency.exponentialRampToValueAtTime(80, now + 1.5)
-      const lFilter = audioCtx.createBiquadFilter()
-      lFilter.type = 'lowpass'
-      lFilter.frequency.value = 400
-      const lGain = audioCtx.createGain()
-      // Pulsing volume for "ha ha ha" effect
-      for (let i = 0; i < 6; i++) {
-        const t = now + i * 0.25
-        lGain.gain.setValueAtTime(0.025 + insanity * 0.02, t)
-        lGain.gain.exponentialRampToValueAtTime(0.002, t + 0.12)
-      }
-      laugh.connect(lFilter); lFilter.connect(lGain)
-      lGain.connect(dest)
-      if (reverbNode) lGain.connect(reverbNode)
-      laugh.start(now); laugh.stop(now + 1.8)
-    } else if (roll < 0.8) {
-      // Scraping sound — filtered noise sweep
-      const scrapeLen = audioCtx.sampleRate * 0.8
-      const sBuf = audioCtx.createBuffer(1, scrapeLen, audioCtx.sampleRate)
-      const sd = sBuf.getChannelData(0)
-      for (let i = 0; i < scrapeLen; i++) {
-        sd[i] = (Math.random() * 2 - 1) * (1 - i / scrapeLen)
-      }
-      const sSrc = audioCtx.createBufferSource()
-      sSrc.buffer = sBuf
-      const sFilter = audioCtx.createBiquadFilter()
-      sFilter.type = 'bandpass'
-      sFilter.frequency.setValueAtTime(300, now)
-      sFilter.frequency.linearRampToValueAtTime(2000, now + 0.8)
-      sFilter.Q.value = 5
-      const sGain = audioCtx.createGain()
-      sGain.gain.value = 0.04 + insanity * 0.04
-      sSrc.connect(sFilter); sFilter.connect(sGain)
-      sGain.connect(dest)
-      if (reverbNode) sGain.connect(reverbNode)
-      sSrc.start(now)
-    } else if (roll < 0.9) {
-      // Play a pre-recorded sound if available
-      if (scareBuffers.length > 0) {
-        const buf = scareBuffers[Math.floor(Math.random() * scareBuffers.length)]
-        const src = audioCtx.createBufferSource()
-        src.buffer = buf
-        const g = audioCtx.createGain()
-        g.gain.value = 0.12 + insanity * 0.1
-        src.connect(g); g.connect(dest)
-        if (reverbNode) g.connect(reverbNode)
-        src.start(now)
-      }
+      const src = audioCtx.createBufferSource()
+      src.buffer = buf
+      const f = audioCtx.createBiquadFilter()
+      f.type = 'bandpass'
+      f.frequency.setValueAtTime(300, now)
+      f.frequency.linearRampToValueAtTime(2000, now + 0.8)
+      f.Q.value = 5
+      const g = audioCtx.createGain()
+      g.gain.value = vol * 2
+      src.connect(f); f.connect(g); g.connect(dest)
+      if (reverbNode) g.connect(reverbNode)
+      src.start(now)
+    } else if (roll < 0.88) {
+      // HUMMING — single sustained tone, like someone humming in the dark
+      const osc = audioCtx.createOscillator()
+      osc.type = 'sine'
+      const freq = 180 + Math.random() * 80
+      osc.frequency.value = freq
+      // Slow wavering
+      const vib = audioCtx.createOscillator()
+      vib.frequency.value = 2 + Math.random() * 2
+      const vibG = audioCtx.createGain()
+      vibG.gain.value = freq * 0.01
+      vib.connect(vibG); vibG.connect(osc.frequency)
+      vib.start(now)
+      const dur = 2 + Math.random() * 2
+      const g = audioCtx.createGain()
+      g.gain.setValueAtTime(0, now)
+      g.gain.linearRampToValueAtTime(vol, now + 0.5)
+      g.gain.linearRampToValueAtTime(vol * 0.7, now + dur - 0.5)
+      g.gain.linearRampToValueAtTime(0, now + dur)
+      osc.connect(g); g.connect(dest)
+      if (reverbNode) g.connect(reverbNode)
+      osc.start(now); osc.stop(now + dur + 0.1)
+      vib.stop(now + dur + 0.1)
     } else {
-      // Rare synth horror sting — thump + screech + noise
-      playSynthHorrorSting(0.4 + insanity * 0.3)
+      // SOFT CRYING — pitch-bending sine with tremolo
+      const dur = 1.5 + Math.random() * 1.5
+      const osc = audioCtx.createOscillator()
+      osc.type = 'sine'
+      const startF = 300 + Math.random() * 150
+      osc.frequency.setValueAtTime(startF, now)
+      // Sobbing pitch contour
+      for (let i = 0; i < 4; i++) {
+        const t = now + i * dur / 4
+        osc.frequency.linearRampToValueAtTime(startF + 40, t + dur / 8)
+        osc.frequency.linearRampToValueAtTime(startF - 20, t + dur / 4)
+      }
+      // Tremolo
+      const trem = audioCtx.createOscillator()
+      trem.frequency.value = 6 + Math.random() * 4
+      const tremG = audioCtx.createGain()
+      tremG.gain.value = vol * 0.4
+      trem.connect(tremG)
+      const g = audioCtx.createGain()
+      g.gain.setValueAtTime(0, now)
+      g.gain.linearRampToValueAtTime(vol * 0.8, now + 0.2)
+      g.gain.linearRampToValueAtTime(0, now + dur)
+      tremG.connect(g.gain)
+      osc.connect(g); g.connect(dest)
+      if (reverbNode) g.connect(reverbNode)
+      trem.start(now)
+      osc.start(now); osc.stop(now + dur + 0.1)
+      trem.stop(now + dur + 0.1)
     }
   }
 
@@ -1467,11 +1549,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // Footstep timing distortion
     stepDelayMod = insanity > 0.5 ? 1 + Math.sin(time * 2) * (insanity - 0.5) * 0.6 : 1
 
-    // Phantom sounds — interval decreases with insanity
+    // Phantom sounds — play from the start, with random pauses
+    // Interval: 8-30s at low insanity, 3-10s at high insanity
     phantomSoundTimer -= 0.016
-    if (phantomSoundTimer <= 0 && insanity > 0.05) {
-      const interval = Math.max(3, 25 - insanity * 25)
-      phantomSoundTimer = interval + Math.random() * interval
+    if (phantomSoundTimer <= 0) {
+      const minInterval = Math.max(3, 10 - insanity * 8)
+      const maxInterval = Math.max(8, 30 - insanity * 22)
+      phantomSoundTimer = minInterval + Math.random() * (maxInterval - minInterval)
       playPhantomSound()
     }
   }
