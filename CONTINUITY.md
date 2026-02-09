@@ -1714,6 +1714,46 @@ Fresh cultural research findings:
 - TheProjectionRoom: **Found footage fragments** — archival metadata text ("REEL 47B — SALT MINE VAULT — RECOVERED 2024") flashes during SMPTE reel changes. Inspired by EPiC Elvis discovery (68 boxes in Kansas salt mine), Iñárritu's SUEÑO PERRO (resurrected cutting room floor).
 - ThePalimpsestGallery: **Ovid's Metamorphoses ghost text** — quotes from Ovid drift slowly across paintings as barely-visible overlay. Inspired by Rijksmuseum Metamorphoses exhibition (Feb 2026), 80 works on transformation from Titian to Bourgeois.
 
+### 165. Room Deepening — TheCatacombs, TheDisintegrationLoops, TheTidePool, TheRadio + whispers + meditations
+- TheCatacombs: 3 new bedrock entries (nihilist penguin, See Memory, Florence ad ban)
+- TheDisintegrationLoops: 5 new inscriptions + neurological tremor effect (intensifies with total passes, inspired by Nothing's frontman with essential tremors)
+- TheTidePool: 7 new inscriptions + Seurat pointillist sky (random dots at horizon) + micro-plastic accumulation system (particles spawn, NEVER disappear — environmental memory)
+- TheRadio: 6 new inscriptions + frequency display tremor (shakes when signal is weak)
+- 14 new whisper fragments + 8 new DigitalDecay meditations from cultural research round 19
+
+### 166. Room Deepening — TheOssuary, TheSeismograph
+- TheOssuary: 6 new inscriptions + gateway narrowing vignette (radial gradient tightens based on dead memory ratio — hippocampal grey matter erosion metaphor)
+- TheSeismograph: 5 new inscriptions + ENSO oscillation indicator (damping sine wave showing Pacific thermal state returning to neutral)
+
+### 167. THE MYCELIUM — First Organism (`src/organisms/Mycelium.ts`)
+- **NOT a room. NOT an effect. The circulatory system of the house.**
+- Inspired by mycorrhizal networks, ethylene ripening cascades, Physarum trail reinforcement, and the oubli fruit itself
+- **Nutrient flow**: Time in a room generates nutrients that propagate through graph connections, decaying with distance
+- **Trail reinforcement**: Navigation paths strengthen with use, weaken with neglect (Physarum-style)
+- **Ripening cascade**: Rooms accumulate activity until they "ripen" like fruit, emitting ethylene-like signals to neighbors
+- **Visual tendrils**: Golden-green filaments at screen edges pulse with nutrient flow, wobble organically
+- **Spore events**: Ripeness milestones release golden particles
+- State persisted in localStorage — the house grows a circulatory system over time
+
+### 168. THE FRUITING — Emergent Events (`src/organisms/Fruiting.ts`)
+- When enough rooms ripen, the house produces "fruit" — brief, unrepeatable events:
+  - **GOLDEN RAIN**: Particles fall like pollen through all rooms
+  - **RESONANCE BLOOM**: Golden hue suffuses the entire house
+  - **SWEETENING**: Warm golden radiance overlay
+  - **TEMPORAL FOLD**: Horizontal scan lines as time stutters
+  - **MEMORY SEED**: Text fragments planted in random rooms, discovered on future visits with age displayed
+- Seeds persist in localStorage across sessions — visitors discover fragments from their own past
+- Inspired by the oubli fruit: sweet, golden, nourishing, ephemeral
+
+### 169. NEURAL PATHWAY GROWTH — Living Graph Topology
+- The room graph is no longer static — it evolves based on how you navigate
+- When you frequently traverse A→B→C, the mycelium grows a direct A→C connection
+- Dynamic connections persisted in localStorage as 'oubli_neural_pathways'
+- New connections appear in the passage bar immediately
+- Never grow to/from hidden rooms (those are earned through actions)
+- Golden spore celebration on new pathway growth
+- Inspired by neuroplasticity, brain organoid self-wiring (Nagoya 2026)
+
 ---
-*Last updated: Era 9, Feature 164 — Labyrinth performance fixed, 4 rooms inscribed, 3 rooms deepened with cultural research*
-*"every photograph was already a lie. — Rijksmuseum FAKE!, 2026"*
+*Last updated: Era 9, Feature 169 — Oubli grows organisms: Mycelium (circulatory system), Fruiting (emergent events), Neural Pathways (living topology)*
+*"what falls from a tree of forgetting tastes sweet"*
