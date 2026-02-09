@@ -127,6 +127,13 @@ function buildRootSystem(mem: StoredMemory, startX: number, startY: number): Roo
   return root
 }
 
+function collectTips(node: RootNode, tips: { x: number; y: number; memIdx: number }[], memIdx: number) {
+  if (node.children.length === 0 && node.depth > 1) {
+    tips.push({ x: node.x, y: node.y, memIdx })
+  }
+  for (const child of node.children) collectTips(child, tips, memIdx)
+}
+
 const CULTURAL_INSCRIPTIONS = [
   'the wood wide web: fungal mycorrhizal networks connecting trees underground. roots that speak.',
   'hosnedlova echo at white cube (2026): living fungal art that mutates in real time.',
@@ -138,6 +145,12 @@ const CULTURAL_INSCRIPTIONS = [
   'peter wohlleben: "trees remember." root networks pass warnings, nutrients, memories.',
   'episodic and semantic memory: the same brain networks. roots sharing the same soil.',
   'defiantly analog: milan 2026 olympics planted real trees. roots instead of screens.',
+  'polar vortex split: the atmosphere\'s structure breaking apart. even the sky has roots.',
+  'the oldest living organism: armillaria ostoyae. a fungal network covering 2,385 acres. 8,650 years old.',
+  'quantum error correction while computing: creating and destroying at once. roots growing while being pruned.',
+  'felix gonzalez-torres candy piles: art that depletes as visitors take pieces. roots feeding those who consume.',
+  'annular eclipse feb 17 2026: the moon\'s shadow through earth like light through root tunnels.',
+  'the S4 solar storm (jan 2026): aurora at low latitudes. even the sun sends roots of light into the dark.',
 ]
 
 export function createRootsRoom(deps: RootsDeps): Room {
@@ -200,6 +213,16 @@ export function createRootsRoom(deps: RootsDeps): Room {
   let lastMouseX = 0
   let lastMouseY = 0
   let mouseSpeed = 0
+
+  // Root grafting state (connections between different memory roots)
+  interface WormTrail {
+    segments: { x: number; y: number }[]
+    progress: number
+    speed: number
+    alpha: number
+    hue: number
+  }
+  let wormTrails: WormTrail[] = []
 
   // ─── Audio functions ───
 
@@ -1042,11 +1065,80 @@ export function createRootsRoom(deps: RootsDeps): Room {
     const spacing = Math.min(80, (w - 100) / memories.length)
     const startX = (w - (memories.length - 1) * spacing) / 2
 
+    const allRootTips: { x: number; y: number; memIdx: number }[] = []
     for (let i = 0; i < Math.min(memories.length, 30); i++) {
       const mem = memories[i]
       const x = startX + i * spacing
       const rootSystem = buildRootSystem(mem, x, 40)
       drawRoot(rootSystem, x, 40)
+      collectTips(rootSystem, allRootTips, i)
+    }
+
+    // Root grafting: connect tips from different memory roots that are near each other
+    for (let i = 0; i < allRootTips.length; i++) {
+      for (let j = i + 1; j < allRootTips.length; j++) {
+        if (allRootTips[i].memIdx === allRootTips[j].memIdx) continue
+        const gdx = allRootTips[i].x - allRootTips[j].x
+        const gdy = allRootTips[i].y - allRootTips[j].y
+        const gDist = Math.sqrt(gdx * gdx + gdy * gdy)
+        if (gDist < 50 && gDist > 5) {
+          const gAlpha = (1 - gDist / 50) * 0.12
+          const gHue = 130 + (i * 7 + j * 13) % 40
+          const gMidX = (allRootTips[i].x + allRootTips[j].x) / 2 + Math.sin(time * 0.5 + i) * 3
+          const gMidY = (allRootTips[i].y + allRootTips[j].y) / 2
+          ctx.beginPath()
+          ctx.moveTo(allRootTips[i].x, allRootTips[i].y)
+          ctx.quadraticCurveTo(gMidX, gMidY, allRootTips[j].x, allRootTips[j].y)
+          ctx.strokeStyle = `hsla(${gHue}, 50%, 45%, ${gAlpha})`
+          ctx.lineWidth = 0.8
+          ctx.setLineDash([2, 4])
+          ctx.stroke()
+          ctx.setLineDash([])
+          // Graft node glow at midpoint
+          ctx.beginPath()
+          ctx.arc(gMidX, gMidY, 3, 0, Math.PI * 2)
+          ctx.fillStyle = `hsla(${gHue}, 60%, 50%, ${gAlpha * 0.6 + Math.sin(time * 1.5) * 0.02})`
+          ctx.fill()
+        }
+      }
+    }
+
+    // Worm trails: rare luminescent paths crossing underground
+    if (wormTrails.length < 2 && Math.random() < 0.002) {
+      const wStartX = Math.random() < 0.5 ? -10 : w + 10
+      const wEndX = wStartX < 0 ? w + 10 : -10
+      const wBaseY = h * 0.3 + Math.random() * h * 0.5
+      const wSegs: { x: number; y: number }[] = []
+      for (let s = 0; s <= 20; s++) {
+        const t = s / 20
+        wSegs.push({ x: wStartX + (wEndX - wStartX) * t, y: wBaseY + Math.sin(t * Math.PI * 3 + s * 0.7) * 25 })
+      }
+      wormTrails.push({ segments: wSegs, progress: 0, speed: 0.003 + Math.random() * 0.002, alpha: 0.06, hue: 30 + Math.random() * 20 })
+    }
+
+    for (let wi = wormTrails.length - 1; wi >= 0; wi--) {
+      const worm = wormTrails[wi]
+      worm.progress += worm.speed
+      if (worm.progress > 1) { wormTrails.splice(wi, 1); continue }
+      const headIdx = Math.floor(worm.progress * (worm.segments.length - 1))
+      const tailIdx = Math.max(0, headIdx - 5)
+      ctx.beginPath()
+      for (let ws = tailIdx; ws <= headIdx; ws++) {
+        const seg = worm.segments[ws]
+        if (ws === tailIdx) ctx.moveTo(seg.x, seg.y)
+        else ctx.lineTo(seg.x, seg.y)
+      }
+      ctx.strokeStyle = `hsla(${worm.hue}, 25%, 35%, ${worm.alpha})`
+      ctx.lineWidth = 1.5
+      ctx.lineCap = 'round'
+      ctx.stroke()
+      if (headIdx < worm.segments.length) {
+        const head = worm.segments[headIdx]
+        ctx.beginPath()
+        ctx.arc(head.x, head.y, 3, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(${worm.hue + 20}, 40%, 45%, ${worm.alpha * 0.8})`
+        ctx.fill()
+      }
     }
 
     // Decomposition particles — drift upward from degraded memories
@@ -1287,6 +1379,7 @@ export function createRootsRoom(deps: RootsDeps): Room {
       sporeFlashes = []
       cursorSpores = []
       myceliumPulses = []
+      wormTrails = []
       tendrilsInitialized = false
       tendrils = []
       render()

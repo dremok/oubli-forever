@@ -92,6 +92,14 @@ const CULTURAL_INSCRIPTIONS = [
   "klara hosnedlova makes art from living fungus. it grows and decays while you watch.",
   "consciousness may be permanent agnosticism. we may never know if an AI is aware.",
   "yin xiuzhen builds sculptures from used clothing. each garment carries an absent body's history.",
+  "alzheimer's scrambles memory replay: the brain replays in wrong order. corruption, not absence.",
+  "shiota threads of life: red thread installations at hayward gallery. every thread once connected someone.",
+  "the doomsday clock at 85 seconds to midnight. the closest we've been to erasing our own reflection.",
+  "fennell's wuthering heights (2026): gothic-erotic love — mirrors as portals between obsession and death.",
+  "microsoft sleeper agent detection: hidden behaviors activating under specific conditions. mirrors that lie.",
+  "7000-atom schrödinger's cat (vienna): the largest object in quantum superposition. both here and not.",
+  "'2026 is the new 2016': 450% surge in nostalgia. we look in the mirror and see who we used to be.",
+  "wim wenders jury president at berlinale 2026. wings of desire — angels watching through memory and place.",
 ]
 
 // Fog writing fragments — appear when degradation is high
@@ -136,6 +144,12 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
   // Fog writing state
   const fogWritings: FogWriting[] = []
   let lastFogWriteTime = 0
+
+  // Condensation (breath-on-glass) state
+  let condensationAlpha = 0
+  let condensationX = 0
+  let condensationY = 0
+  let cursorStillTime = 0
 
   // Reflection distortion navigation zones — 4 zones at mirror edges
   let hoveredZone = -1
@@ -823,6 +837,66 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       ctx.fillText('visit rooms. type memories. return.', w / 2, h * 0.5)
     }
 
+    // --- Condensation: breath-on-glass when cursor stays still inside mirror ---
+    if (cursorVelocity < 30 && mouseX > 0 && isInMirrorArea(mouseX, mouseY, w, h)) {
+      cursorStillTime += 0.016
+      if (cursorStillTime > 2.0) {
+        if (condensationX === 0) { condensationX = mouseX; condensationY = mouseY }
+        condensationAlpha = Math.min(0.12, condensationAlpha + 0.0006)
+      }
+    } else {
+      cursorStillTime = 0
+      condensationAlpha *= 0.97
+      if (condensationAlpha < 0.001) { condensationX = 0; condensationY = 0 }
+    }
+
+    if (condensationAlpha > 0.001) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(mirrorInnerX, mirrorInnerY, mirrorInnerW, mirrorInnerH)
+      ctx.clip()
+      const condR = 40 + condensationAlpha * 300
+      const condGrad = ctx.createRadialGradient(condensationX, condensationY, 0, condensationX, condensationY, condR)
+      condGrad.addColorStop(0, `rgba(180, 180, 200, ${condensationAlpha})`)
+      condGrad.addColorStop(0.5, `rgba(160, 160, 180, ${condensationAlpha * 0.3})`)
+      condGrad.addColorStop(1, 'rgba(160, 160, 180, 0)')
+      ctx.fillStyle = condGrad
+      ctx.fillRect(condensationX - condR, condensationY - condR, condR * 2, condR * 2)
+      ctx.restore()
+    }
+
+    // --- Mirror aging: hairline cracks from frame edges over session ---
+    const agingT = Math.min(1, time / 180)
+    if (agingT > 0.15) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(mirrorInnerX, mirrorInnerY, mirrorInnerW, mirrorInnerH)
+      ctx.clip()
+      const nCracks = Math.floor(agingT * 5)
+      for (let ci = 0; ci < nCracks; ci++) {
+        const sd = ci * 7919
+        const side = ci % 4
+        let crX: number, crY: number
+        if (side === 0) { crX = mirrorInnerX; crY = mirrorInnerY + (sd % 97) / 97 * mirrorInnerH }
+        else if (side === 1) { crX = mirrorInnerX + mirrorInnerW; crY = mirrorInnerY + ((sd + 37) % 89) / 89 * mirrorInnerH }
+        else if (side === 2) { crX = mirrorInnerX + ((sd + 73) % 83) / 83 * mirrorInnerW; crY = mirrorInnerY }
+        else { crX = mirrorInnerX + ((sd + 19) % 79) / 79 * mirrorInnerW; crY = mirrorInnerY + mirrorInnerH }
+        ctx.beginPath()
+        ctx.moveTo(crX, crY)
+        const segs = 3 + (sd % 3)
+        const cLen = agingT * 25
+        for (let s = 0; s < segs; s++) {
+          crX += Math.sin(sd * 0.1 + s * 3.7) * cLen
+          crY += Math.cos(sd * 0.13 + s * 2.3) * cLen * 0.6
+          ctx.lineTo(crX, crY)
+        }
+        ctx.strokeStyle = `rgba(120, 120, 140, ${agingT * 0.025})`
+        ctx.lineWidth = 0.5
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
     // --- Mirror ripple at cursor position ---
     // Update and render ripples
     for (let i = ripples.length - 1; i >= 0; i--) {
@@ -1280,6 +1354,7 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       saveData()
       buildPortrait()
       inscriptionStartTime = Date.now()
+      condensationAlpha = 0; condensationX = 0; condensationY = 0; cursorStillTime = 0
       render()
 
       // Initialize and fade in audio
@@ -1302,6 +1377,8 @@ export function createMirrorRoom(deps: MirrorDeps): Room {
       cursorVelocity = 0
       prevMouseX = -1
       prevMouseY = -1
+      // Reset condensation
+      condensationAlpha = 0; condensationX = 0; condensationY = 0; cursorStillTime = 0
     },
 
     destroy() {

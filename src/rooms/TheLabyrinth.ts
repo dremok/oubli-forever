@@ -154,6 +154,11 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   const keys = new Set<string>()
 
 
+  // Wall overrides — periodically opened walls to prevent getting stuck
+  const wallOverrides = new Map<string, number>()
+  let lastWallOpenTime = 0
+  const WALL_OPEN_INTERVAL = 20 // seconds between random wall openings
+
   // Region salts for the forgetting mechanic
   const regionSalts = new Map<string, number>()
   const activeRegions = new Set<string>()
@@ -478,6 +483,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   }
 
   function getWorldCell(wx: number, wy: number): number {
+    // Check wall overrides first (manually opened walls)
+    const overrideKey = `${wx},${wy}`
+    if (wallOverrides.has(overrideKey)) return wallOverrides.get(overrideKey)!
+
     const xOdd = (wx & 1) === 1
     const yOdd = (wy & 1) === 1
 
@@ -1528,8 +1537,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // FOV warping — pulsing wider, creating fisheye feeling
     fovWarp = insanity > 0.15 ? Math.sin(time * 0.3) * (insanity - 0.15) * 0.4 : 0
 
-    // Movement drift — you don't go quite where you intend
-    moveDrift = insanity > 0.2 ? Math.sin(time * 0.7) * (insanity - 0.2) * 0.02 : 0
+    // Movement drift — disabled (caused stutter from wall collisions)
+    moveDrift = 0
 
     // Color shift — hue rotation increasing
     colorShift = insanity > 0.25 ? (insanity - 0.25) * 80 : 0
@@ -1537,8 +1546,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     // Wall breathing — walls expand and contract
     breathePhase = insanity > 0.1 ? Math.sin(time * 0.8) * insanity * 0.15 : 0
 
-    // Corridor stretch — distant walls appear further
-    corridorStretch = insanity > 0.35 ? 1 + (insanity - 0.35) * 0.8 : 1
+    // Corridor stretch — disabled (made movement feel slow)
+    corridorStretch = 1
 
     // Horizon shift — the ground plane moves
     horizonShift = insanity > 0.4 ? Math.sin(time * 0.25) * (insanity - 0.4) * 40 : 0
@@ -1595,8 +1604,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       moving = true
     }
 
-    // Turn speed affected by insanity — sometimes sluggish, sometimes too fast
-    const effectiveTurnSpeed = turnSpeed * (1 + (insanity > 0.4 ? Math.sin(time * 3) * (insanity - 0.4) * 0.8 : 0))
+    // Turn speed — constant (insanity fluctuation removed, caused stutter)
+    const effectiveTurnSpeed = turnSpeed
     if (keys.has('a') || keys.has('arrowleft')) {
       pa -= effectiveTurnSpeed
     }
@@ -1604,12 +1613,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       pa += effectiveTurnSpeed
     }
 
-    // At high insanity, involuntary micro-movements
-    if (insanity > 0.6 && !moving) {
-      const driftAmount = (insanity - 0.6) * 0.008
-      px += Math.cos(time * 1.3) * driftAmount
-      py += Math.sin(time * 1.7) * driftAmount
-    }
+    // Involuntary micro-movements — disabled (caused stutter)
 
     // Collision detection against world cells
     const margin = 0.2
@@ -1627,10 +1631,37 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     )
     if (checkCellY === 0) py = newY
 
-    if (moving) playFootstep()
-
     // Track explored cells
     exploredCells.add(`${Math.floor(px)},${Math.floor(py)}`)
+
+    // Periodically open a random wall near the player to prevent dead ends
+    if (time - lastWallOpenTime > WALL_OPEN_INTERVAL) {
+      lastWallOpenTime = time
+      // Search for a wall in the player's vicinity (radius ~6 cells) and open it
+      const searchRadius = 6
+      const candidates: [number, number][] = []
+      const flPx = Math.floor(px)
+      const flPy = Math.floor(py)
+      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+          const wx = flPx + dx
+          const wy = flPy + dy
+          const xOdd = (wx & 1) === 1
+          const yOdd = (wy & 1) === 1
+          // Only door positions (mixed parity) that are currently walls
+          if (xOdd === yOdd) continue
+          if (wallOverrides.has(`${wx},${wy}`)) continue
+          const cell = getWorldCell(wx, wy)
+          if (cell === WALL || cell === INSCRIPTION) {
+            candidates.push([wx, wy])
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        const [owx, owy] = candidates[Math.floor(Math.random() * candidates.length)]
+        wallOverrides.set(`${owx},${owy}`, 0)
+      }
+    }
 
     // Update regions (the labyrinth forgets distant areas)
     updateRegions()
@@ -3726,6 +3757,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       glitchChance = 0
       stepDelayMod = 1
       phantomSoundTimer = 10 + Math.random() * 15
+      wallOverrides.clear()
+      lastWallOpenTime = 0
       nearbyPortal = null
       inscriptionText = ''
       inscriptionAlpha = 0
