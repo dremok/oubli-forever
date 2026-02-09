@@ -315,8 +315,8 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // This is a wall — determine subtype
     const h2 = cellHash2(wx, wy)
-    if (h2 < 0.06) return INSCRIPTION
-    if (h2 < 0.11) return ANOMALY  // ~5% of walls are clickable anomalies
+    if (h2 < 0.14) return INSCRIPTION  // ~14% of walls have text/memories
+    if (h2 < 0.19) return ANOMALY  // ~5% of walls are clickable anomalies
 
     return WALL
   }
@@ -345,7 +345,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
   function getInscriptionText(wx: number, wy: number): { text: string; isMemory: boolean } {
     const memTexts = deps.getMemories?.().map(m => m.currentText).filter(t => t.length > 3) ?? []
-    const allTexts = [...WALL_FRAGMENTS, ...memTexts.slice(0, 10)]
+    // Weight memories 3x heavier so they appear more often on walls
+    const weightedMems = [...memTexts.slice(0, 10), ...memTexts.slice(0, 10), ...memTexts.slice(0, 10)]
+    const allTexts = [...WALL_FRAGMENTS, ...weightedMems]
     const idx = Math.floor(cellHash2(wx + 3, wy + 7) * allTexts.length)
     const text = allTexts[idx % allTexts.length]
     const isMemory = idx >= WALL_FRAGMENTS.length
@@ -1444,39 +1446,33 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       c.textAlign = 'center'
       c.textBaseline = 'middle'
 
-      // --- Multi-pass scratched/drawn effect ---
-      // Pass 1: Chalky glow halo
-      c.shadowColor = `rgba(${r}, ${g}, ${b}, ${alpha * 0.3})`
-      c.shadowBlur = 4 + seed3 * 3
-      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.15})`
-      c.fillText(ch, (seed1 - 0.5) * 2, (seed2 - 0.5) * 2)
+      // --- Multi-pass painted/drawn effect ---
+      // Pass 1: Big chalky glow halo — looks like paint bleeding into stone
+      c.shadowColor = `rgba(${r}, ${g}, ${b}, ${alpha * 0.5})`
+      c.shadowBlur = 6 + seed3 * 4
+      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.3})`
+      c.fillText(ch, (seed1 - 0.5) * 1.5, (seed2 - 0.5) * 1.5)
       c.shadowBlur = 0
       c.shadowColor = 'transparent'
 
-      // Pass 2: Stroke outline — looks scratched into the wall
-      c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.7})`
-      c.lineWidth = 0.8 + seed2 * 0.4
-      c.strokeText(ch, 0, 0)
-
-      // Pass 3: Thin secondary stroke with offset (trembling hand)
-      c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.35})`
-      c.lineWidth = 0.5
-      c.strokeText(ch, (seed3 - 0.5) * 2.5, (seed1 - 0.5) * 2)
-
-      // Pass 4: Faint fill for readability
-      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.25})`
+      // Pass 2: Bold fill — the main painted stroke
+      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.8})`
       c.fillText(ch, 0, 0)
 
-      // Occasional scratch marks extending from characters
-      if (seed1 > 0.7) {
-        c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.1})`
-        c.lineWidth = 0.5
-        c.beginPath()
-        const scratchLen = charSize * (0.3 + seed2 * 0.4)
-        const scratchAngle = (seed3 - 0.5) * Math.PI * 0.5
-        c.moveTo(0, 0)
-        c.lineTo(Math.cos(scratchAngle) * scratchLen, Math.sin(scratchAngle) * scratchLen)
-        c.stroke()
+      // Pass 3: Second fill offset — thicker paint strokes
+      c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.5})`
+      c.fillText(ch, (seed3 - 0.5) * 2, (seed1 - 0.5) * 1.5)
+
+      // Pass 4: Stroke outline for crispness
+      c.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.4})`
+      c.lineWidth = 1.2 + seed2 * 0.6
+      c.strokeText(ch, 0, 0)
+
+      // Paint drip effect on some characters
+      if (seed1 > 0.75) {
+        const dripLen = charSize * (0.4 + seed2 * 0.6)
+        c.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * alphaJitter * 0.15})`
+        c.fillRect(-1, charSize * 0.3, 2 + seed3 * 2, dripLen)
       }
 
       c.restore()
@@ -2937,7 +2933,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
       // Collect inscription text from nearby walls
-      if (hit.cell === INSCRIPTION && correctedDist < 4) {
+      if (hit.cell === INSCRIPTION && correctedDist < 6) {
         const insc = getInscriptionText(hit.hitX, hit.hitY)
         visibleInscriptions.push({
           text: insc.text,
@@ -2985,10 +2981,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.rotate(-Math.PI / 2)
 
       if (insc.isMemory) {
-        // Hand-drawn style for user memories — per-character jitter with handwriting font
-        drawHandwrittenText(ctx, insc.text.substring(0, 24), fontSize * 1.2, alpha, insc.wx, insc.wy)
-        // Pictograph symbols extracted from memory content — actual drawings, not text
-        drawMemoryPictographs(ctx, insc.text, fontSize * 2.5, alpha, insc.wx, insc.wy)
+        // Large painted memory text — prominent, like graffiti on stone
+        const paintSize = Math.max(14, Math.min(28, 32 / insc.dist))
+        const paintAlpha = Math.min(0.85, insc.brightness * 1.2) * (0.6 + Math.sin(time * 0.3 + insc.screenX * 0.01) * 0.2)
+        drawHandwrittenText(ctx, insc.text.substring(0, 30), paintSize, paintAlpha, insc.wx, insc.wy)
       } else {
         // Standard inscription rendering
         ctx.font = `${fontSize}px "Cormorant Garamond", serif`
