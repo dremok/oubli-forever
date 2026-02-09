@@ -1536,6 +1536,32 @@ Keywords in user memories trigger procedural symbol drawings on walls: sun (with
 - **Berlinale 2026**: Wim Wenders jury, 1990s retrospective
 - **Microsoft sleeper agent detection**: Hidden behaviors that activate only under specific conditions
 
+### 149. Labyrinth Haunting Sounds + More Inscriptions
+- 9 diverse phantom sound types: whispering (syllable-modulated noise), children's singing (minor scale sine with vibrato), haunting voices (formant-filtered sawtooth), distant knocking, breathing, scraping, humming, soft crying
+- Sounds play from the very start with variable pauses (8-30s at low insanity, 3-10s at high)
+- Inscription rate bumped to 13%
+
+### 150. TheTerrarium Deepened — Predator-Prey Ecosystem (1072→1477 lines)
+- Predator species: red angular hunters with longer sense range, cooldown between kills
+- Environmental catastrophes: toxic bloom (green cloud), drought (food stops), temperature spike (edge damage), mutation wave (offspring variation)
+- Day/night cycle: visual shifts, slower creatures at night, food grows faster during day, moonlight
+- Predator-prey self-regulation: predators reproduce slower, die younger, auto-reseed if extinct
+- Updated inscriptions: Art Basel Qatar "Becoming", MIT ultrasound consciousness, Neuralink Blindsight, Lotka-Volterra
+
+### 151. TheFurnace Deepened — Smoke, Ash, Fire Breathing (1121→1270 lines)
+- Smoke particle system: dark billows that rise, expand, and drift with wind
+- Ash floor deposits: burned memories leave text fragments in accumulated ash
+- Fire breathing rhythm: flames expand and contract rhythmically
+- Wind drift: subtle directional force on smoke, embers, and flames
+- Updated inscriptions: Besson's Dracula, Iñárritu SUEÑO PERRO, Alzheimer's scrambled replay, Tracey Emin
+
+### Cultural Research Round 10 (Feb 2026)
+- **MIT focused ultrasound consciousness mapping**: Roadmap for studying consciousness with sound waves through skull
+- **Neuralink Blindsight**: Brain implant to restore vision by stimulating visual cortex directly (2026 trials)
+- **Art Basel Qatar "Becoming"**: First edition, Wael Shawky as artistic director, theme of transformation
+- **Besson's Dracula**: Caleb Landry Jones as sympathetic immortal, gothic romance (Feb 2026)
+- **Italian brainrot (Bombardiro Crocodilo)**: AI-generated absurdist Italian creatures, massive viral phenomenon
+
 ---
-*Last updated: Era 9, Feature 148 — Seismograph deepened + labyrinth pictographs*
-*"the labyrinth forgets its own corridors. you forget yourself."*
+*Last updated: Era 9, Feature 151 — Terrarium predators + Furnace smoke*
+*"the predators and prey oscillate forever. neither wins. both persist."*
