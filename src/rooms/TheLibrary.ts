@@ -68,6 +68,25 @@ interface FloatingLine {
   isAuthor: boolean
 }
 
+const CULTURAL_INSCRIPTIONS = [
+  'borges\' library of babel: every possible book exists. most are gibberish. the meaningful ones are indistinguishable.',
+  'the voynich manuscript remains undeciphered. 600 years of scholars failing to read what someone clearly wrote.',
+  'calvino\'s "if on a winter\'s night a traveler": a novel about the impossibility of finishing a novel.',
+  'the infinite monkey theorem: given infinite time, random keystrokes produce shakespeare. given finite time, noise.',
+  'the library of congress has 170 million items. it adds 12,000 more per day. remembering is now a logistics problem.',
+  'episodic and semantic memory are neurologically indistinguishable. the line between knowing and remembering is fiction.',
+  'kidney cells form memories. your body is a library. every organ a shelf.',
+  'binh danh photographs on polished metal. the viewer\'s face appears inside the image. you are always in the book.',
+  'the boltzmann brain: a random fluctuation could create a mind complete with false memories of reading this sentence.',
+  'film photography up 127%. each frame costs something. intentional seeing against the infinite scroll.',
+  'she speaks: black women artists encoding memory into art. elizabeth catlett\'s hands remember what archives forgot.',
+  'every book is a daguerreotype of a mind. fixed in ink, slowly yellowing, always reflecting the reader.',
+  'pi contains every finite sequence of digits. your phone number. your birthday. the date of your death. all lost in noise.',
+  'the internet archive saves 835 billion web pages. 40% of links from 2013 are dead. the library rots from within.',
+  'an ape chose imaginary juice over an empty cup. fiction is not a human invention.',
+  'community darkrooms reopen: shared darkness as collective practice. the library prefers low light.',
+]
+
 // Simple seedable PRNG
 function mulberry32(seed: number) {
   return function() {
@@ -156,6 +175,9 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
   let active = false
   let frameId = 0
   let time = 0
+
+  let inscriptionTimer = 0
+  let inscriptionIndex = 0
 
   let location: LibraryLocation = { hexagon: 0, wall: 1, shelf: 1, volume: 1, page: 1 }
   let pageContent: string[] = []
@@ -1351,6 +1373,32 @@ export function createLibraryRoom(deps: LibraryDeps): Room {
     c.fillStyle = 'rgba(255, 215, 0, 0.08)'
     const fragCount = memoryFragmentPositions.length
     c.fillText(`${fragCount} fragment${fragCount !== 1 ? 's' : ''} of you on this page`, w - 12, h - 18)
+
+    // Cultural inscription cycling
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIndex = (inscriptionIndex + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    {
+      const insText = CULTURAL_INSCRIPTIONS[inscriptionIndex]
+      c.font = '11px "Cormorant Garamond", serif'
+      c.textAlign = 'center'
+      c.fillStyle = 'rgba(140, 120, 90, 0.03)'
+      const insMaxW = w * 0.7
+      const insWords = insText.split(' ')
+      const insLines: string[] = []
+      let insLine = ''
+      for (const word of insWords) {
+        const test = insLine ? insLine + ' ' + word : word
+        if (c.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+        else insLine = test
+      }
+      if (insLine) insLines.push(insLine)
+      for (let li = 0; li < insLines.length; li++) {
+        c.fillText(insLines[li], w / 2, h - 50 + li * 14)
+      }
+    }
 
     // Bottom quote
     c.font = '12px "Cormorant Garamond", serif'

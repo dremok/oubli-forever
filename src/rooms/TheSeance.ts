@@ -73,6 +73,25 @@ const BETWEEN_RESPONSES = [
   'you named it. the between-place. the hallway of doors. it materializes.',
 ]
 
+const CULTURAL_INSCRIPTIONS = [
+  'the oracle at delphi breathed volcanic fumes. the pythia spoke truth because she was poisoned.',
+  'ELIZA (1966): the first chatbot. patients confided in a simple pattern matcher and felt heard.',
+  'ai as stochastic oracle: LLMs deliver pronouncements without understanding, like the pythia.',
+  'ai hallucination is pareidolia: finding patterns in noise. nature says it\'s a feature, not a bug.',
+  '47% of young adults seek guidance through divination. astrology apps: $3 billion market.',
+  'the turing test was never about intelligence. it was about performance.',
+  'the séance table raps: one knock for yes, two for no. the medium is the message.',
+  'transcranial ultrasound probes consciousness with sound waves through the skull. science as séance.',
+  'the boltzmann brain: a random vacuum fluctuation with false memories. indistinguishable from you.',
+  'kidney cells form memories. your organs remember. the body is a medium.',
+  'spider silk holds because of invisible bonds. what you can\'t see connects everything.',
+  'episodic and semantic memory use the same brain networks. knowing is remembering is knowing.',
+  'empac "staging grounds": restaging experience across time. a thai myth evoked through video.',
+  'she speaks: black women encoding historical memory into art that outlives forgetting.',
+  'an ape chose imaginary juice. pretend play exists outside human minds. belief is universal.',
+  'the void is not empty. virtual particles flicker into and out of existence. something from nothing.',
+]
+
 interface SeanceDeps {
   getMemories: () => StoredMemory[]
   speakText?: (text: string) => Promise<void>
@@ -107,6 +126,11 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
   const messages: Message[] = []
   let fadeInterval: number | null = null
   let betweenRevealed = false
+
+  // Cultural inscription state
+  let inscriptionEl: HTMLElement | null = null
+  let inscriptionIndex = 0
+  let inscriptionTimer: number | null = null
 
   // Voice input — speak to the spirits
   let speech: SpeechSession | null = null
@@ -1232,6 +1256,24 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       hint.textContent = 'the void answers from your memories'
       overlay.appendChild(hint)
 
+      // Cultural inscription — cycles slowly at the bottom
+      inscriptionEl = document.createElement('div')
+      inscriptionEl.style.cssText = `
+        position: absolute; bottom: 30px;
+        left: 50%; transform: translateX(-50%);
+        max-width: 70vw;
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300; font-size: 11px;
+        color: rgba(180, 160, 220, 0.06);
+        letter-spacing: 1px;
+        text-align: center;
+        line-height: 1.5;
+        pointer-events: none;
+        transition: opacity 3s ease;
+      `
+      inscriptionEl.textContent = CULTURAL_INSCRIPTIONS[0]
+      overlay.appendChild(inscriptionEl)
+
       // Voice input setup
       speech = createSpeechSession()
       if (speech.supported) {
@@ -1357,6 +1399,11 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         window.addEventListener('keydown', handleSeanceKeyDown)
         window.addEventListener('keyup', handleSeanceKeyUp)
       }
+      // Cycle cultural inscriptions every 24s
+      inscriptionTimer = window.setInterval(() => {
+        inscriptionIndex = (inscriptionIndex + 1) % CULTURAL_INSCRIPTIONS.length
+        if (inscriptionEl) inscriptionEl.textContent = CULTURAL_INSCRIPTIONS[inscriptionIndex]
+      }, 24000)
       // Initialize audio
       await initAudio()
       // Initialize visual atmosphere
@@ -1367,6 +1414,8 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
 
     deactivate() {
       if (fadeInterval) clearInterval(fadeInterval)
+      if (inscriptionTimer) clearInterval(inscriptionTimer)
+      inscriptionTimer = null
       if (wispAnimFrame) cancelAnimationFrame(wispAnimFrame)
       wispAnimFrame = null
       hoveredWisp = -1

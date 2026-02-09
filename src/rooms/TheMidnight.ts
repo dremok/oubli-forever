@@ -106,6 +106,25 @@ const HOURLY_POEMS: string[] = [
   'eleven is midnight\'s shadow.\nthe anticipation of ending.\neverything winds down.\nthe clock begins to lean forward.',
 ]
 
+const CULTURAL_INSCRIPTIONS = [
+  'the doomsday clock reads 85 seconds to midnight. the closest it has ever been.',
+  'at 3am the brain replays the day\'s events. the hippocampus edits what to keep.',
+  'venice biennale 2026 "in minor keys": quiet registers, the barely perceptible.',
+  'the witching hour was real to medieval monks. 3am: the hour farthest from prayer.',
+  'every midnight is a small death. every dawn is involuntary resurrection.',
+  'the boltzmann brain: a random fluctuation could create a mind full of false memories. at midnight, who can tell?',
+  'community darkrooms reopen worldwide. shared darkness, shared chemicals, shared waiting.',
+  'insomnia is the mind refusing to forget. sleep is forgetting practiced well.',
+  'the annular eclipse of feb 17, 2026: a ring of fire over antarctica. witnessed by 16 scientists and some penguins.',
+  'time cells in the hippocampus fire in sequence, stamping each memory with a when.',
+  'the second is being redefined: 430 trillion oscillations of cesium per second.',
+  'tehching hsieh punched a time clock every hour for a year. 8,760 photographs. 133 gaps where he failed.',
+  'marclay\'s "the clock": a 24-hour film where every frame shows a clock matching real time.',
+  'at midnight, the boundary between today and tomorrow does not exist. you are in neither.',
+  'the polar vortex split in feb 2026. 50°C in australia while america froze. the atmosphere forgetting balance.',
+  'canyon museum, nyc: dedicated to time-based art. nothing permanent. only durations.',
+]
+
 // --- Twilight phase enum ---
 const enum TwilightPhase {
   Night = 0,             // deepest black, full stars
@@ -397,6 +416,10 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
   let time = 0
   let towerHovered = false
   let dawnPortalHovered = false
+
+  // --- Cultural inscription state ---
+  let inscriptionTimer = 0
+  let inscriptionIndex = 0
 
   // --- Twilight state ---
   let twilightData: SunData | null = null
@@ -1112,6 +1135,32 @@ export function createMidnightRoom(deps?: MidnightDeps): Room {
           : 'barely here. the daylight dissolves this place. [click to illuminate]',
         w / 2, h * 0.78
       )
+    }
+
+    // Cultural inscription cycling
+    inscriptionTimer += 0.016
+    if (inscriptionTimer >= 24) {
+      inscriptionTimer = 0
+      inscriptionIndex = (inscriptionIndex + 1) % CULTURAL_INSCRIPTIONS.length
+    }
+    {
+      const insText = CULTURAL_INSCRIPTIONS[inscriptionIndex]
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = `rgba(200, 190, 220, ${vividness * 0.03})`
+      const insMaxW = w * 0.7
+      const insWords = insText.split(' ')
+      const insLines: string[] = []
+      let insLine = ''
+      for (const word of insWords) {
+        const test = insLine ? insLine + ' ' + word : word
+        if (ctx.measureText(test).width > insMaxW) { insLines.push(insLine); insLine = word }
+        else insLine = test
+      }
+      if (insLine) insLines.push(insLine)
+      for (let li = 0; li < insLines.length; li++) {
+        ctx.fillText(insLines[li], w / 2, h - 60 + li * 14)
+      }
     }
 
     // Title
