@@ -205,6 +205,12 @@ const CULTURAL_INSCRIPTIONS = [
   'seed vaults in svalbard hold 1.3 million varieties. insurance against forgetting how to grow food.',
   'e.O. wilson: half of all species will be extinct by 2100. the garden is closing.',
   'shape-shifting molecular devices: matter that remembers, thinks, and learns. the new root system.',
+  'fungi use electrical spikes to communicate. up to 50 words. the roots are speaking beneath you.',
+  '474 plant species are critically endangered, possibly extinct. the laurel family lost the most: 74 species of silent trees.',
+  'the mycorrhizal network: trees share sugar and warnings through fungal threads. a forest is one organism.',
+  'three species of seed-bearing plants vanish per year — 500 times the natural rate. the garden thins.',
+  'adamatzky found fungal spike trains lasting 1 to 21 hours. the slowest language on earth.',
+  'the word "garden" comes from old english "geard" — an enclosure. every garden is a wall against forgetting.',
 ]
 
 export function createGardenRoom(deps: GardenDeps): Room {
@@ -222,6 +228,48 @@ export function createGardenRoom(deps: GardenDeps): Room {
   let mouseX = 0
   let mouseY = 0
   let pollenParticles: Pollen[] = []
+
+  // Mycorrhizal network — underground connections between plants
+  interface MycorrhizalPulse {
+    fromIdx: number
+    toIdx: number
+    progress: number // 0..1 along the path
+    speed: number
+    alpha: number
+    hue: number // warm = sugar sharing, cool = warning signal
+  }
+  let mycorrhizalPulses: MycorrhizalPulse[] = []
+  let mycorrhizalTimer = 0
+
+  // Fallen leaves — particles that drop from degrading plants
+  interface FallenLeaf {
+    x: number
+    y: number
+    rotation: number
+    rotSpeed: number
+    vy: number
+    vx: number
+    size: number
+    hue: number
+    alpha: number
+    grounded: boolean
+  }
+  let fallenLeaves: FallenLeaf[] = []
+  let leafDropTimer = 0
+
+  // Fireflies — tiny lights attracted to healthy plants
+  interface Firefly {
+    x: number
+    y: number
+    vx: number
+    vy: number
+    phase: number
+    speed: number
+    brightness: number
+    targetX: number
+    targetY: number
+  }
+  let fireflies: Firefly[] = []
 
   // Audio state
   let audioMaster: GainNode | null = null
@@ -916,6 +964,189 @@ export function createGardenRoom(deps: GardenDeps): Room {
       ctx.fill()
     }
 
+    // --- Mycorrhizal network (underground) ---
+    const groundY2 = h * 0.82
+    if (plants.length >= 2) {
+      // Draw faint root connections between adjacent plants
+      for (let i = 0; i < plants.length - 1; i++) {
+        const p1 = plants[i]
+        const p2 = plants[i + 1]
+        const health = Math.min(1 - p1.memory.degradation, 1 - p2.memory.degradation)
+        if (health < 0.1) continue
+        const rootAlpha = 0.02 + health * 0.02
+        const sway1 = Math.sin(time * p1.swaySpeed + p1.swayPhase) * 1
+        const sway2 = Math.sin(time * p2.swaySpeed + p2.swayPhase) * 1
+
+        // Underground bezier curve between plants
+        const sx1 = p1.x + sway1
+        const sx2 = p2.x + sway2
+        const depth = groundY2 + 15 + Math.abs(sx2 - sx1) * 0.08
+        ctx.strokeStyle = `rgba(80, 50, 30, ${rootAlpha})`
+        ctx.lineWidth = 0.8
+        ctx.beginPath()
+        ctx.moveTo(sx1, groundY2 + 3)
+        ctx.quadraticCurveTo((sx1 + sx2) / 2, depth, sx2, groundY2 + 3)
+        ctx.stroke()
+      }
+
+      // Spawn mycorrhizal pulses periodically
+      mycorrhizalTimer += 0.016
+      if (mycorrhizalTimer > 3 && plants.length >= 2) {
+        mycorrhizalTimer = 0
+        if (mycorrhizalPulses.length < 6 && Math.random() < 0.4) {
+          const fromIdx = Math.floor(Math.random() * (plants.length - 1))
+          const toIdx = fromIdx + 1
+          const fromHealth = 1 - plants[fromIdx].memory.degradation
+          const toHealth = 1 - plants[toIdx].memory.degradation
+          // Sugar flows from healthy to struggling; warnings flow from dying
+          const isWarning = plants[fromIdx].memory.degradation > 0.6 || plants[toIdx].memory.degradation > 0.6
+          mycorrhizalPulses.push({
+            fromIdx,
+            toIdx,
+            progress: 0,
+            speed: 0.008 + Math.random() * 0.005,
+            alpha: 0.15 + Math.max(fromHealth, toHealth) * 0.15,
+            hue: isWarning ? 0 : 40, // red = warning, amber = sugar
+          })
+        }
+      }
+
+      // Draw and update pulses
+      mycorrhizalPulses = mycorrhizalPulses.filter(pulse => {
+        pulse.progress += pulse.speed
+        if (pulse.progress > 1) return false
+        if (pulse.fromIdx >= plants.length || pulse.toIdx >= plants.length) return false
+
+        const p1 = plants[pulse.fromIdx]
+        const p2 = plants[pulse.toIdx]
+        const sx1 = p1.x
+        const sx2 = p2.x
+        const depth = groundY2 + 15 + Math.abs(sx2 - sx1) * 0.08
+
+        // Bezier point at progress
+        const t2 = pulse.progress
+        const mt = 1 - t2
+        const px = mt * mt * sx1 + 2 * mt * t2 * ((sx1 + sx2) / 2) + t2 * t2 * sx2
+        const py = mt * mt * (groundY2 + 3) + 2 * mt * t2 * depth + t2 * t2 * (groundY2 + 3)
+
+        const glow = ctx!.createRadialGradient(px, py, 0, px, py, 6)
+        glow.addColorStop(0, `hsla(${pulse.hue}, 60%, 50%, ${pulse.alpha})`)
+        glow.addColorStop(1, 'transparent')
+        ctx!.fillStyle = glow
+        ctx!.beginPath()
+        ctx!.arc(px, py, 6, 0, Math.PI * 2)
+        ctx!.fill()
+
+        return true
+      })
+    }
+
+    // --- Fallen leaves ---
+    leafDropTimer += 0.016
+    if (leafDropTimer > 2 && fallenLeaves.length < 30) {
+      leafDropTimer = 0
+      // Drop leaves from degrading plants
+      const degrading = plants.filter(p => p.memory.degradation > 0.4)
+      if (degrading.length > 0 && Math.random() < 0.3) {
+        const src = degrading[Math.floor(Math.random() * degrading.length)]
+        const health = 1 - src.memory.degradation
+        fallenLeaves.push({
+          x: src.x + (Math.random() - 0.5) * 20,
+          y: groundY2 - 30 - Math.random() * 40,
+          rotation: Math.random() * Math.PI * 2,
+          rotSpeed: (Math.random() - 0.5) * 0.05,
+          vy: 0.2 + Math.random() * 0.3,
+          vx: (Math.random() - 0.5) * 0.4 + wind * 10,
+          size: 2 + Math.random() * 3,
+          hue: health > 0.3 ? 30 + Math.random() * 20 : 20 + Math.random() * 10,
+          alpha: 0.2 + health * 0.3,
+          grounded: false,
+        })
+      }
+    }
+    for (const leaf of fallenLeaves) {
+      if (!leaf.grounded) {
+        leaf.y += leaf.vy
+        leaf.x += leaf.vx + wind * 3
+        leaf.rotation += leaf.rotSpeed
+        if (leaf.y >= groundY2 - 2) {
+          leaf.y = groundY2 - 2
+          leaf.grounded = true
+        }
+      } else {
+        // Grounded leaves slowly fade
+        leaf.alpha -= 0.0003
+      }
+
+      if (leaf.alpha <= 0) continue
+
+      ctx.save()
+      ctx.translate(leaf.x, leaf.y)
+      ctx.rotate(leaf.rotation)
+      ctx.fillStyle = `hsla(${leaf.hue}, 40%, 25%, ${leaf.alpha})`
+      // Small leaf shape
+      ctx.beginPath()
+      ctx.ellipse(0, 0, leaf.size, leaf.size * 0.5, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+    fallenLeaves = fallenLeaves.filter(l => l.alpha > 0)
+
+    // --- Fireflies ---
+    if (fireflies.length < 8 && Math.random() < 0.01) {
+      const healthyPlants = plants.filter(p => p.memory.degradation < 0.3)
+      const targetPlant = healthyPlants.length > 0
+        ? healthyPlants[Math.floor(Math.random() * healthyPlants.length)]
+        : null
+      fireflies.push({
+        x: Math.random() * w,
+        y: groundY2 - 40 - Math.random() * 80,
+        vx: (Math.random() - 0.5) * 0.5,
+        vy: (Math.random() - 0.5) * 0.3,
+        phase: Math.random() * Math.PI * 2,
+        speed: 1.5 + Math.random() * 2,
+        brightness: 0,
+        targetX: targetPlant ? targetPlant.x + (Math.random() - 0.5) * 30 : Math.random() * w,
+        targetY: targetPlant ? groundY2 - 20 - Math.random() * 50 : groundY2 - 50,
+      })
+    }
+    for (let fi = fireflies.length - 1; fi >= 0; fi--) {
+      const ff = fireflies[fi]
+      // Drift toward target
+      ff.vx += (ff.targetX - ff.x) * 0.0003
+      ff.vy += (ff.targetY - ff.y) * 0.0003
+      ff.vx *= 0.99
+      ff.vy *= 0.99
+      ff.x += ff.vx
+      ff.y += ff.vy
+      ff.phase += ff.speed * 0.016
+
+      // Blink pattern
+      ff.brightness = Math.max(0, Math.sin(ff.phase) * 0.5 + Math.sin(ff.phase * 2.7) * 0.3)
+
+      if (ff.x < -20 || ff.x > w + 20 || ff.y < -20 || ff.y > h + 20) {
+        fireflies.splice(fi, 1)
+        continue
+      }
+
+      if (ff.brightness > 0.05) {
+        const glow = ctx.createRadialGradient(ff.x, ff.y, 0, ff.x, ff.y, 8)
+        glow.addColorStop(0, `rgba(200, 255, 100, ${ff.brightness * 0.3})`)
+        glow.addColorStop(0.5, `rgba(180, 230, 80, ${ff.brightness * 0.1})`)
+        glow.addColorStop(1, 'transparent')
+        ctx.fillStyle = glow
+        ctx.beginPath()
+        ctx.arc(ff.x, ff.y, 8, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Core dot
+        ctx.fillStyle = `rgba(220, 255, 150, ${ff.brightness * 0.5})`
+        ctx.beginPath()
+        ctx.arc(ff.x, ff.y, 1.5, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+
     // Labels — memory fragments below plants
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.textAlign = 'center'
@@ -1152,6 +1383,12 @@ export function createGardenRoom(deps: GardenDeps): Room {
 
     activate() {
       active = true
+      // Reset new feature state
+      mycorrhizalPulses = []
+      mycorrhizalTimer = 0
+      fallenLeaves = []
+      leafDropTimer = 0
+      fireflies = []
       buildGarden()
       render()
 
@@ -1168,6 +1405,9 @@ export function createGardenRoom(deps: GardenDeps): Room {
       if (rustleLfoInterval) { clearInterval(rustleLfoInterval); rustleLfoInterval = null }
       if (witherInterval) { clearInterval(witherInterval); witherInterval = null }
       pollenParticles.length = 0
+      mycorrhizalPulses = []
+      fallenLeaves = []
+      fireflies = []
     },
 
     destroy() {
@@ -1175,6 +1415,9 @@ export function createGardenRoom(deps: GardenDeps): Room {
       cancelAnimationFrame(frameId)
       destroyAudio()
       pollenParticles.length = 0
+      mycorrhizalPulses = []
+      fallenLeaves = []
+      fireflies = []
       overlay?.remove()
     },
   }
