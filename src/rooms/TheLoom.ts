@@ -158,6 +158,15 @@ export function createLoomRoom(deps: LoomDeps): Room {
   }
   let shuttleTrail: ShuttleTrailPoint[] = []
 
+  // --- Dust motes: floating particles in the workshop air ---
+  interface DustMote {
+    x: number; y: number; vx: number; vy: number; alpha: number; size: number
+  }
+  let dustMotes: DustMote[] = []
+
+  // --- Shuttle wake: threads wobble as shuttle passes ---
+  let shuttleWakeX = -1 // x position of shuttle wake
+
   // Audio state
   let audioInitialized = false
   let audioMaster: GainNode | null = null
@@ -686,18 +695,28 @@ export function createLoomRoom(deps: LoomDeps): Room {
 
         ctx.strokeStyle = colorToString(gradColor)
 
+        // Shuttle wake: threads wobble near shuttle
+        let wakeOffset = 0
+        if (shuttleWakeX > 0) {
+          const distToShuttle = Math.abs(x + cellSize / 2 - shuttleWakeX)
+          if (distToShuttle < 40) {
+            const proximity = 1 - distToShuttle / 40
+            wakeOffset = Math.sin(time * 8 + t * 0.5) * proximity * 2
+          }
+        }
+
         if (isOver) {
           // Weft on top — draw a slightly raised segment
           ctx.beginPath()
-          ctx.moveTo(x, y - 1)
-          ctx.lineTo(x + cellSize, y - 1)
+          ctx.moveTo(x, y - 1 + wakeOffset)
+          ctx.lineTo(x + cellSize, y - 1 + wakeOffset)
           ctx.stroke()
         } else {
           // Weft below — draw dimmer
           ctx.globalAlpha = 0.4
           ctx.beginPath()
-          ctx.moveTo(x, y + 1)
-          ctx.lineTo(x + cellSize, y + 1)
+          ctx.moveTo(x, y + 1 + wakeOffset)
+          ctx.lineTo(x + cellSize, y + 1 + wakeOffset)
           ctx.stroke()
           ctx.globalAlpha = 1
         }
@@ -857,6 +876,40 @@ export function createLoomRoom(deps: LoomDeps): Room {
       }
     }
 
+    // --- Dust motes: spawn and drift ---
+    if (dustMotes.length < 30 && Math.random() < 0.03) {
+      dustMotes.push({
+        x: margin + Math.random() * weaveW,
+        y: margin + Math.random() * weaveH,
+        vx: (Math.random() - 0.5) * 0.1,
+        vy: (Math.random() - 0.5) * 0.08,
+        alpha: 0.03 + Math.random() * 0.04,
+        size: 0.5 + Math.random() * 1,
+      })
+    }
+    for (let i = dustMotes.length - 1; i >= 0; i--) {
+      const dm = dustMotes[i]
+      dm.x += dm.vx + Math.sin(time * 0.3 + dm.y * 0.01) * 0.05
+      dm.y += dm.vy + Math.cos(time * 0.2 + dm.x * 0.01) * 0.03
+      dm.alpha -= 0.0002
+      if (dm.alpha <= 0 || dm.x < margin - 20 || dm.x > margin + weaveW + 20 ||
+          dm.y < margin - 20 || dm.y > margin + weaveH + 20) {
+        dustMotes.splice(i, 1)
+        continue
+      }
+      // Brighter near bright threads
+      let nearThread = false
+      for (let t2 = 0; t2 < threadCount; t2++) {
+        const ty = margin + (t2 + 1) * threadSpacing
+        if (Math.abs(dm.y - ty) < 8) { nearThread = true; break }
+      }
+      const brightBoost = nearThread ? 1.5 : 1
+      ctx.fillStyle = `rgba(200, 180, 140, ${dm.alpha * brightBoost})`
+      ctx.beginPath()
+      ctx.arc(dm.x, dm.y, dm.size, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
     // Shuttle animation
     if (visibleCols < maxCols) {
       shuttleX += shuttleDir * shuttleSpeed
@@ -874,6 +927,7 @@ export function createLoomRoom(deps: LoomDeps): Room {
         shuttleDir = 1
         shuttleX = 0
       }
+      shuttleWakeX = margin + Math.min(shuttleX, visibleCols * cellSize)
 
       // Track direction changes for audio
       if (shuttleDir !== prevShuttleDir) {
@@ -1239,6 +1293,8 @@ export function createLoomRoom(deps: LoomDeps): Room {
       patinaAge = 0
       looseFibers = []
       shuttleTrail = []
+      dustMotes = []
+      shuttleWakeX = -1
       // Spirit line: place at ~70% of the way through the weave (Navajo tradition)
       const weaveW = (canvas?.width || window.innerWidth) - 60 * 2 - 20
       const cs = Math.max(4, Math.min(12, weaveW / 80))

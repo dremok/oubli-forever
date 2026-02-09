@@ -142,6 +142,17 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   }
   const extinctionMarkers: ExtinctionMarker[] = []
 
+  // --- Stagnation detection ---
+  let stagnationCounter = 0
+  let stagnationShimmer = 0 // 0-1, golden shimmer when population stabilizes
+  let lastStagnationPop = 0
+
+  // --- Birth cluster glow ---
+  interface BirthClusterRing {
+    x: number; y: number; radius: number; alpha: number
+  }
+  const birthClusterRings: BirthClusterRing[] = []
+
   // --- Audio state ---
   let audioReady = false
   let ac: AudioContext | null = null
@@ -491,6 +502,41 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     lastLiveCells = liveCells
     popHistory.push(liveCells)
     if (popHistory.length > POP_HISTORY_MAX) popHistory.shift()
+
+    // Stagnation detection: population stable ±5% for 30+ generations
+    if (lastStagnationPop > 0 && liveCells > 0) {
+      const ratio = liveCells / lastStagnationPop
+      if (ratio > 0.95 && ratio < 1.05) {
+        stagnationCounter++
+        if (stagnationCounter > 30) {
+          stagnationShimmer = Math.min(1, stagnationShimmer + 0.02)
+        }
+      } else {
+        stagnationCounter = 0
+        stagnationShimmer = Math.max(0, stagnationShimmer - 0.05)
+      }
+    }
+    lastStagnationPop = liveCells
+
+    // Birth cluster glow: when 5+ births in one step, show expanding ring
+    if (birthsThisStep >= 5) {
+      let sumX = 0, sumY = 0, count = 0
+      for (let r2 = 0; r2 < rows; r2++) {
+        for (let c2 = 0; c2 < cols; c2++) {
+          if (grid[r2][c2] === generation) {
+            sumX += c2 * cellSize + cellSize / 2
+            sumY += r2 * cellSize + cellSize / 2
+            count++
+          }
+        }
+      }
+      if (count > 0) {
+        birthClusterRings.push({
+          x: sumX / count, y: sumY / count,
+          radius: 5, alpha: 0.25,
+        })
+      }
+    }
 
     // Extinction event detection: >40% population drop in one generation
     if (prevPopulation > 50 && liveCells < prevPopulation * 0.6) {
@@ -902,6 +948,34 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
       }
     }
 
+    // --- Stagnation shimmer ---
+    if (stagnationShimmer > 0.01) {
+      const shimAlpha = stagnationShimmer * 0.03 * (0.8 + Math.sin(time * 1.5) * 0.2)
+      ctx.fillStyle = `rgba(255, 215, 80, ${shimAlpha})`
+      ctx.fillRect(0, 0, w, h)
+      if (stagnationCounter > 60) {
+        ctx.font = '12px "Cormorant Garamond", serif'
+        ctx.fillStyle = `rgba(255, 215, 80, ${stagnationShimmer * 0.15})`
+        ctx.textAlign = 'center'
+        ctx.fillText('equilibrium', w / 2, 50)
+      }
+      // Decay shimmer slowly when not stepping
+      if (paused) stagnationShimmer *= 0.99
+    }
+
+    // --- Birth cluster rings ---
+    for (let i = birthClusterRings.length - 1; i >= 0; i--) {
+      const ring = birthClusterRings[i]
+      ring.radius += 1.5
+      ring.alpha -= 0.004
+      if (ring.alpha <= 0) { birthClusterRings.splice(i, 1); continue }
+      ctx.strokeStyle = `rgba(255, 180, 220, ${ring.alpha})`
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(ring.x, ring.y, ring.radius, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
     // UI overlay
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = `rgba(180, 160, 200, ${0.08 + Math.sin(time * 0.3) * 0.02})`
@@ -1243,6 +1317,10 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
       cosmicRayTimer = 0
       cosmicRayFlash = null
       extinctionMarkers.length = 0
+      stagnationCounter = 0
+      stagnationShimmer = 0
+      lastStagnationPop = 0
+      birthClusterRings.length = 0
       initGrid()
       initAudio()
       render()
