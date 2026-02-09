@@ -87,6 +87,7 @@ import { VacuumFluctuations } from './effects/VacuumFluctuations'
 import { Mycelium } from './organisms/Mycelium'
 import { Fruiting } from './organisms/Fruiting'
 import { CollectiveWarmth } from './organisms/CollectiveWarmth'
+import { Membrane } from './organisms/Membrane'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -596,12 +597,18 @@ fruiting.start()
 const collectiveWarmth = new CollectiveWarmth()
 collectiveWarmth.start()
 
+// The Membrane — living tissue between rooms
+// When you navigate, you push through organic membrane that remembers what passed through
+const membrane = new Membrane()
+membrane.setTrailSource((a, b) => mycelium.getTrailStrength(a, b))
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
 roomManager.onRoomChange((room) => {
-  // Trigger afterimage for the room we're LEAVING
+  // Trigger membrane passage (must fire before _prevRoom updates)
   if (_prevRoom !== room) {
+    membrane.onTransition(_prevRoom, room)
     roomAfterimage.trigger(_prevRoom)
   }
   // Trigger spacetime ripple when entering destructive rooms

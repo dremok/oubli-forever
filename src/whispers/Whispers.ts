@@ -488,6 +488,23 @@ const fragments: string[] = [
   "florence cleared its renaissance walls. when you remove the noise, older layers appear.",
   "queen of chess: judit polgar broke fischer's record at 15. memory is strategy.",
   "silver ions heal nano-fissures in ceramic. 3 nanometers between holding and shattering.",
+
+  // Cultural research round 20 — Feb 2026
+  "lattice surgery: they split a qubit in two without losing the information it held.",
+  "quantum entanglement can be divided. what was one becomes two, both remembering.",
+  "toni morrison's posthumous lectures: 'liberation from diminishing notions comes through language.'",
+  "a poet writes about a childhood near-drowning. memory as the thing you almost didn't survive.",
+  "the great meme reset failed. everyone tried to forget brainrot. nothing changed. forgetting is harder than remembering.",
+  "tiktok declared a fresh start. january 1 arrived. the algorithm remembered everything.",
+  "'guaranteed human': the new premium. rough edges, trembling hands, timing only biology produces.",
+  "45% of creative directors reject AI. the value of imperfection rises as perfection becomes free.",
+  "the rare aesthetic: nostalgia not for beauty but for recognition. the almost-forgotten.",
+  "monkey philosophy: viral memes about slowing down. counter-acceleration as the new sincerity.",
+  "tracey emin's bed is back. the most honest object in any museum. a second life at tate modern.",
+  "art basel launches in qatar. the center of gravity drifts away from the capitals that named it.",
+  "MIT built an ultrasound that reaches individual brain circuits. poking at the source of experience.",
+  "tiny light traps for a million qubits. the path to quantum computing is now physical, not theoretical.",
+  "the membrane between rooms is alive. it remembers what passed through.",
 ]
 
 // Fragments that trigger the golden fruit effect
