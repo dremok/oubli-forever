@@ -88,6 +88,7 @@ import { Mycelium } from './organisms/Mycelium'
 import { Fruiting } from './organisms/Fruiting'
 import { CollectiveWarmth } from './organisms/CollectiveWarmth'
 import { Membrane } from './organisms/Membrane'
+import { Phenotype } from './organisms/Phenotype'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -602,6 +603,11 @@ collectiveWarmth.start()
 const membrane = new Membrane()
 membrane.setTrailSource((a, b) => mycelium.getTrailStrength(a, b))
 
+// The Phenotype — the house adapts its coloration to your exploration patterns
+// Like epigenetic expression: same house, different appearance for different visitors
+const phenotype = new Phenotype()
+phenotype.start()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -617,6 +623,7 @@ roomManager.onRoomChange((room) => {
   mycelium.onRoomEnter(room)
   fruiting.onRoomEnter(room)
   collectiveWarmth.onRoomEnter(room)
+  phenotype.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'
