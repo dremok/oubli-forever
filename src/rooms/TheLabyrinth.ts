@@ -150,6 +150,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   // Input
   const keys = new Set<string>()
 
+  // Mouse position for torch light effect
+  let mouseX = 0
+  let mouseY = 0
+
   // Region salts for the forgetting mechanic
   const regionSalts = new Map<string, number>()
   const activeRegions = new Set<string>()
@@ -3246,8 +3250,23 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         flicker *= 0.3 // random dark flash on individual strips
       }
 
+      // Torch light from mouse — brightens walls near cursor
+      const stripCenterX = i * stripW + stripW / 2
+      const stripCenterY = wallTop + wallHeight / 2
+      const mouseDx = stripCenterX - mouseX
+      const mouseDy = stripCenterY - mouseY
+      const mouseDist = Math.sqrt(mouseDx * mouseDx + mouseDy * mouseDy)
+      const torchRadius = 120
+      const torchBoost = mouseDist < torchRadius
+        ? (1 - mouseDist / torchRadius) * 0.4 * Math.max(0.2, 1 - correctedDist / 8)
+        : 0
+
       const [r, g, b] = getCellColor(hit.cell, brightness * flicker, sideDim)
-      ctx.fillStyle = `rgb(${Math.floor(Math.max(0, r))}, ${Math.floor(Math.max(0, g))}, ${Math.floor(Math.max(0, b))})`
+      // Add warm torch tint (pinkish-gold from cursor glow)
+      const tr = Math.floor(Math.max(0, Math.min(255, r + torchBoost * 180)))
+      const tg = Math.floor(Math.max(0, Math.min(255, g + torchBoost * 80)))
+      const tb = Math.floor(Math.max(0, Math.min(255, b + torchBoost * 60)))
+      ctx.fillStyle = `rgb(${tr}, ${tg}, ${tb})`
       ctx.fillRect(i * stripW, wallTop, stripW + 1, wallHeight)
 
 
@@ -3379,6 +3398,18 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     fogGrad.addColorStop(1, `rgba(${3 + tension * 15 + insanity * 10}, 2, 6, ${0.4 + tension * 0.15 + insanity * 0.2})`)
     ctx.fillStyle = fogGrad
     ctx.fillRect(-20, -20, w + 40, h + 40)
+
+    // Torch glow — warm light around cursor that illuminates the scene
+    if (mouseX > 0 || mouseY > 0) {
+      const torchGrad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 130)
+      torchGrad.addColorStop(0, 'rgba(255, 140, 80, 0.06)')
+      torchGrad.addColorStop(0.5, 'rgba(255, 100, 60, 0.02)')
+      torchGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.globalCompositeOperation = 'screen'
+      ctx.fillStyle = torchGrad
+      ctx.fillRect(0, 0, w, h)
+      ctx.globalCompositeOperation = 'source-over'
+    }
 
     // Random visual glitch frames at high insanity
     if (Math.random() < glitchChance) {
@@ -3546,6 +3577,10 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       window.addEventListener('keydown', handleKeyDown)
       window.addEventListener('keyup', handleKeyUp)
       canvas.addEventListener('click', handleClick)
+      canvas.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX
+        mouseY = e.clientY
+      })
 
       const onResize = () => {
         if (canvas) {
