@@ -86,6 +86,7 @@ import { MemoryBleed } from './effects/MemoryBleed'
 import { VacuumFluctuations } from './effects/VacuumFluctuations'
 import { Mycelium } from './organisms/Mycelium'
 import { Fruiting } from './organisms/Fruiting'
+import { CollectiveWarmth } from './organisms/CollectiveWarmth'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -590,6 +591,10 @@ const fruiting = new Fruiting({
 })
 fruiting.start()
 
+// Collective Warmth — feel the presence of other visitors
+const collectiveWarmth = new CollectiveWarmth()
+collectiveWarmth.start()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -603,6 +608,7 @@ roomManager.onRoomChange((room) => {
   _prevRoom = room
   mycelium.onRoomEnter(room)
   fruiting.onRoomEnter(room)
+  collectiveWarmth.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'
