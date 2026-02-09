@@ -164,6 +164,12 @@ const CULTURAL_INSCRIPTIONS = [
   'olfactory memory bypasses the thalamus. smells go directly to the hippocampus. the shortcut to the past.',
   'mythical creatures at USC PAM: immigrant memory as mythology. 12 rooms, 5000 years of objects.',
   'italian brainrot: AI-generated nonsense creatures with pseudo-italian names. meaning dissolving in real time.',
+  '"2026 is the new 2016": 55 million throwback videos. nostalgia for a time before algorithms.',
+  'odor signals take a shortcut past the thalamus, straight to the amygdala. smell is the only unfiltered sense.',
+  'digital doppelgangers: AI clones of the dead now raise consent questions. who owns a ghost\'s voice?',
+  'extinction therapy: repeated exposure to scent without trauma can rewire fear. the nose forgets what the mind cannot.',
+  'autobiographical memories triggered by smell are more emotional than those triggered by sight or sound.',
+  'the Proust phenomenon: direct amygdala stimulation produces the same involuntary floods as a madeleine.',
 ]
 
 export function createMadeleineRoom(deps: MadeleineDeps): Room {
@@ -192,6 +198,30 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
   // --- Cursor tracking ---
   let mouseX = -1000
   let mouseY = -1000
+
+  // Scent trail — cursor leaves warm particles like perfume diffusing
+  interface ScentParticle {
+    x: number
+    y: number
+    alpha: number
+    size: number
+    hue: number
+  }
+  let scentTrail: ScentParticle[] = []
+  let lastTrailX = -1000
+  let lastTrailY = -1000
+
+  // Memory afterimage — previous surfaced memory lingers as ghostly text
+  interface MemoryAfterimage {
+    text: string
+    y: number
+    alpha: number
+  }
+  let afterimages: MemoryAfterimage[] = []
+
+  // Involuntary flash — memory surfaces on its own without being clicked
+  let involuntaryTimer = 0
+  let involuntaryFlashActive = false
 
   // --- Audio state ---
   let audioInitialized = false
@@ -401,6 +431,22 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
   function handleMouseMove(e: MouseEvent) {
     mouseX = e.clientX
     mouseY = e.clientY
+
+    // Spawn scent trail particles on movement
+    const dx = mouseX - lastTrailX
+    const dy = mouseY - lastTrailY
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    if (dist > 8 && scentTrail.length < 60) {
+      scentTrail.push({
+        x: mouseX + (Math.random() - 0.5) * 6,
+        y: mouseY + (Math.random() - 0.5) * 6,
+        alpha: 0.12 + Math.random() * 0.08,
+        size: 3 + Math.random() * 4,
+        hue: 30 + Math.random() * 20, // warm amber to gold
+      })
+      lastTrailX = mouseX
+      lastTrailY = mouseY
+    }
   }
 
   // --- Portal glow animation state ---
@@ -886,6 +932,13 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       }
 
       if (surfacedMemory.alpha <= 0) {
+        // Save as afterimage before clearing
+        afterimages.push({
+          text: surfacedMemory.text,
+          y: surfacedMemory.y,
+          alpha: 0.08,
+        })
+        if (afterimages.length > 3) afterimages.shift()
         surfacedMemory = null
       } else {
         const sm = surfacedMemory
@@ -938,6 +991,57 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
         c.beginPath()
         c.arc(w / 2, sm.y, 150, 0, Math.PI * 2)
         c.fill()
+      }
+    }
+
+    // --- Scent trail --- cursor perfume diffusion
+    scentTrail = scentTrail.filter(p => {
+      p.alpha -= 0.001
+      p.size += 0.03 // expand as scent diffuses
+      if (p.alpha <= 0) return false
+
+      const glow = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size)
+      glow.addColorStop(0, `hsla(${p.hue}, 40%, 50%, ${p.alpha})`)
+      glow.addColorStop(1, 'transparent')
+      c.fillStyle = glow
+      c.beginPath()
+      c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      c.fill()
+      return true
+    })
+
+    // --- Memory afterimages --- ghostly text of previous surfaced memories
+    afterimages = afterimages.filter(ai => {
+      ai.alpha -= 0.0003
+      if (ai.alpha <= 0) return false
+
+      c.font = '14px "Cormorant Garamond", serif'
+      c.fillStyle = `rgba(255, 215, 0, ${ai.alpha})`
+      c.textAlign = 'center'
+      // Just show first 30 chars as a whisper
+      const fragment = ai.text.slice(0, 30) + (ai.text.length > 30 ? '...' : '')
+      c.fillText(fragment, w / 2, ai.y + Math.sin(time * 0.5) * 2)
+      return true
+    })
+
+    // --- Involuntary flash --- memory surfaces on its own
+    involuntaryTimer += 0.016
+    if (involuntaryTimer > 30 + Math.random() * 20 && !surfacedMemory && !involuntaryFlashActive) {
+      involuntaryTimer = 0
+      const memories = deps.getMemories()
+      if (memories.length > 0) {
+        const randomMem = memories[Math.floor(Math.random() * memories.length)]
+        surfacedMemory = {
+          text: randomMem.currentText,
+          trigger: 'involuntary',
+          alpha: 0,
+          y: h * 0.5 + (Math.random() - 0.5) * 60,
+        }
+        involuntaryFlashActive = true
+        // Play memory tone for involuntary flash
+        playMemoryTone()
+        // Reset flag when memory fades
+        setTimeout(() => { involuntaryFlashActive = false }, 8000)
       }
     }
 
@@ -1145,6 +1249,12 @@ export function createMadeleineRoom(deps: MadeleineDeps): Room {
       artworkTimer = 0
       mouseX = -1000
       mouseY = -1000
+      scentTrail = []
+      lastTrailX = -1000
+      lastTrailY = -1000
+      afterimages = []
+      involuntaryTimer = 0
+      involuntaryFlashActive = false
 
       // Initialize audio (warm drone + metronome)
       initAudio()
