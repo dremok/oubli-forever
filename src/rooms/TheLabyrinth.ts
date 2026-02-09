@@ -235,14 +235,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   }
 
   function getObjectYPos(wx: number, wy: number): number {
-    const obj = getWallObject(wx, wy)
-    if (!obj) return 0.5
-    switch (obj.placement) {
-      case 'floor': return 0.75 + cellHash2(wx + 7, wy + 13) * 0.15  // near bottom
-      case 'ceiling': return 0.08 + cellHash2(wx + 7, wy + 13) * 0.15 // near top
-      case 'floating': return 0.3 + cellHash2(wx + 7, wy + 13) * 0.3  // mid-air, varies
-      default: return 0.3 + cellHash2(wx + 7, wy + 13) * 0.4 // wall — standard
-    }
+    // Fully random position on the wall — floor, ceiling, anywhere
+    const h = cellHash2(wx + 7, wy + 13)
+    return 0.05 + h * 0.85  // anywhere from near ceiling (0.05) to near floor (0.9)
   }
 
   // ===== HASH-BASED INFINITE MAZE =====
@@ -2967,32 +2962,44 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       }
     }
 
-    // Render wall inscriptions (memories use hand-drawn style)
+    // Render wall inscriptions — drawn HORIZONTALLY like graffiti on walls
     const shownTexts = new Set<string>()
     for (const insc of visibleInscriptions) {
       if (shownTexts.has(insc.text)) continue
       shownTexts.add(insc.text)
 
-      const fontSize = Math.max(8, Math.min(14, 16 / insc.dist))
-      const alpha = Math.min(0.6, insc.brightness * 0.8) * (0.5 + Math.sin(time * 0.5 + insc.screenX * 0.01) * 0.3)
-
-      ctx.save()
-      ctx.translate(insc.screenX, midLine)
-      ctx.rotate(-Math.PI / 2)
+      // Calculate wall vertical extents for this inscription's ray position
+      const wallH = h / Math.max(0.3, insc.dist)
+      const wallTop = midLine - wallH / 2
+      // Vertical position on the wall — seeded per wall cell
+      const yHash = cellHash2(insc.wx + 17, insc.wy + 31)
+      const wallY = wallTop + wallH * (0.25 + yHash * 0.5)
 
       if (insc.isMemory) {
-        // Large painted memory text — prominent, like graffiti on stone
-        const paintSize = Math.max(14, Math.min(28, 32 / insc.dist))
-        const paintAlpha = Math.min(0.85, insc.brightness * 1.2) * (0.6 + Math.sin(time * 0.3 + insc.screenX * 0.01) * 0.2)
-        drawHandwrittenText(ctx, insc.text.substring(0, 30), paintSize, paintAlpha, insc.wx, insc.wy)
+        // Large painted memory text — horizontal, like someone painted it on the wall
+        const paintSize = Math.max(16, Math.min(36, 42 / insc.dist))
+        const paintAlpha = Math.min(0.9, insc.brightness * 1.3) * (0.65 + Math.sin(time * 0.3 + insc.wx * 0.7) * 0.15)
+
+        ctx.save()
+        ctx.translate(insc.screenX, wallY)
+        // Slight tilt per wall for organic feel
+        const tilt = (cellHash2(insc.wx + 5, insc.wy + 9) - 0.5) * 0.12
+        ctx.rotate(tilt)
+        drawHandwrittenText(ctx, insc.text.substring(0, 28), paintSize, paintAlpha, insc.wx, insc.wy)
+        ctx.restore()
       } else {
-        // Standard inscription rendering
+        // Standard inscription — also horizontal now
+        const fontSize = Math.max(9, Math.min(15, 18 / insc.dist))
+        const alpha = Math.min(0.5, insc.brightness * 0.7) * (0.5 + Math.sin(time * 0.5 + insc.screenX * 0.01) * 0.25)
+
+        ctx.save()
+        ctx.translate(insc.screenX, wallY)
         ctx.font = `${fontSize}px "Cormorant Garamond", serif`
         ctx.fillStyle = `rgba(180, 160, 200, ${alpha})`
         ctx.textAlign = 'center'
-        ctx.fillText(insc.text.substring(0, 20), 0, 0)
+        ctx.fillText(insc.text.substring(0, 22), 0, 0)
+        ctx.restore()
       }
-      ctx.restore()
     }
 
     // Render wall objects — procedurally drawn 2D graphics
@@ -3050,14 +3057,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       ctx.globalAlpha = 1
       ctx.restore()
 
-      // Description at moderate range
-      if (vo.dist < 4.5) {
-        const descAlpha = Math.min(0.7, alpha * 0.6)
-        ctx.font = `${Math.floor(13 * physScale)}px "Cormorant Garamond", serif`
-        ctx.fillStyle = `rgba(200, 180, 230, ${descAlpha})`
-        ctx.textAlign = 'center'
-        ctx.fillText(vo.obj.desc, vo.screenX, objY + physScale * 28 + 14)
-      }
+      // No description text — objects speak for themselves
     }
 
     // Fog overlay — tightens with insanity (vision narrows)
