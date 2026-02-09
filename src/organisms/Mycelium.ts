@@ -36,6 +36,13 @@ interface MyceliumState {
   ripeness: Record<string, number>    // ripeness per room (0-1, monotonic)
   trails: Record<string, number>      // trail strength per connection key ("a->b")
   lastVisit: Record<string, number>   // timestamp of last visit per room
+  composted: string[]                 // IDs of memories fully composted
+}
+
+interface CompostableMemory {
+  id: string
+  degradation: number
+  currentText: string
 }
 
 // --- Constants ---
@@ -49,6 +56,9 @@ const RIPENESS_THRESHOLD = 8            // cumulative nutrients to begin ripenin
 const RIPENESS_GAIN = 0.003             // ripeness increase per tick when above threshold
 const ETHYLENE_BURST = 2.0              // nutrient burst on ripeness milestone
 const TENDRIL_COUNT = 12                // max tendrils rendered per frame
+const COMPOST_THRESHOLD = 0.75          // degradation level to start composting
+const COMPOST_NUTRIENT_YIELD = 3.0      // nutrients released per composted memory
+const COMPOST_CHECK_INTERVAL = 50       // ticks between compost checks (~30s)
 const STORAGE_KEY = 'oubli_mycelium'
 
 // --- Ripeness milestones (emit ethylene at these levels) ---
@@ -68,6 +78,9 @@ export class Mycelium {
   private tendrils: Tendril[] = []
   private milestoneHit = new Set<string>() // "room:milestone" keys already triggered
   private pulsePhase = 0
+  private getMemories: (() => CompostableMemory[]) | null = null
+  private compostTicker = 0
+  private compostParticles: CompostParticle[] = []
 
   constructor() {
     // Load persisted state
@@ -148,6 +161,11 @@ export class Mycelium {
     this.save()
   }
 
+  /** Connect the mycelium to the memory system for composting */
+  setMemorySource(fn: () => CompostableMemory[]) {
+    this.getMemories = fn
+  }
+
   // --- Core propagation tick ---
 
   private tick() {
@@ -211,19 +229,29 @@ export class Mycelium {
       }
     }
 
-    // 5. Neural pathway growth — the graph topology evolves
+    // 5. Memory composting — degraded memories become nutrients
+    this.compostTicker++
+    if (this.compostTicker >= COMPOST_CHECK_INTERVAL) {
+      this.compostTicker = 0
+      this.compostMemories()
+    }
+
+    // 5b. Update compost particles
+    this.updateCompostParticles(dt)
+
+    // 6. Neural pathway growth — the graph topology evolves
     // If two rooms share strong trails through an intermediate,
     // the mycelium grows a direct connection (a new neural pathway).
     // Checked rarely (~every 30 ticks) to avoid performance cost.
     if (Math.random() < 0.03) this.checkNeuralGrowth()
 
-    // 6. Update spores
+    // 7. Update spores
     this.updateSpores(dt)
 
-    // 7. Pulse phase
+    // 8. Pulse phase
     this.pulsePhase += dt * 0.8
 
-    // 8. Periodic save (every ~10 ticks)
+    // 9. Periodic save (every ~10 ticks)
     if (Math.random() < 0.1) this.save()
   }
 
@@ -299,6 +327,73 @@ export class Mycelium {
           return // one growth per check
         }
       }
+    }
+  }
+
+  // --- Memory composting ---
+
+  private compostMemories() {
+    if (!this.getMemories) return
+
+    const memories = this.getMemories()
+    const composted = new Set(this.state.composted || [])
+
+    for (const mem of memories) {
+      if (composted.has(mem.id)) continue
+      if (mem.degradation < COMPOST_THRESHOLD) continue
+
+      // This memory is degraded enough to compost
+      // Yield scales with degradation — more degraded = more nutrients
+      const yield_ = COMPOST_NUTRIENT_YIELD * mem.degradation
+
+      // Feed nutrients to the active room
+      this.state.nutrients[this.activeRoom] =
+        (this.state.nutrients[this.activeRoom] || 0) + yield_
+
+      // Also spread some to neighbors (decomposition diffuses)
+      const neighbors = getConnections(this.activeRoom)
+      const neighborShare = yield_ * 0.3 / Math.max(1, neighbors.length)
+      for (const n of neighbors) {
+        this.state.nutrients[n] = (this.state.nutrients[n] || 0) + neighborShare
+      }
+
+      // Mark as composted
+      composted.add(mem.id)
+
+      // Visual: spawn decomposition particles (earth tones, sinking)
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const charCount = Math.min(mem.currentText.length, 12)
+      for (let i = 0; i < charCount; i++) {
+        this.compostParticles.push({
+          x: w * (0.2 + Math.random() * 0.6),
+          y: h * (0.3 + Math.random() * 0.4),
+          vy: 8 + Math.random() * 15, // sink downward
+          vx: (Math.random() - 0.5) * 8,
+          char: mem.currentText[Math.floor(Math.random() * mem.currentText.length)] || '.',
+          life: 1,
+          decay: 0.04 + Math.random() * 0.03,
+          hue: 30 + Math.random() * 30, // amber to brown
+        })
+      }
+
+      // Only compost one memory per check cycle (gradual)
+      break
+    }
+
+    this.state.composted = [...composted]
+    this.save()
+  }
+
+  private updateCompostParticles(dt: number) {
+    for (let i = this.compostParticles.length - 1; i >= 0; i--) {
+      const p = this.compostParticles[i]
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.vy *= 0.97
+      p.vx += (Math.random() - 0.5) * 3 * dt
+      p.life -= p.decay * dt
+      if (p.life <= 0) this.compostParticles.splice(i, 1)
     }
   }
 
@@ -427,7 +522,18 @@ export class Mycelium {
       ctx.fill()
     }
 
-    // 3. Subtle ripeness glow on room perimeter
+    // 3. Render compost particles (sinking letter fragments)
+    if (this.compostParticles.length > 0) {
+      ctx.font = '11px Cormorant Garamond, serif'
+      ctx.textAlign = 'center'
+      for (const p of this.compostParticles) {
+        const alpha = p.life * 0.25
+        ctx.fillStyle = `hsla(${p.hue}, 40%, 35%, ${alpha})`
+        ctx.fillText(p.char, p.x, p.y)
+      }
+    }
+
+    // 4. Subtle ripeness glow on room perimeter
     if (activeRipeness > 0.1) {
       const glowAlpha = activeRipeness * 0.04
       const gradient = ctx.createRadialGradient(
@@ -478,9 +584,14 @@ export class Mycelium {
   private load(): MyceliumState {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) return JSON.parse(raw) as MyceliumState
+      if (raw) {
+        const state = JSON.parse(raw) as MyceliumState
+        // Migrate: older states may lack composted array
+        if (!state.composted) state.composted = []
+        return state
+      }
     } catch { /* corrupted — fresh start */ }
-    return { nutrients: {}, ripeness: {}, trails: {}, lastVisit: {} }
+    return { nutrients: {}, ripeness: {}, trails: {}, lastVisit: {}, composted: [] }
   }
 
   // --- Helpers ---
@@ -506,4 +617,12 @@ interface Tendril {
   trailStrength: number
   ripeness: number
   phaseOffset: number
+}
+
+interface CompostParticle {
+  x: number; y: number
+  vx: number; vy: number
+  char: string
+  life: number; decay: number
+  hue: number
 }

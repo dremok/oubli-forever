@@ -581,6 +581,7 @@ vacuumFluctuations.start()
 // The Mycelium — a living network organism between rooms
 // Not a room. Not an effect. The circulatory system of the house.
 const mycelium = new Mycelium()
+mycelium.setMemorySource(() => journal.getMemories())
 mycelium.start()
 
 // The Fruiting — emergent events born from the Mycelium
