@@ -211,6 +211,22 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
   let readingRevealTime = 0 // time when card was revealed (drawAnimation crossed 0.5)
   let readingRevealed = false
 
+  // ── Incense smoke wisps ──────────────────────────────────
+  interface SmokeWisp {
+    x: number; y: number; vx: number; vy: number
+    size: number; alpha: number; curl: number; age: number
+  }
+  let smokeWisps: SmokeWisp[] = []
+  let smokeSpawnTimer = 0
+
+  // ── Constellation points ─────────────────────────────────
+  interface ConstellationStar {
+    x: number; y: number; brightness: number; twinklePhase: number
+  }
+  let constellationStars: ConstellationStar[] = []
+  let constellationLines: { a: number; b: number; alpha: number }[] = []
+  let constellationRevealTimer = 0 // counts up after card reveal
+
   function loadProgress() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
@@ -527,6 +543,8 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     readingRevealed = false
     readingRevealTime = 0
     particles = []
+    constellationLines = []
+    constellationRevealTimer = 0
     totalDraws++
     saveProgress()
     playCardDrawSound()
@@ -668,6 +686,98 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
         ctx.stroke()
       }
       ctx.restore()
+    }
+
+    // ── Constellation stars (background) ───────────────────
+    if (constellationStars.length === 0) {
+      for (let i = 0; i < 35; i++) {
+        constellationStars.push({
+          x: Math.random() * w,
+          y: Math.random() * h * 0.7,
+          brightness: 0.03 + Math.random() * 0.05,
+          twinklePhase: Math.random() * Math.PI * 2,
+        })
+      }
+    }
+    for (const star of constellationStars) {
+      star.twinklePhase += 0.015
+      const twinkle = star.brightness + Math.sin(star.twinklePhase) * 0.02
+      ctx.fillStyle = `rgba(180, 170, 220, ${twinkle})`
+      ctx.fillRect(star.x - 0.5, star.y - 0.5, 1, 1)
+    }
+
+    // Constellation lines — form when card is revealed
+    if (readingRevealed && drawnCard) {
+      constellationRevealTimer += 0.016
+      // Build lines progressively after reveal
+      if (constellationLines.length === 0 && constellationRevealTimer > 0.5) {
+        // Connect nearby stars based on card suit
+        const suitSeed = SUITS.indexOf(drawnCard.suit)
+        for (let a = 0; a < constellationStars.length; a++) {
+          for (let b = a + 1; b < constellationStars.length; b++) {
+            const dx = constellationStars[a].x - constellationStars[b].x
+            const dy = constellationStars[a].y - constellationStars[b].y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            // Different suits connect at different distances
+            const threshold = 80 + suitSeed * 25
+            if (dist < threshold && Math.random() < 0.3) {
+              constellationLines.push({ a, b, alpha: 0 })
+            }
+          }
+        }
+        // Limit lines
+        while (constellationLines.length > 12) constellationLines.pop()
+      }
+      // Fade in lines
+      for (const line of constellationLines) {
+        line.alpha = Math.min(0.06, line.alpha + 0.0005)
+        const sa = constellationStars[line.a]
+        const sb = constellationStars[line.b]
+        ctx.strokeStyle = `hsla(${drawnCard.hue}, 30%, 50%, ${line.alpha})`
+        ctx.lineWidth = 0.5
+        ctx.beginPath()
+        ctx.moveTo(sa.x, sa.y)
+        ctx.lineTo(sb.x, sb.y)
+        ctx.stroke()
+      }
+    }
+
+    // ── Incense smoke wisps ─────────────────────────────────
+    smokeSpawnTimer -= 0.016
+    if (smokeSpawnTimer <= 0) {
+      smokeSpawnTimer = 0.15 + Math.random() * 0.2
+      smokeWisps.push({
+        x: w * 0.5 + (Math.random() - 0.5) * 40,
+        y: h * 0.75,
+        vx: (Math.random() - 0.5) * 0.15,
+        vy: -(0.2 + Math.random() * 0.3),
+        size: 3 + Math.random() * 5,
+        alpha: 0.04 + Math.random() * 0.03,
+        curl: (Math.random() - 0.5) * 0.01,
+        age: 0,
+      })
+      if (smokeWisps.length > 30) smokeWisps.shift()
+    }
+    for (let si = smokeWisps.length - 1; si >= 0; si--) {
+      const sw = smokeWisps[si]
+      sw.age += 0.016
+      sw.x += sw.vx + Math.sin(sw.age * 2 + si) * 0.3 // organic curl
+      sw.y += sw.vy
+      sw.vx += sw.curl // gradual drift
+      sw.size += 0.02 // expand slightly
+      const fadeAlpha = sw.alpha * Math.max(0, 1 - sw.age / 4)
+      if (fadeAlpha <= 0.001) {
+        smokeWisps.splice(si, 1)
+        continue
+      }
+      const grad = ctx.createRadialGradient(sw.x, sw.y, 0, sw.x, sw.y, sw.size)
+      grad.addColorStop(0, `rgba(140, 120, 170, ${fadeAlpha})`)
+      grad.addColorStop(0.6, `rgba(100, 90, 130, ${fadeAlpha * 0.3})`)
+      grad.addColorStop(1, 'transparent')
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.arc(sw.x, sw.y, sw.size, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     // Update draw animation
@@ -840,6 +950,25 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       }
 
       ctx.restore()
+    }
+
+    // ── Card aura — breathing glow around revealed card ──
+    if (drawnCard && drawAnimation >= 1 && readingRevealed) {
+      const cardW_ = Math.min(w * 0.4, 280)
+      const cardH_ = cardW_ * 1.5
+      const cx_ = w / 2
+      const cy_ = h / 2 - 20
+      const auraPulse = 0.5 + Math.sin(time * 1.2) * 0.5
+      const auraSize = Math.max(cardW_, cardH_) * 0.75
+      const auraAlpha = 0.03 + auraPulse * 0.02
+      const auraGrad = ctx.createRadialGradient(cx_, cy_, auraSize * 0.3, cx_, cy_, auraSize)
+      auraGrad.addColorStop(0, `hsla(${drawnCard.hue}, 40%, 50%, ${auraAlpha})`)
+      auraGrad.addColorStop(0.5, `hsla(${drawnCard.hue}, 30%, 40%, ${auraAlpha * 0.4})`)
+      auraGrad.addColorStop(1, 'transparent')
+      ctx.fillStyle = auraGrad
+      ctx.beginPath()
+      ctx.arc(cx_, cy_, auraSize, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     // Mystical particles — float upward around the card
@@ -1199,6 +1328,11 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       revealTonePlayed = false
       readingRevealed = false
       readingRevealTime = 0
+      smokeWisps = []
+      smokeSpawnTimer = 0
+      constellationStars = []
+      constellationLines = []
+      constellationRevealTimer = 0
       initAudio()
       render()
     },
