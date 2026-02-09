@@ -1828,6 +1828,27 @@ Fresh cultural research findings:
 - Inspired by Nottingham/Cambridge fMRI discovery (Nature Human Behaviour, Feb 2026):
   episodic and semantic memory share the same brain regions
 
+### 178. SEASONAL VOID — Particle Field Responds to Seasons
+- The void's 30K particle system modulates with the house's biological season
+- SEED: slow drift, muted saturation, low bloom, high fog
+- GROWTH: normal speed, full saturation, rising bloom
+- RIPE: golden hue shift, high saturation/bloom, minimal fog
+- FALL: fast drift, amber hue, film grain
+- DECAY: very slow, desaturated, heavy fog/grain
+
+### 179. SEASONAL SOUND — Drone Responds to Seasons
+- The ambient drone shifts with the house's biological season
+- SEED: quiet, low frequency (0.8x), sparse
+- GROWTH: building energy, normal pitch
+- RIPE: warm, slightly elevated pitch (1.05x), full volume
+- FALL: slightly dissonant (0.15), scattered
+- DECAY: deep sub-bass (0.7x), high dissonance (0.25)
+
+### 180. Study Prompts Round 5 — Morrison-Inspired Writing
+- 8 new prompts inspired by cultural research round 20
+- Toni Morrison posthumous lectures, lattice surgery, Great Meme Reset,
+  Tracey Emin, "guaranteed human," seasonal self-reflection
+
 ---
-*Last updated: Era 9, Feature 177 — Oubli has 6 organisms, seasonal cycles, adaptive phenotype, and episodic-semantic memory merger*
-*"episodic and semantic memory activate the same circuits. knowing and remembering are one."*
+*Last updated: Era 9, Feature 180 — Oubli has 6 organisms, complete biological life cycle, seasonal sight/sound, adaptive phenotype, and episodic-semantic merger*
+*"the house has seasons. your memories become its whispers. the membrane remembers what passed through."*
