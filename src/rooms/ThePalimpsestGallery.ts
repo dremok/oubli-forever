@@ -74,6 +74,12 @@ const CULTURAL_INSCRIPTIONS = [
   'the met has 1.5 million artworks. most are in storage. the gallery is always a palimpsest of omissions.',
   'CRISPR memory reversal: genes that forgot how to remember. the text resurfaces.',
   'gerhard richter paints photographs then scrapes them. the squeegee as editing tool.',
+  'he drew her face sixty times. each drawing remembered a different woman. — lucian freud, national portrait gallery 2026',
+  'they demolished alba\'s citadel three hundred years ago. its image has been fought over ever since. — antwerp, 2026',
+  'your hands still remember the shape of things your mind has released. — "muscle memory", phoenix art museum 2026',
+  'rauschenberg erased a de kooning drawing. the absence became the artwork. erasure as creation.',
+  'multispectral imaging reveals text scraped away 800 years ago. the parchment remembers what the monks tried to forget.',
+  'jenny holzer projected words on buildings: "protect me from what i want." architecture as confession surface.',
 ]
 
 export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
@@ -122,6 +128,19 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
   // Ink drips — now with gravity and trails
   const inkDrips: InkDrip[] = []
+
+  // --- Patina accumulation (golden varnish from observation) ---
+  let patinaAge = 0 // grows with time spent observing current painting
+
+  // --- Ghost frame (memory of previous painting's position) ---
+  let ghostFrameX = 0
+  let ghostFrameY = 0
+  let ghostFrameW = 0
+  let ghostFrameH = 0
+  let ghostFrameAlpha = 0
+
+  // --- Scrape depth visualization ---
+  let totalScrapePixels = 0
 
   // Painting draw rect — cached for hit testing
   let paintDrawX = 0
@@ -268,11 +287,21 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
     confessionShown = false
     confessionFlashTime = 0
     inkDrips.length = 0
+    patinaAge = 0
+    totalScrapePixels = 0
     playChime()
   }
 
   function selectSlot(index: number) {
     if (index < 0 || index >= gallerySlots.length || index === activeSlotIndex) return
+    // Save current painting position as ghost frame
+    ghostFrameX = paintDrawX
+    ghostFrameY = paintDrawY
+    ghostFrameW = paintDrawW
+    ghostFrameH = paintDrawH
+    ghostFrameAlpha = 0.12
+    patinaAge = 0
+    totalScrapePixels = 0
     activeSlotIndex = index
     resetRevealMask()
     charPositionsDirty = true
@@ -605,6 +634,9 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
         stampRevealBrush(ix, iy)
       }
 
+      // Track total scrape area
+      totalScrapePixels += cursorSpeed * 0.1
+
       // Spawn ink drips from nearby revealed characters
       if (cursorSpeed > 2) {
         for (const cp of charPositions) {
@@ -796,6 +828,51 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
       vigGrad.addColorStop(1, 'rgba(0, 0, 0, 0.15)')
       c.fillStyle = vigGrad
       c.fillRect(drawX, drawY, drawW, drawH)
+
+      // --- Ghost frame from previous painting ---
+      if (ghostFrameAlpha > 0.005) {
+        c.strokeStyle = `rgba(180, 160, 120, ${ghostFrameAlpha})`
+        c.lineWidth = 1
+        c.setLineDash([4, 6])
+        c.strokeRect(ghostFrameX - 5, ghostFrameY - 5, ghostFrameW + 10, ghostFrameH + 10)
+        c.setLineDash([])
+        ghostFrameAlpha *= 0.995 // slow fade
+      }
+
+      // --- Patina accumulation (golden varnish from observation) ---
+      patinaAge += 0.016
+      if (patinaAge > 3) { // starts appearing after 3 seconds of observation
+        const patinaIntensity = Math.min(0.06, (patinaAge - 3) * 0.0005)
+        c.fillStyle = `rgba(180, 150, 80, ${patinaIntensity})`
+        c.fillRect(drawX, drawY, drawW, drawH)
+      }
+
+      // --- Scrape depth cross-section (left edge of painting) ---
+      if (totalScrapePixels > 0 && mem) {
+        const depthFraction = Math.min(1, totalScrapePixels / (charPositions.length * 0.8))
+        const barH = drawH * 0.6
+        const barW = 4
+        const barX = drawX - 14
+        const barY = drawY + (drawH - barH) / 2
+        // Background: parchment layers
+        const layers = [
+          { label: 'paint', color: '80, 60, 40', frac: 0.3 },
+          { label: 'gesso', color: '140, 130, 110', frac: 0.2 },
+          { label: 'text', color: '220, 210, 190', frac: 0.2 },
+          { label: 'vellum', color: '160, 140, 100', frac: 0.3 },
+        ]
+        let layerY = barY
+        for (const layer of layers) {
+          const lh = barH * layer.frac
+          c.fillStyle = `rgba(${layer.color}, 0.08)`
+          c.fillRect(barX, layerY, barW, lh)
+          layerY += lh
+        }
+        // Scrape progress line
+        const scrapeY = barY + barH * (1 - depthFraction)
+        c.fillStyle = 'rgba(240, 235, 220, 0.15)'
+        c.fillRect(barX - 2, scrapeY, barW + 4, 1)
+      }
 
       // --- Cursor-driven text reveal ---
       if (mem) {
