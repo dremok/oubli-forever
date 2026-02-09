@@ -6,7 +6,10 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/templates/default.conf.template
-CMD ["nginx", "-g", "daemon off;"]
+FROM node:23-alpine
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/server.js ./server.js
+COPY --from=build /app/package.json ./package.json
+EXPOSE 3000
+CMD ["node", "server.js"]

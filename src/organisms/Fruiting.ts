@@ -40,6 +40,7 @@ interface PlantedSeed {
   text: string
   plantedAt: number
   discovered: boolean
+  isOther?: boolean  // true if planted by another visitor (shared seed)
 }
 
 // --- Constants ---
@@ -74,6 +75,17 @@ const SEED_TEXTS = [
   'the fruit does not fear the ground. it was always going to fall.',
 ]
 
+// --- Visitor identity (anonymous, persistent) ---
+function getVisitorId(): string {
+  const KEY = 'oubli_visitor_id'
+  let id = localStorage.getItem(KEY)
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    localStorage.setItem(KEY, id)
+  }
+  return id
+}
+
 export class Fruiting {
   private mycelium: Mycelium
   private canvas: HTMLCanvasElement
@@ -87,6 +99,7 @@ export class Fruiting {
   private getActiveRoom: () => string
   private fruitingHistory: string[] = [] // types already triggered this session
   private seedOverlay: HTMLDivElement | null = null
+  private visitorId: string
 
   constructor(deps: {
     mycelium: Mycelium
@@ -94,6 +107,7 @@ export class Fruiting {
   }) {
     this.mycelium = deps.mycelium
     this.getActiveRoom = deps.getActiveRoom
+    this.visitorId = getVisitorId()
 
     // Load persisted seeds
     this.seeds = this.loadSeeds()
@@ -127,9 +141,9 @@ export class Fruiting {
     render()
   }
 
-  /** Called on room enter — check for planted seeds */
+  /** Called on room enter — check for planted seeds (local + shared) */
   onRoomEnter(room: string) {
-    // Check for undiscovered seeds in this room
+    // Check for undiscovered LOCAL seeds in this room
     for (const seed of this.seeds) {
       if (seed.room === room && !seed.discovered) {
         seed.discovered = true
@@ -137,6 +151,12 @@ export class Fruiting {
         this.saveSeeds()
       }
     }
+
+    // Also check for SHARED seeds from other visitors
+    this.fetchSharedSeeds(room)
+
+    // Contribute to collective pulse
+    this.sendPulse(room)
   }
 
   // --- Fruiting check ---
@@ -254,6 +274,9 @@ export class Fruiting {
     })
     this.saveSeeds()
 
+    // Share the seed with all visitors via the server
+    this.shareSeed(room, text)
+
     // Brief visual: a golden dot floats to the edge of screen (toward the seeded room)
     const w = window.innerWidth
     const h = window.innerHeight
@@ -291,12 +314,16 @@ export class Fruiting {
       line-height: 1.6;
     `
 
-    // How long ago was it planted?
+    // How long ago was it planted? By whom?
     const age = Date.now() - seed.plantedAt
     const days = Math.floor(age / (1000 * 60 * 60 * 24))
-    const prefix = days > 0
-      ? `[a seed planted ${days} day${days > 1 ? 's' : ''} ago]`
-      : '[a seed planted moments ago]'
+    const hours = Math.floor(age / (1000 * 60 * 60))
+    const who = seed.isOther ? 'another visitor' : 'you'
+    let timeStr: string
+    if (days > 0) timeStr = `${days} day${days > 1 ? 's' : ''}`
+    else if (hours > 0) timeStr = `${hours} hour${hours > 1 ? 's' : ''}`
+    else timeStr = 'moments'
+    const prefix = `[a seed planted by ${who}, ${timeStr} ago]`
 
     overlay.innerHTML = `
       <div style="font-size: 11px; letter-spacing: 3px; margin-bottom: 8px;
@@ -318,6 +345,66 @@ export class Fruiting {
         if (this.seedOverlay === overlay) this.seedOverlay = null
       }, 2000)
     }, 8000)
+  }
+
+  // --- Shared state (server communication) ---
+
+  /** Share a seed with all visitors */
+  private async shareSeed(room: string, text: string) {
+    try {
+      await fetch('/api/seeds', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Visitor-Id': this.visitorId,
+        },
+        body: JSON.stringify({ room, text }),
+      })
+    } catch {
+      // Server unavailable — seeds stay local only. Graceful degradation.
+    }
+  }
+
+  /** Fetch shared seeds from other visitors for this room */
+  private async fetchSharedSeeds(room: string) {
+    try {
+      const res = await fetch(`/api/seeds?room=${encodeURIComponent(room)}`, {
+        headers: { 'X-Visitor-Id': this.visitorId },
+      })
+      if (!res.ok) return
+
+      const seeds: PlantedSeed[] = await res.json()
+      if (!seeds || seeds.length === 0) return
+
+      // Show the first undiscovered shared seed (with delay for atmosphere)
+      const seed = seeds[0]
+      if (seed) {
+        setTimeout(() => {
+          this.showSeedDiscovery({
+            room: seed.room,
+            text: seed.text,
+            plantedAt: seed.plantedAt,
+            discovered: true,
+            isOther: true,
+          })
+        }, 3000 + Math.random() * 5000) // 3-8s delay
+      }
+    } catch {
+      // Server unavailable — only local seeds. Graceful.
+    }
+  }
+
+  /** Contribute to collective pulse */
+  private async sendPulse(room: string) {
+    try {
+      await fetch('/api/pulse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room }),
+      })
+    } catch {
+      // Silent — pulse is optional
+    }
   }
 
   // --- Render ---
