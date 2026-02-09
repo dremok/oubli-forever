@@ -1849,6 +1849,17 @@ Fresh cultural research findings:
 - Toni Morrison posthumous lectures, lattice surgery, Great Meme Reset,
   Tracey Emin, "guaranteed human," seasonal self-reflection
 
+### 181. Parasites (`src/organisms/Parasites.ts`) — ERA 9 ORGANISM
+- Organisms that colonize rooms and modify their visual appearance
+- 5 types: moss (unvisited rooms), barnacle (well-traveled), scavenger (stagnant nutrients),
+  phosphor (strong connections), lichen (moderate conditions)
+- Each type has unique visual pattern: edge-creep, crust, spots, glow, veins
+- Spawn conditions tied to mycelium data (last visit, nutrients, trail strength)
+- Max 8 parasites, 48h lifespan, strength grows over time
+- Wired to mycelium via setMyceliumSource()
+- Inspired by: gut microbiome, Hosnedlova's living fungal art (White Cube 2026),
+  lichen symbiosis, Toni Morrison "Our liberation from diminishing notions comes through language"
+
 ---
-*Last updated: Era 9, Feature 180 — Oubli has 6 organisms, complete biological life cycle, seasonal sight/sound, adaptive phenotype, and episodic-semantic merger*
-*"the house has seasons. your memories become its whispers. the membrane remembers what passed through."*
+*Last updated: Era 9, Feature 181 — 7 organisms, parasitic colonization, complete biological ecosystem*
+*"the house grows moss in rooms you forget. barnacles crust on paths you walk too often."*

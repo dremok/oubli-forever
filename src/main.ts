@@ -91,6 +91,7 @@ import { Membrane } from './organisms/Membrane'
 import { Phenotype } from './organisms/Phenotype'
 import { SeasonalClock } from './organisms/SeasonalClock'
 import { Parasites } from './organisms/Parasites'
+import { CroakDream } from './organisms/CroakDream'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -690,6 +691,15 @@ parasites.setMyceliumSource({
 })
 parasites.start()
 
+// The Croak Dream — premonitions of room death
+// "A croak dream is when you have a premonition about how you die" — Puma Blue
+const croakDream = new CroakDream()
+croakDream.setMyceliumSource({
+  getNutrients: (room) => mycelium.getNutrients(room),
+  getRipeness: (room) => mycelium.getRipeness(room),
+  getSystemRipeness: () => mycelium.getSystemRipeness(),
+})
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -707,6 +717,7 @@ roomManager.onRoomChange((room) => {
   collectiveWarmth.onRoomEnter(room)
   phenotype.onRoomEnter(room)
   parasites.onRoomEnter(room)
+  croakDream.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   const inVoid = room === 'void'

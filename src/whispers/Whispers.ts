@@ -505,6 +505,18 @@ const fragments: string[] = [
   "MIT built an ultrasound that reaches individual brain circuits. poking at the source of experience.",
   "tiny light traps for a million qubits. the path to quantum computing is now physical, not theoretical.",
   "the membrane between rooms is alive. it remembers what passed through.",
+
+  // Cultural research round 21 — Feb 2026
+  "a croak dream is when you see how you die. then you wake up and choose what to do with it.",
+  "puma blue recorded premonitions on tape loops at peter gabriel's studio. the machine remembers what the dreamer forgets.",
+  "the polar vortex split in two. the atmosphere's protection broke apart like a memory you try to hold too tightly.",
+  "50 degrees above normal in the stratosphere. the sky is running a fever.",
+  "art basel qatar chose 'becoming' as its theme. 84 artists on transformation and what we are turning into.",
+  "rice university found a quantum state that shouldn't exist. strong forces creating topology instead of destroying it.",
+  "cerium, ruthenium, tin — a material where chaos produces order. like memory from forgetting.",
+  "stanford built 500 tiny light traps. each atom gets its own cavity. every qubit a room.",
+  "the house grows parasites in rooms you forget. moss in the crevices. barnacles on the well-worn paths.",
+  "some organisms diminish. some liberate. the house doesn't know which it's growing.",
 ]
 
 // Fragments that trigger the golden fruit effect
