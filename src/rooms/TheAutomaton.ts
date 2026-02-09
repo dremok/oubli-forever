@@ -50,14 +50,21 @@ const PATTERNS = {
 const CULTURAL_INSCRIPTIONS = [
   'conway died of covid in 2020. the game of life outlived its creator.',
   'rule 110 is turing-complete. simple rules contain infinite computation.',
-  'italian brainrot 2026: AI-generated nonsense as folk art. emergence from noise.',
+  'physarum stores memories in tube thickness. wider tubes are remembered paths. thinner tubes are forgotten.',
   'gliders: the simplest self-propagating pattern. five cells that walk forever.',
-  'wolfram claims the universe is a cellular automaton. rules all the way down.',
+  'reverse game of life: start with a creature, reverse-engineer the rules. damage it, and it heals itself.',
   'the doomsday clock: 85 seconds to midnight. a simple counter for complex annihilation.',
   'methuselah patterns: small seeds that take thousands of generations to stabilize.',
   'garden of eden: patterns with no predecessor. states that could not have evolved.',
-  'block cellular automaton: time is discrete, space is discrete, life is quantized.',
-  'perseverance AI drive: first rover drive planned entirely by AI. automata on mars.',
+  'flow-lenia: 400 species in 18 families. memories as soft creatures that compete for space.',
+  'slime mold avoids its own slime trails — a physical record of where it has been. externalized memory.',
+  'replicators emerge spontaneously from noise. no design needed. memories that create themselves.',
+  'xenobots: living robots that reproduce by gathering loose cells. pac-man shaped mouths. AI designed the body.',
+  'the right to be forgotten is dead. data absorbed into AI retains patterns even after deletion.',
+  'JCVI-syn3.0: 473 genes. the smallest self-replicating genome. stripped to minimum, it evolved fitness back.',
+  'mycelium remembers growth directions even after hyphae are removed. an exposed sentient membrane.',
+  'at what point does a sufficiently complex automaton become aware? consciousness agnosticism.',
+  'mordvintsev: neural cellular automata that grow virtual butterflies from pixels. regeneration was not programmed.',
 ]
 
 // Rule sets for different cellular automata
@@ -102,6 +109,23 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
   // Population history graph
   const popHistory: number[] = []
   const POP_HISTORY_MAX = 200
+
+  // --- Physarum-inspired memory trails ---
+  // Heat map of cumulative cell activity — fades slowly, rendered as background glow
+  let heatMap: Float32Array = new Float32Array(0)
+  let heatMapCols = 0
+  let heatMapRows = 0
+  const HEAT_DECAY = 0.997 // slow decay per frame
+  const HEAT_ACCUMULATE = 0.15 // heat added per living cell per step
+
+  // --- Extinction event detection ---
+  let prevPopulation = 0
+  let extinctionFlash = 0 // 1→0, red flash on mass die-off
+  let extinctionCount = 0
+  let extinctionLabel = ''
+
+  // --- Pattern age tracking ---
+  let oldestCellAge = 0 // tracks the longest-surviving cell
 
   // --- Audio state ---
   let audioReady = false
@@ -170,6 +194,13 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     grid = Array.from({ length: rows }, () => Array(cols).fill(0))
     deathCount = Array.from({ length: rows }, () => Array(cols).fill(0))
     generation = 0
+    prevPopulation = 0
+    oldestCellAge = 0
+
+    // Initialize heat map
+    heatMapCols = cols
+    heatMapRows = rows
+    heatMap = new Float32Array(rows * cols)
 
     // Position portal zones near edges
     // terrarium — top-left
@@ -428,14 +459,32 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
 
     // Track population for graph
     let liveCells = 0
+    oldestCellAge = 0
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        if (grid[r][c] > 0) liveCells++
+        if (grid[r][c] > 0) {
+          liveCells++
+          const age = generation - grid[r][c]
+          if (age > oldestCellAge) oldestCellAge = age
+          // Accumulate heat map (Physarum memory trail)
+          if (r < heatMapRows && c < heatMapCols) {
+            heatMap[r * heatMapCols + c] = Math.min(1, heatMap[r * heatMapCols + c] + HEAT_ACCUMULATE)
+          }
+        }
       }
     }
     lastLiveCells = liveCells
     popHistory.push(liveCells)
     if (popHistory.length > POP_HISTORY_MAX) popHistory.shift()
+
+    // Extinction event detection: >40% population drop in one generation
+    if (prevPopulation > 50 && liveCells < prevPopulation * 0.6) {
+      extinctionFlash = 1
+      extinctionCount++
+      const lostPct = Math.round((1 - liveCells / prevPopulation) * 100)
+      extinctionLabel = `extinction event #${extinctionCount}: ${lostPct}% lost`
+    }
+    prevPopulation = liveCells
 
     // Grid pulse brightness peaks on step then decays
     gridPulseBrightness = 0.02
@@ -667,6 +716,34 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     ctx.fillStyle = `rgba(${bgR}, ${bgG}, ${bgB}, 0.85)`
     ctx.fillRect(0, 0, w, h)
 
+    // --- Physarum memory trails (heat map underlay) ---
+    // Decay and render heat map every frame
+    for (let r = 0; r < heatMapRows; r += 2) { // render every other row for performance
+      for (let c = 0; c < heatMapCols; c += 2) {
+        const idx = r * heatMapCols + c
+        if (heatMap[idx] > 0.01) {
+          heatMap[idx] *= HEAT_DECAY
+          // Render as faint warm glow — color shifts from amber to violet with intensity
+          const h = heatMap[idx]
+          const red = Math.round(80 + h * 120)
+          const green = Math.round(40 + h * 30)
+          const blue = Math.round(80 + h * 100)
+          const alpha = h * 0.08
+          ctx.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`
+          ctx.fillRect(c * cellSize, r * cellSize, cellSize * 2, cellSize * 2)
+        } else {
+          heatMap[idx] = 0
+        }
+      }
+    }
+
+    // --- Extinction event flash ---
+    if (extinctionFlash > 0.01) {
+      ctx.fillStyle = `rgba(180, 30, 30, ${extinctionFlash * 0.15})`
+      ctx.fillRect(0, 0, w, h)
+      extinctionFlash *= 0.97
+    }
+
     // Draw cells
     let liveCells = 0
     for (let r = 0; r < rows; r++) {
@@ -756,12 +833,30 @@ export function createAutomatonRoom(deps?: AutomatonDeps): Room {
     ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(180, 160, 200, 0.08)'
     ctx.textAlign = 'left'
-    ctx.fillText(`gen ${generation}`, 12, h - 30)
-    ctx.fillText(`${liveCells} alive`, 12, h - 18)
+    ctx.fillText(`gen ${generation}`, 12, h - 42)
+    ctx.fillText(`${liveCells} alive`, 12, h - 30)
+    if (oldestCellAge > 10) {
+      ctx.fillText(`eldest: ${oldestCellAge} gen`, 12, h - 18)
+    }
 
     ctx.textAlign = 'right'
     ctx.fillText(`speed: ${11 - speed}`, w - 12, h - 30)
     ctx.fillText(paused ? 'paused' : 'running', w - 12, h - 18)
+
+    // Extinction event label
+    if (extinctionFlash > 0.01 && extinctionLabel) {
+      ctx.font = '14px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(220, 60, 60, ${extinctionFlash * 0.5})`
+      ctx.textAlign = 'center'
+      ctx.fillText(extinctionLabel, w / 2, 50)
+    }
+    // Extinction count (persistent)
+    if (extinctionCount > 0) {
+      ctx.font = '10px monospace'
+      ctx.fillStyle = 'rgba(180, 80, 80, 0.06)'
+      ctx.textAlign = 'left'
+      ctx.fillText(`${extinctionCount} extinction${extinctionCount > 1 ? 's' : ''}`, 12, 25)
+    }
 
     // Hints (updated with rule mutation keys)
     ctx.font = '12px "Cormorant Garamond", serif'
