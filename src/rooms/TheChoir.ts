@@ -86,6 +86,12 @@ const CULTURAL_INSCRIPTIONS = [
   'transcranial ultrasound: MIT can now probe deep brain structures. sound as the tool of consciousness.',
   'pauline oliveros: deep listening. attend to all sounds equally. the room\'s hum is as important as the voice.',
   'wabi-sabi went viral on tiktok, then was co-opted and hollowed out. beauty of imperfection, mass-produced.',
+  'when a choir sings in unison, their heartbeats synchronize. the body remembers before the mind does.',
+  'the schola cantorum of rome: 1400 years of continuous singing. a chain of breath that never broke.',
+  'stained glass was designed to sing with light. each color a frequency. the cathedral is an instrument.',
+  'in 2026 researchers found that group singing releases more oxytocin than any other collective activity.',
+  'the ison — a sustained drone note held by half the choir while the other half sings melody above it.',
+  'john cage\'s organ2/aslsp in halberstadt: a chord change every few years. the slowest music in the world.',
 ]
 
 export function createChoirRoom(deps?: ChoirDeps): Room {
@@ -121,6 +127,22 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
 
   // Candles for visual depth
   let candles: Candle[] = []
+
+  // Collective breath — synchronized dimming/brightening across all voices
+  let breathPhase = 0 // 0..2π, cycles slowly
+  const BREATH_RATE = 0.15 // ~42 second cycle
+
+  // Stained glass light rays — activated when triads form
+  interface LightRay {
+    angle: number
+    hue: number
+    alpha: number
+    width: number
+    length: number
+  }
+  let lightRays: LightRay[] = []
+  let triadDetected = false
+  let triadStrength = 0
 
   // Resonance zones — voices placed near edges create portals to adjacent rooms
   const resonanceZones: ResonanceZone[] = [
@@ -821,6 +843,141 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     }
   }
 
+  /** Detect if 3+ voices form a major or minor triad (within tolerance) */
+  function detectTriad(): { found: boolean; strength: number; hue: number } {
+    const activeVoices = voices.filter(v => {
+      const age = time - v.birth
+      return age > 2 && age < v.life - 3 && v.osc
+    })
+    if (activeVoices.length < 3) return { found: false, strength: 0, hue: 0 }
+
+    // Check all triples for major triad (0,4,7) or minor triad (0,3,7) within ±0.5 semitones
+    for (let i = 0; i < activeVoices.length; i++) {
+      for (let j = i + 1; j < activeVoices.length; j++) {
+        for (let k = j + 1; k < activeVoices.length; k++) {
+          const freqs = [activeVoices[i].freq, activeVoices[j].freq, activeVoices[k].freq].sort((a, b) => a - b)
+          const s1 = 12 * Math.log2(freqs[1] / freqs[0])
+          const s2 = 12 * Math.log2(freqs[2] / freqs[0])
+          // Normalize to within one octave
+          const n1 = ((s1 % 12) + 12) % 12
+          const n2 = ((s2 % 12) + 12) % 12
+          const sorted = [n1, n2].sort((a, b) => a - b)
+          // Major triad: ~4, ~7
+          if (Math.abs(sorted[0] - 4) < 0.8 && Math.abs(sorted[1] - 7) < 0.8) {
+            return { found: true, strength: 0.8, hue: 40 } // warm gold
+          }
+          // Minor triad: ~3, ~7
+          if (Math.abs(sorted[0] - 3) < 0.8 && Math.abs(sorted[1] - 7) < 0.8) {
+            return { found: true, strength: 0.6, hue: 220 } // cool blue
+          }
+        }
+      }
+    }
+    return { found: false, strength: 0, hue: 0 }
+  }
+
+  /** Draw harmonic web — lines connecting consonant voice pairs */
+  function drawHarmonicWeb(c: CanvasRenderingContext2D) {
+    const activeVoices = voices.filter(v => {
+      const age = time - v.birth
+      return v.alpha > 0.1 && age > 1 && age < v.life - 2
+    })
+
+    for (let i = 0; i < activeVoices.length; i++) {
+      for (let j = i + 1; j < activeVoices.length; j++) {
+        const vi = activeVoices[i]
+        const vj = activeVoices[j]
+        const semis = intervalSemitones(vi.freq, vj.freq)
+        const cls = classifyInterval(semis)
+
+        if (cls === 'consonant') {
+          // Golden thread between consonant voices
+          const alpha = Math.min(vi.alpha, vj.alpha) * 0.04
+          const pulse = 0.7 + Math.sin(time * 1.5 + i * 0.7 + j * 1.3) * 0.3
+          c.strokeStyle = `rgba(255, 215, 100, ${alpha * pulse})`
+          c.lineWidth = 0.5
+          c.setLineDash([3, 6])
+          c.beginPath()
+          c.moveTo(vi.x, vi.y)
+          // Slight curve through midpoint
+          const mx = (vi.x + vj.x) / 2
+          const my = (vi.y + vj.y) / 2 - 15
+          c.quadraticCurveTo(mx, my, vj.x, vj.y)
+          c.stroke()
+          c.setLineDash([])
+        } else if (cls === 'dissonant') {
+          // Red jagged line between dissonant voices
+          const alpha = Math.min(vi.alpha, vj.alpha) * 0.02
+          const jitter = Math.sin(time * 8 + i + j) * 3
+          c.strokeStyle = `rgba(255, 80, 80, ${alpha})`
+          c.lineWidth = 0.3
+          c.beginPath()
+          const steps = 8
+          for (let s = 0; s <= steps; s++) {
+            const frac = s / steps
+            const px = vi.x + (vj.x - vi.x) * frac
+            const py = vi.y + (vj.y - vi.y) * frac + (s % 2 === 0 ? jitter : -jitter)
+            if (s === 0) c.moveTo(px, py)
+            else c.lineTo(px, py)
+          }
+          c.stroke()
+        }
+      }
+    }
+  }
+
+  /** Draw stained glass light rays from rose window when triads are detected */
+  function drawStainedGlassLight(c: CanvasRenderingContext2D, w: number, h: number) {
+    if (triadStrength < 0.01) return
+
+    const cx = w / 2
+    const cy = h * 0.08
+
+    // Generate/update light rays when triad strengthens
+    if (triadDetected && lightRays.length < 6) {
+      const angle = -0.4 + Math.random() * 0.8 + Math.PI / 2 // mostly downward
+      lightRays.push({
+        angle,
+        hue: Math.random() * 360,
+        alpha: 0,
+        width: 15 + Math.random() * 25,
+        length: h * 0.4 + Math.random() * h * 0.3,
+      })
+    }
+
+    // Draw and update rays
+    lightRays = lightRays.filter(ray => {
+      if (triadDetected) {
+        ray.alpha = Math.min(triadStrength * 0.04, ray.alpha + 0.0005)
+      } else {
+        ray.alpha -= 0.001
+      }
+      if (ray.alpha <= 0) return false
+
+      const endX = cx + Math.cos(ray.angle) * ray.length
+      const endY = cy + Math.sin(ray.angle) * ray.length
+
+      // Create gradient along the ray
+      const grad = c.createLinearGradient(cx, cy, endX, endY)
+      grad.addColorStop(0, `hsla(${ray.hue}, 60%, 70%, ${ray.alpha})`)
+      grad.addColorStop(0.3, `hsla(${ray.hue}, 50%, 60%, ${ray.alpha * 0.6})`)
+      grad.addColorStop(1, `hsla(${ray.hue}, 40%, 50%, 0)`)
+
+      // Draw as a thin triangle (cone of light)
+      const perpAngle = ray.angle + Math.PI / 2
+      const hw = ray.width / 2
+      c.fillStyle = grad
+      c.beginPath()
+      c.moveTo(cx, cy)
+      c.lineTo(endX + Math.cos(perpAngle) * hw, endY + Math.sin(perpAngle) * hw)
+      c.lineTo(endX - Math.cos(perpAngle) * hw, endY - Math.sin(perpAngle) * hw)
+      c.closePath()
+      c.fill()
+
+      return true
+    })
+  }
+
   function render() {
     if (!canvas || !ctx || !active) return
     frameId = requestAnimationFrame(render)
@@ -833,12 +990,29 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       applyHarmonicRules()
     }
 
+    // Update collective breath phase
+    breathPhase += BREATH_RATE * 0.016
+    if (breathPhase > Math.PI * 2) breathPhase -= Math.PI * 2
+    const breathFactor = 0.85 + Math.sin(breathPhase) * 0.15 // 0.7..1.0
+
+    // Detect triads for stained glass effect
+    const triadResult = detectTriad()
+    triadDetected = triadResult.found
+    if (triadDetected) {
+      triadStrength = Math.min(1, triadStrength + 0.02)
+    } else {
+      triadStrength = Math.max(0, triadStrength - 0.008)
+    }
+
     const w = canvas.width
     const h = canvas.height
 
     // Background — cathedral dark
     ctx.fillStyle = 'rgba(3, 2, 8, 1)'
     ctx.fillRect(0, 0, w, h)
+
+    // --- Stained glass light rays (behind everything) ---
+    drawStainedGlassLight(ctx, w, h)
 
     // --- Draw cathedral structure (behind everything) ---
     drawPillars(ctx, w, h, time)
@@ -867,6 +1041,9 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       }
     }
 
+    // --- Draw harmonic web (behind voices) ---
+    drawHarmonicWeb(ctx)
+
     // Draw voices
     for (const v of voices) {
       const age = time - v.birth
@@ -880,6 +1057,9 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       } else {
         v.alpha = 1
       }
+
+      // Apply collective breath to alpha
+      v.alpha *= breathFactor
 
       const breathe = Math.sin(time * 1.2 + v.x * 0.01) * 0.1
 
@@ -964,8 +1144,23 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     ctx.fillStyle = 'rgba(200, 180, 255, 0.06)'
     ctx.textAlign = 'left'
     const ghostCount = voices.filter(v => v.isGhost).length
-    ctx.fillText(`${voices.length} voices${ghostCount > 0 ? ` (${ghostCount} echoes)` : ''}`, 12, h - 30)
-    ctx.fillText(`${totalVoices} total`, 12, h - 18)
+    ctx.fillText(`${voices.length} voices${ghostCount > 0 ? ` (${ghostCount} echoes)` : ''}`, 12, h - 42)
+    ctx.fillText(`${totalVoices} total`, 12, h - 30)
+
+    // Breath indicator — small pulsing circle
+    const breathAlpha = 0.03 + breathFactor * 0.03
+    ctx.fillStyle = `rgba(200, 180, 255, ${breathAlpha})`
+    ctx.beginPath()
+    ctx.arc(16, h - 14, 3 + breathFactor * 2, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = 'rgba(200, 180, 255, 0.04)'
+    ctx.fillText('breath', 26, h - 10)
+
+    // Triad indicator
+    if (triadStrength > 0.1) {
+      ctx.fillStyle = `rgba(255, 215, 100, ${triadStrength * 0.06})`
+      ctx.fillText('triad', 80, h - 10)
+    }
 
     // Pitch guide (very faint)
     ctx.textAlign = 'right'
@@ -1149,6 +1344,11 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       active = true
       // Reset resonance on re-entry
       for (const z of resonanceZones) z.resonance = 0
+      // Reset breath and triad state
+      breathPhase = 0
+      lightRays = []
+      triadDetected = false
+      triadStrength = 0
       await initAudio()
       initCandles()
       seedVoices()
