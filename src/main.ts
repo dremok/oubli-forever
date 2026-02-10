@@ -97,6 +97,7 @@ import { Narrator } from './organisms/Narrator'
 import { ImmuneSystem } from './organisms/ImmuneSystem'
 import { ScrambledReplay } from './organisms/ScrambledReplay'
 import { Erosion } from './organisms/Erosion'
+import { Autophagy } from './organisms/Autophagy'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -729,6 +730,8 @@ narrator.setDeps({
   isImmuneResponding: () => immuneSystem.isResponding(),
   getAvgMethylation: () => methylation.getAvgMethylation(),
   getErosionLevel: () => erosion.getLevel(),
+  getAutophagyLevel: (room) => autophagy.getLevel(room),
+  getAvgAutophagy: () => autophagy.getAvgLevel(),
 })
 narrator.start()
 
@@ -771,6 +774,17 @@ erosion.setDeps({
   getCompostCount: () => mycelium.getCompostCount(),
 })
 erosion.start()
+
+// The Autophagy — the house deliberately dismantles itself to survive
+// Rooms visited most undergo self-reduction. Emptiness is health.
+const autophagy = new Autophagy()
+autophagy.setDeps({
+  getActiveRoom: () => roomManager.getActiveRoom(),
+  getRoomVisits: () => roomManager.getRoomVisits(),
+  getRipeness: (room) => mycelium.getRipeness(room),
+  getSeason: () => seasonalClock.getSeason(),
+})
+autophagy.start()
 
 let _prevRoom = 'void'
 

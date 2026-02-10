@@ -193,6 +193,15 @@ const DECAY_MEDITATIONS = [
   '55 million tiktok videos performing nostalgia for 2016. the original year was chaos. memory rewrites the past as paradise.',
   'WebGPU compatibility mode: compute shaders on every device. a million particles at 60fps. democratized destruction.',
   'transformers.js depth estimation: the browser learns to perceive depth from flat images. seeing without eyes.',
+  // Round 23 — Feb 10, 2026
+  'autophagy: cells eat their own factory to survive. 70% gone within days. the longest-lived organisms dismantle themselves first.',
+  'ER-phagy shifts cells from protein production to fat metabolism. the factory becomes a warehouse. survival is reorganization.',
+  'comet 3I/ATLAS: pristine ices billions of years old erupting at the moment of departure. farewell is revelation.',
+  'hawking\'s area theorem: merged black holes are always larger. GW250114 proved it — 400,000 km² from 240,000 km². growth through collision.',
+  'snow drought: 155,000 square miles of snow where there should be 460,000. the water came as rain. present but unhold-able.',
+  'dream engineering: targeted memory reactivation during REM. the brain solves what consciousness cannot. dreaming is functional.',
+  'michael joo sculpts with artificial sweat and imitation tears. the body\'s evidence of effort, rendered in synthetic fluids.',
+  'morrison: language doesn\'t describe the world. it makes worlds. when the language stops, the architecture dissolves.',
 ]
 
 export class DigitalDecay {

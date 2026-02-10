@@ -44,6 +44,8 @@ interface NarratorDeps {
   isImmuneResponding: () => boolean
   getAvgMethylation?: () => number
   getErosionLevel?: () => number
+  getAutophagyLevel?: (room: string) => number
+  getAvgAutophagy?: () => number
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -174,6 +176,20 @@ const GENERATORS: NarrationGenerator[] = [
     if (erosion > 0.3) return 'watermarks appear on surfaces that were once clean. the erosion is permanent.'
     if (erosion > 0.15) return 'age spots. hairline fractures. the house accrues what it cannot shed.'
     if (erosion > 0.05) return 'something is accumulating that will never go away. the first cracks appear.'
+    return null
+  },
+
+  // Autophagy narrations
+  (d) => {
+    const room = d.getActiveRoom()
+    const level = d.getAutophagyLevel?.(room)
+    if (level === undefined) return null
+    if (level > 0.5) return 'this room has stripped itself to the bone. it survives by becoming less.'
+    if (level > 0.3) return 'the house is eating its own walls here. this is not decay — this is survival.'
+    if (level > 0.15) return 'golden fragments rise. the room is lighter now. it chose to let go.'
+    if (level > 0.05) return 'autophagy begins. the room dismantles what it no longer needs.'
+    const avg = d.getAvgAutophagy?.()
+    if (avg !== undefined && avg > 0.2) return 'the house has learned: to endure is to reduce. the longest-lived rooms are the emptiest.'
     return null
   },
 

@@ -121,6 +121,16 @@ const PROMPTS_BASE = [
   'Hidden quantum geometry steers electrons through materials. Write about an invisible force that guided your life...',
   'The "no hands" dance: remove the primary input and the body compensates beautifully. Write without using the letter "e"...',
   'A museum announced "Manosphere" — what happens when an identity becomes an echo chamber. Write from inside a sphere that only reflects you...',
+
+  // Feb 2026 — round 8: autophagy, departure, merging, snow drought, dreams
+  'Cells dismantle 70% of their own factory to survive aging. Long-lived organisms do it sooner. Write about something you had to destroy to keep living...',
+  'A comet reveals itself most fully at the moment it leaves the solar system. Write about what you show only when you\'re leaving...',
+  'Two black holes merged and the result was always larger. You cannot un-merge. Write about an irreversible combination...',
+  'The snow arrived as rain — the same water, the wrong form. Write about something you received that you couldn\'t hold...',
+  'Scientists infiltrated sleeping minds and the dreamers solved puzzles twice as often. Write the answer you found in a dream...',
+  'Michael Joo sculpts with artificial sweat and imitation tears. Write about effort that leaves visible residue...',
+  'Toni Morrison: language doesn\'t describe the world — it makes worlds. Write a sentence that creates a world. Then unmake it...',
+  'Isaac Julien told the same story on five screens at once. Tell one memory five different ways in five sentences...',
 ]
 
 // Fallback quotes for when the API is unreachable

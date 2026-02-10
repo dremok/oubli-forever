@@ -29,7 +29,7 @@ After context compaction/reset:
 ## Shared State — CONSIDER FOR NEW FEATURES
 - **Optional but powerful**: Consider whether new features could affect ALL visitors, not just one
 - During the discovery/research phase, ask: "Could this feature have a shared/collective dimension?"
-- Examples: a room that changes based on total visitor count, collective memory deposits, shared navigation patterns affecting the graph, a fruit that only ripens when multiple visitors have touched a room
+- Examples: seeds planted by one visitor discovered by another, rooms that shift when many visitors touch them, the organism's response to collective presence
 - This is NOT required for every feature — but the best features in Oubli should make you feel that the house is shared, that others have been here before you, that your actions ripple into the experience of others
 - The Mycelium and Fruiting systems are natural candidates for shared state — imagine seeds planted by one visitor being discovered by another
 
@@ -53,11 +53,13 @@ After context compaction/reset:
 - **WebGPU compute shaders** are now cross-browser (2026). Million-particle simulations at 60fps. Three.js TSL compiles to both WGSL and GLSL. Use `WebGPURenderer` with automatic WebGL 2 fallback for heavy rooms.
 - **Intentional imperfection is the 2026 aesthetic** — visible process marks, scan artifacts, hand-drawn textures over digital geometry. "Guaranteed human" is a premium. Oubli should feel made, not generated.
 - **Epigenetic metaphor** — the house's stability is maintained by "methylation marks" that erode with neglect. Content transposes between rooms uninvited when marks decay. Attention protects; absence degrades.
-- **Premonitions and croak dreams** — Puma Blue's "Croak Dream" (Feb 2026): the house occasionally shows you what a room will look like when fully forgotten. Death flashes. The house dreams of its own end.
 - **Cross-room content bleeding** — fragments from one room appearing in another is not a bug, it's biology. Transposable elements, methylation decay, memory bleed. The house's genome is becoming unstable.
 - **Scrambled replay as pathology** — UCL Alzheimer's research (Feb 2026): the hippocampus still replays during rest, but the sequences come back scrambled. Not silence — corrupted signal. The house dreams of your path but gets the order wrong.
 - **Irreversible loss mechanics** — UN Global Water Bankruptcy (Jan 2026): some resources never come back. Not everything in Oubli should be cyclical. Some features should permanently drain, permanently scar, permanently forget. Bankruptcy as design principle.
 - **Transformers.js v3 client-side AI** — depth estimation, segmentation, style transfer, small LLMs all run in-browser via WebGPU. No server needed. The house could see, understand, and transform its own content locally.
+- **Autophagy as survival** — Vanderbilt ER-phagy (Feb 2026): cells dismantle 70% of their own factory to survive aging. Long-lived organisms do it sooner. The house should strip itself to endure. Emptiness is health.
+- **Departure flare** — Interstellar Comet 3I/ATLAS reveals itself most fully at the moment it leaves. Content should erupt from rooms as visitors depart. The brightest revelations come at goodbye.
+- **Speech contextual biasing** — Chrome 142 Web Speech API now accepts phrase lists. Rooms that listen for specific words (room names, organism terms) can actually recognize them reliably. Voice as navigation.
 
 ## Cultural Grounding — CRITICAL
 - **Every new feature must be inspired by something real** — current events, cultural trends, scientific discoveries, art movements, technological shifts, social phenomena happening NOW (2025-2026).

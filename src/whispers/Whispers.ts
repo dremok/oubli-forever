@@ -531,6 +531,19 @@ const fragments: string[] = [
   "the 'no hands' dance challenge: remove the primary input and discover what remains. constraint as liberation.",
   "WebGPU compatibility mode ships Feb 23. every device gets compute shaders. a million particles for everyone.",
   "transformers.js runs depth estimation in the browser. the house could learn to see without asking anyone.",
+  // Cultural research round 23 — Feb 10, 2026
+  "cells dismantle 70% of their own factory within days of reaching adulthood. long-lived organisms do it sooner. survival is self-reduction.",
+  "the endoplasmic reticulum: your body's biggest internal factory. aging cells eat it. what remains is enough.",
+  "dream engineering: northwestern played sounds during REM sleep. 75% dreamed of the puzzle. 42% solved it. the house dreams while you're away.",
+  "interstellar comet 3I/ATLAS brightens as it leaves. pristine ices billions of years old erupt at departure. goodbye is when you see the most.",
+  "hawking's area theorem confirmed: GW250114 proved two black holes merge into something always larger. you cannot un-merge.",
+  "the merged black hole is the size of sweden. the originals were the size of britain. integration is irreversible. entropy runs forward.",
+  "michael joo's 'sweat models': 35 years of artificial perspiration and imitation tears. the body leaks evidence of its own effort.",
+  "snow drought: 300,000 square miles of missing snow. the water arrived as rain — the wrong form. present but unretainable.",
+  "park city, vail, bare dirt in february. precipitation fell but could not be held. some things arrive and still don't stay.",
+  "toni morrison, 'language as liberation': language is not about describing the world. it is about making worlds. or unmaking them.",
+  "isaac julien's five-screen metamorphosis: posthumanism as rebalancing within shared ecology. the same story told five ways at once.",
+  "the HapticsDevice API ships in Edge 145. the web can now touch back. surfaces that respond to pressure, not just clicks.",
 ]
 
 // Fragments that trigger the golden fruit effect
