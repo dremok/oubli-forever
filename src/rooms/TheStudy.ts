@@ -111,6 +111,16 @@ const PROMPTS_BASE = [
   'Rice University found a quantum state where chaos produces order. Write about disorder that created something beautiful...',
   'Each atom gets its own tiny light trap. 500 cavities, each holding one qubit. What is your smallest container for your largest thought?',
   'Fragments from rooms you\'ve neglected drift into this one. What has drifted into your life from somewhere you forgot?',
+
+  // Feb 2026 — round 7: scrambled replay, water bankruptcy, salt mine, nostalgia
+  'The brain replays your day during sleep, but Alzheimer\'s scrambles the order. Write your day as the house would replay it — wrong...',
+  'The UN declared global water bankruptcy. Some debts can never be repaid. Write about an irreversible loss...',
+  '68 boxes of Elvis footage were found in a salt mine in Kansas. What would you bury underground for someone to find decades later?',
+  '55 million people are performing nostalgia for 2016. Memory rewrites chaos as paradise. Write about a year you remember wrong...',
+  'Karnivool broke a decade of silence with "In Verses." Write about something you said after years of saying nothing...',
+  'Hidden quantum geometry steers electrons through materials. Write about an invisible force that guided your life...',
+  'The "no hands" dance: remove the primary input and the body compensates beautifully. Write without using the letter "e"...',
+  'A museum announced "Manosphere" — what happens when an identity becomes an echo chamber. Write from inside a sphere that only reflects you...',
 ]
 
 // Fallback quotes for when the API is unreachable

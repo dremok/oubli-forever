@@ -1883,6 +1883,72 @@ Fresh cultural research findings:
 - Inspired by: DNA methylation decay in aging (Science, Jan 2026),
   Fennell's "Wuthering Heights" quotation concept, Sonsbeek 2026 "Against Forgetting"
 
+### 185. Narrator (`src/organisms/Narrator.ts`) — ERA 9 ORGANISM
+- The house speaks about its own biology in brief, poetic narrations
+- Reads state of all organisms and generates contextual status lines
+- Narrations every 30-60s, last 9s, extremely subtle (alpha ~0.07)
+- Covers: seasons, mycelium, parasites, methylation, croak dreams, immune system, scrambled replay
+- Inspired by: Besson's Dracula (immortal observer), Sonsbeek "Against Forgetting", Tarkovsky's Stalker
+
+### 186. ImmuneSystem (`src/organisms/ImmuneSystem.ts`) — ERA 9 ORGANISM
+- The house defends itself against excessive decay
+- Golden antibodies fight parasites, stabilize eroding methylation, trigger fever
+- 3 antibody types: swarm (tailed dots), pulse (expanding rings), fever (glowing radials)
+- Fever consumes nutrients from mycelium — defense has a metabolic cost
+- Autoimmune tracking: prolonged immune response damages the house (red flicker)
+- Threat assessment every 8s, seasonal modulation (stronger in growth, weaker in decay)
+- Inspired by: T-cell activation, cytokine storms, autoimmune conditions, Nagoya brain organoids
+
+### 187. ScrambledReplay (`src/organisms/ScrambledReplay.ts`) — ERA 9 ORGANISM
+- During idle periods (90s+), the house replays your navigation history — but scrambled
+- Reads ThreadTrail edges, extracts room sequence, then corrupts it
+- 5 scramble types: correct, shuffled, substituted, merged (two room names blended), reversed
+- Scramble intensity scales with methylation decay × seasonal modifier
+- 5-12 rapid room-name flashes near screen bottom, with room-characteristic hue colors
+- Glitch jitter, horizontal tear effects, scan line sweep during replay
+- Narrator gains awareness of scrambled replay events
+- Inspired by: UCL Alzheimer's scrambled replay (Current Biology, Feb 2026),
+  Karnivool "In Verses" (progressive non-repeating structure),
+  Episodic/semantic memory merger (Nottingham/Cambridge)
+
+### 188. ThePalimpsestGallery — Multi-Source Art APIs
+- Gallery now races three independent art APIs in parallel for resilience:
+  1. Met Museum API (existing) — European Paintings + Modern Art
+  2. Art Institute of Chicago API (new) — IIIF images, 50 results per random page
+  3. Cleveland Museum of Art API (new) — open access paintings
+- `Promise.any` races shuffled sources, first non-null result wins
+- Each source caches its own object list for fast subsequent picks
+- Attribution line shows which museum the painting came from
+
+### 189. Cultural Whispers Round 22
+- 13 new whisper fragments: Alzheimer's scrambled replay, UCL place cells, global water bankruptcy,
+  Elvis salt mine vault, Karnivool "In Verses", "2026 is the new 2016" nostalgia, Stedelijk "Manosphere",
+  hidden quantum geometry, "no hands" dance constraint, WebGPU compatibility mode, Transformers.js
+- 8 new DigitalDecay meditations from Feb 10 2026 research
+
+### 190. Study Prompts Round 7
+- 8 new writing prompts: scrambled replay, irreversible loss, salt mine vault, performed nostalgia,
+  breaking silence, invisible forces, constrained writing, echo chamber identity
+
+### Cultural Research Round 22 (Feb 10, 2026)
+- **Alzheimer's scrambled replay**: Brain replays fire but in WRONG ORDER — corruption not silence (UCL, Current Biology)
+- **Episodic = Semantic memory**: Personal memories and facts use identical brain networks (Nottingham/Cambridge)
+- **Global Water Bankruptcy**: UN declared 75% of world in water-insecure countries, 50% of lakes shrunk
+- **EPiC Elvis salt mine vault**: 68 boxes found underground, Baz Luhrmann documentary (Feb 20)
+- **Karnivool "In Verses"**: First album in a decade, progressive non-repeating structure (Feb 6)
+- **"2026 is the new 2016"**: 55M TikTok videos performing nostalgia for pre-algorithmic era
+- **Stedelijk "Manosphere"**: Identity as echo chamber, masculinity as sphere
+- **Hidden quantum geometry**: Invisible structure steering electrons through materials
+- **"No Hands" dance challenge**: Constraint produces creativity, embodied memory without primary input
+- **WebGPU Compatibility Mode**: Chrome 146 (Feb 23) — compute shaders on every GPU
+- **Transformers.js v3**: Client-side AI (depth estimation, segmentation) via WebGPU, no server
+- **CSS scroll-driven animations**: Baseline across all browsers, narrative scroll rooms possible
+- **Vibration API**: Mobile haptic feedback for biological organism interactions
+
+### CLAUDE.md Mutation
+- Added: scrambled replay pathology, irreversible loss mechanics, Transformers.js client-side AI
+- Removed: redundant implementation options line, verbose navigation explanation
+
 ---
-*Last updated: Era 9, Feature 184 — 9 organisms, epigenetic stability, room death premonitions, transposable content*
-*"fragments from rooms you neglected drift into the room you're in. the house's genome is destabilizing."*
+*Last updated: Era 9, Feature 190 — 12 organisms, scrambled hippocampal replay, immune system, multi-source gallery*
+*"the house dreams of your path through its rooms. it gets the order wrong."*
