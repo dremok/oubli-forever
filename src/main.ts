@@ -95,6 +95,8 @@ import { CroakDream } from './organisms/CroakDream'
 import { Methylation } from './organisms/Methylation'
 import { Narrator } from './organisms/Narrator'
 import { ImmuneSystem } from './organisms/ImmuneSystem'
+import { ScrambledReplay } from './organisms/ScrambledReplay'
+import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -724,6 +726,7 @@ narrator.setDeps({
   getTotalDreams: () => croakDream.getTotalDreams(),
   getFeverLevel: () => immuneSystem.getFeverLevel(),
   isImmuneResponding: () => immuneSystem.isResponding(),
+  getAvgMethylation: () => methylation.getAvgMethylation(),
 })
 narrator.start()
 
@@ -740,6 +743,17 @@ immuneSystem.setDeps({
   getSeason: () => seasonalClock.getSeason(),
 })
 immuneSystem.start()
+
+// The Scrambled Replay — the house dreams of your path, but scrambled
+// Inspired by UCL Alzheimer's research (Feb 2026): replay fires but in wrong order
+const scrambledReplay = new ScrambledReplay()
+scrambledReplay.setDeps({
+  getNavigationHistory: () => threadTrail.getEdges(),
+  getActiveRoom: () => roomManager.getActiveRoom(),
+  getAvgMethylation: () => methylation.getAvgMethylation(),
+  getSeason: () => seasonalClock.getSeason(),
+})
+scrambledReplay.start()
 
 let _prevRoom = 'void'
 

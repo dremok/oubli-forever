@@ -42,6 +42,7 @@ interface NarratorDeps {
   getTotalDreams: () => number
   getFeverLevel: () => number
   isImmuneResponding: () => boolean
+  getAvgMethylation?: () => number
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -146,6 +147,21 @@ const GENERATORS: NarrationGenerator[] = [
     if (fever > 0.6) return 'the house is running a fever. golden antibodies swarm the edges.'
     if (fever > 0.3) return 'warmth rises. the immune system stirs against the decay.'
     if (responding) return 'golden particles drift outward. the house is defending itself.'
+    return null
+  },
+
+  // Scrambled replay narrations
+  (d) => {
+    const avgMeth = d.getAvgMethylation?.()
+    if (avgMeth !== undefined && avgMeth < 0.5) {
+      const options = [
+        'the house replays your path. the order is wrong.',
+        'hippocampal replay — but the sequence has scrambled.',
+        'it remembers you were here. it forgets the order.',
+        'a corrupted signal: your path, reassembled incorrectly.',
+      ]
+      return options[Math.floor(Math.random() * options.length)]
+    }
     return null
   },
 

@@ -30,7 +30,6 @@ After context compaction/reset:
 - **Optional but powerful**: Consider whether new features could affect ALL visitors, not just one
 - During the discovery/research phase, ask: "Could this feature have a shared/collective dimension?"
 - Examples: a room that changes based on total visitor count, collective memory deposits, shared navigation patterns affecting the graph, a fruit that only ripens when multiple visitors have touched a room
-- Implementation options: Railway backend API routes, shared localStorage-like state via a simple server endpoint, WebSocket for real-time, or even just a JSON file on the server that accumulates data
 - This is NOT required for every feature — but the best features in Oubli should make you feel that the house is shared, that others have been here before you, that your actions ripple into the experience of others
 - The Mycelium and Fruiting systems are natural candidates for shared state — imagine seeds planted by one visitor being discovered by another
 
@@ -38,7 +37,7 @@ After context compaction/reset:
 - **New features should interfere as little as possible with existing features**
 - **Prefer creating new rooms or spaces** for completely new features rather than adding complexity to the void/front page
 - New spaces can be accessed from existing spaces (links, doorways, tab bar entries) — not everything has to connect directly to the void
-- **Navigation can be convoluted** — rooms can link to other rooms, hidden passages can exist between non-void rooms, not all navigation has to go through the main room. The tab bar is one path; rooms can contain their own links/portals to other rooms.
+- **Navigation can be convoluted** — rooms can link to other rooms, hidden passages can exist between non-void rooms, not all navigation has to go through the main room.
 - Avoid adding global keyboard handlers, global DOM overlays, or global event listeners that could conflict with existing rooms
 - If a feature is room-specific, use `setRoomCheck()` to scope it properly
 - When in doubt, make it a new room — rooms are self-contained and low-risk
@@ -56,6 +55,9 @@ After context compaction/reset:
 - **Epigenetic metaphor** — the house's stability is maintained by "methylation marks" that erode with neglect. Content transposes between rooms uninvited when marks decay. Attention protects; absence degrades.
 - **Premonitions and croak dreams** — Puma Blue's "Croak Dream" (Feb 2026): the house occasionally shows you what a room will look like when fully forgotten. Death flashes. The house dreams of its own end.
 - **Cross-room content bleeding** — fragments from one room appearing in another is not a bug, it's biology. Transposable elements, methylation decay, memory bleed. The house's genome is becoming unstable.
+- **Scrambled replay as pathology** — UCL Alzheimer's research (Feb 2026): the hippocampus still replays during rest, but the sequences come back scrambled. Not silence — corrupted signal. The house dreams of your path but gets the order wrong.
+- **Irreversible loss mechanics** — UN Global Water Bankruptcy (Jan 2026): some resources never come back. Not everything in Oubli should be cyclical. Some features should permanently drain, permanently scar, permanently forget. Bankruptcy as design principle.
+- **Transformers.js v3 client-side AI** — depth estimation, segmentation, style transfer, small LLMs all run in-browser via WebGPU. No server needed. The house could see, understand, and transform its own content locally.
 
 ## Cultural Grounding — CRITICAL
 - **Every new feature must be inspired by something real** — current events, cultural trends, scientific discoveries, art movements, technological shifts, social phenomena happening NOW (2025-2026).
