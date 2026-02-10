@@ -98,6 +98,7 @@ import { ImmuneSystem } from './organisms/ImmuneSystem'
 import { ScrambledReplay } from './organisms/ScrambledReplay'
 import { Erosion } from './organisms/Erosion'
 import { Autophagy } from './organisms/Autophagy'
+import { DepartureFlare } from './organisms/DepartureFlare'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -786,14 +787,19 @@ autophagy.setDeps({
 })
 autophagy.start()
 
+// The Departure Flare — rooms confess hidden content as you leave
+// Comet 3I/ATLAS brightens at departure. The house does the same.
+const departureFlare = new DepartureFlare()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
 roomManager.onRoomChange((room) => {
-  // Trigger membrane passage (must fire before _prevRoom updates)
+  // Trigger membrane passage and departure effects (must fire before _prevRoom updates)
   if (_prevRoom !== room) {
     membrane.onTransition(_prevRoom, room)
     roomAfterimage.trigger(_prevRoom)
+    departureFlare.onDeparture(_prevRoom)
   }
   // Trigger spacetime ripple when entering destructive rooms
   spacetimeRipple.triggerRoomEvent(room)
