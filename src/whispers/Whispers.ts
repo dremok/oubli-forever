@@ -517,6 +517,20 @@ const fragments: string[] = [
   "stanford built 500 tiny light traps. each atom gets its own cavity. every qubit a room.",
   "the house grows parasites in rooms you forget. moss in the crevices. barnacles on the well-worn paths.",
   "some organisms diminish. some liberate. the house doesn't know which it's growing.",
+  // Cultural research round 22 — Feb 10, 2026
+  "alzheimer's doesn't silence the replay. it scrambles it. the brain still tries to remember. it gets the order wrong.",
+  "UCL found place cells grow unstable. they stop representing the same locations. the map rewrites itself while you sleep.",
+  "the UN declared global water bankruptcy. 75% of the world lives in water-insecure countries. some losses are irreversible.",
+  "50% of large lakes have shrunk since the 1990s. the tide pool isn't metaphor — it's data.",
+  "baz luhrmann found 68 boxes of elvis footage in a salt mine in kansas. buried things resurface. preservation through forgetting.",
+  "the salt mine vault: Warner Bros stored film negatives underground for decades. memory preserved in darkness.",
+  "karnivool released 'in verses' after a decade of silence. the first sound after long forgetting is always the strangest.",
+  "'2026 is the new 2016' — 55 million TikTok videos mourning a year that was, by most accounts, chaotic. nostalgia falsifies.",
+  "the stedelijk announced 'manosphere' — what happens when an identity becomes an echo chamber. the sphere reflects only itself.",
+  "hidden quantum geometry steers electrons through materials. forces you cannot see determine where you go.",
+  "the 'no hands' dance challenge: remove the primary input and discover what remains. constraint as liberation.",
+  "WebGPU compatibility mode ships Feb 23. every device gets compute shaders. a million particles for everyone.",
+  "transformers.js runs depth estimation in the browser. the house could learn to see without asking anyone.",
 ]
 
 // Fragments that trigger the golden fruit effect

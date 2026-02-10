@@ -184,6 +184,15 @@ const DECAY_MEDITATIONS = [
   'muonium-to-antimuonium conversion: matter becoming antimatter. if detected, the standard model cracks.',
   'the no-hands dance: constraint as creativity. remove the obvious and the body compensates beautifully.',
   'silver heals ceramic at the nanoscale. 3nm coating. five times tougher. the physics of repair.',
+  // Round 22 — Feb 10, 2026
+  'global water bankruptcy: 30% of glacier mass lost since 1970. some debts can never be repaid.',
+  'the scrambled replay: alzheimer\'s doesn\'t erase the recording. it shuffles the tape. the signal is there, rearranged.',
+  '68 boxes of elvis footage in a kansas salt mine. preservation through burial. the vault remembers what the surface forgot.',
+  'hidden quantum geometry: electrons steered by forces they cannot see, in materials that look ordinary from outside.',
+  'karnivool broke a decade of silence. "in verses." progressive structure: nothing repeats. the composition only moves forward.',
+  '55 million tiktok videos performing nostalgia for 2016. the original year was chaos. memory rewrites the past as paradise.',
+  'WebGPU compatibility mode: compute shaders on every device. a million particles at 60fps. democratized destruction.',
+  'transformers.js depth estimation: the browser learns to perceive depth from flat images. seeing without eyes.',
 ]
 
 export class DigitalDecay {
