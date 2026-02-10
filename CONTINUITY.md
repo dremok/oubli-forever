@@ -1949,6 +1949,20 @@ Fresh cultural research findings:
 - Added: scrambled replay pathology, irreversible loss mechanics, Transformers.js client-side AI
 - Removed: redundant implementation options line, verbose navigation explanation
 
+### 191. Erosion (`src/organisms/Erosion.ts`) — ERA 9 ORGANISM
+- The ONE system that NEVER cycles back — irreversible aging of the house
+- Accumulates from: memory degradation, composted memories, immune fever, parasites, and time itself
+- Visual marks persist permanently in localStorage:
+  - Hairline cracks from screen edges (start at 0.05 erosion)
+  - Circular watermark stains (start at 0.1)
+  - Dark age spots (start at 0.15)
+  - Overall dust/foxing overlay at 0.3+
+- Erosion % indicator at top-right (extremely subtle, grows more visible with erosion)
+- Takes hours to become noticeable, days to become unmistakable
+- Narrator gains erosion awareness (graduated messages at 0.05/0.15/0.3/0.5)
+- Mycelium gains `getCompostCount()` for erosion tracking
+- Inspired by: UN Global Water Bankruptcy, wabi-sabi, patina, craquelure, Second Law of Thermodynamics
+
 ---
-*Last updated: Era 9, Feature 190 — 12 organisms, scrambled hippocampal replay, immune system, multi-source gallery*
-*"the house dreams of your path through its rooms. it gets the order wrong."*
+*Last updated: Era 9, Feature 191 — 13 organisms, irreversible erosion, scrambled replay, immune system*
+*"the cracks are not metaphor. the house is aging. this cannot be undone."*
