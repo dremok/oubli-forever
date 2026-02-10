@@ -173,72 +173,147 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
   let charPositions: CharPos[] = []
   let charPositionsDirty = true
 
-  // Met Museum departments with paintings
-  const PAINTING_DEPARTMENTS = [11, 21] // European Paintings, Modern Art
+  // --- Multi-source art API system ---
+  // Three independent sources: Met Museum, Art Institute of Chicago, Cleveland Museum of Art
+  // Each caches its own object list; fetches race for resilience
 
-  // Cached search results to avoid re-fetching the objectIDs list every time
-  let cachedObjectIDs: number[] = []
+  // Source 1: Metropolitan Museum of Art (no key needed)
+  const MET_DEPARTMENTS = [11, 21] // European Paintings, Modern Art
+  let cachedMetIDs: number[] = []
 
-  async function ensureObjectIDs(): Promise<number[]> {
-    if (cachedObjectIDs.length > 0) return cachedObjectIDs
-
+  async function fetchFromMet(): Promise<Artwork | null> {
     try {
-      const deptId = PAINTING_DEPARTMENTS[Math.floor(Math.random() * PAINTING_DEPARTMENTS.length)]
-      const searchResp = await fetch(
-        `https://collectionapi.metmuseum.org/public/collection/v1/search?departmentId=${deptId}&hasImages=true&isPublicDomain=true&q=painting`,
-        { signal: AbortSignal.timeout(8000) }
-      )
-      if (!searchResp.ok) throw new Error('search failed')
-      const searchData = await searchResp.json()
-
-      if (!searchData.objectIDs || searchData.objectIDs.length === 0) throw new Error('no results')
-
-      cachedObjectIDs = searchData.objectIDs
-      return cachedObjectIDs
-    } catch {
-      return []
-    }
-  }
-
-  async function fetchRandomArtwork(): Promise<Artwork | null> {
-    const objectIDs = await ensureObjectIDs()
-    if (objectIDs.length === 0) return null
-
-    const maxAttempts = 5
-    const tried = new Set<number>()
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      let objectId: number
-      do {
-        objectId = objectIDs[Math.floor(Math.random() * objectIDs.length)]
-      } while (tried.has(objectId) && tried.size < objectIDs.length)
-
-      if (tried.has(objectId)) break
-      tried.add(objectId)
-
-      try {
-        const objResp = await fetch(
-          `https://collectionapi.metmuseum.org/public/collection/v1/objects/${objectId}`,
-          { signal: AbortSignal.timeout(8000) }
+      if (cachedMetIDs.length === 0) {
+        const deptId = MET_DEPARTMENTS[Math.floor(Math.random() * MET_DEPARTMENTS.length)]
+        const resp = await fetch(
+          `https://collectionapi.metmuseum.org/public/collection/v1/search?departmentId=${deptId}&hasImages=true&isPublicDomain=true&q=painting`,
+          { signal: AbortSignal.timeout(6000) }
         )
-        if (!objResp.ok) continue
-        const obj = await objResp.json()
+        if (!resp.ok) return null
+        const data = await resp.json()
+        if (!data.objectIDs?.length) return null
+        cachedMetIDs = data.objectIDs
+      }
 
-        if (!obj.primaryImageSmall && !obj.primaryImage) continue
+      const tried = new Set<number>()
+      for (let attempt = 0; attempt < 4; attempt++) {
+        let id: number
+        do { id = cachedMetIDs[Math.floor(Math.random() * cachedMetIDs.length)] }
+        while (tried.has(id) && tried.size < cachedMetIDs.length)
+        if (tried.has(id)) break
+        tried.add(id)
+
+        const resp = await fetch(
+          `https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`,
+          { signal: AbortSignal.timeout(6000) }
+        )
+        if (!resp.ok) continue
+        const obj = await resp.json()
+        const imgUrl = obj.primaryImageSmall || obj.primaryImage
+        if (!imgUrl) continue
 
         return {
           title: obj.title || 'Untitled',
           artist: obj.artistDisplayName || 'Unknown',
           date: obj.objectDate || '',
-          imageUrl: obj.primaryImageSmall || obj.primaryImage,
-          department: obj.department || '',
+          imageUrl: imgUrl,
+          department: `Met — ${obj.department || ''}`,
         }
-      } catch {
-        continue
       }
-    }
-
+    } catch { /* Met unavailable */ }
     return null
+  }
+
+  // Source 2: Art Institute of Chicago (no key needed, IIIF images)
+  interface AICRecord { id: number; title: string; artist_display: string; date_display: string; image_id: string }
+  let cachedAICRecords: AICRecord[] = []
+
+  async function fetchFromAIC(): Promise<Artwork | null> {
+    try {
+      if (cachedAICRecords.length === 0) {
+        const page = Math.floor(Math.random() * 20) + 1
+        const resp = await fetch(
+          `https://api.artic.edu/api/v1/artworks/search?q=painting&query[term][is_public_domain]=true&fields=id,title,artist_display,date_display,image_id&limit=50&page=${page}`,
+          { signal: AbortSignal.timeout(6000) }
+        )
+        if (!resp.ok) return null
+        const data = await resp.json()
+        if (!data.data?.length) return null
+        cachedAICRecords = data.data.filter((r: AICRecord) => r.image_id)
+      }
+
+      if (cachedAICRecords.length === 0) return null
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const rec = cachedAICRecords[Math.floor(Math.random() * cachedAICRecords.length)]
+        if (!rec.image_id) continue
+
+        return {
+          title: rec.title || 'Untitled',
+          artist: rec.artist_display || 'Unknown',
+          date: rec.date_display || '',
+          imageUrl: `https://www.artic.edu/iiif/2/${rec.image_id}/full/843,/0/default.jpg`,
+          department: 'Art Institute of Chicago',
+        }
+      }
+    } catch { /* AIC unavailable */ }
+    return null
+  }
+
+  // Source 3: Cleveland Museum of Art (no key needed, open access)
+  interface CMARecord { id: number; title: string; creators: { description: string }[]; creation_date: string; images: { web: { url: string } } }
+  let cachedCMARecords: CMARecord[] = []
+
+  async function fetchFromCMA(): Promise<Artwork | null> {
+    try {
+      if (cachedCMARecords.length === 0) {
+        const skip = Math.floor(Math.random() * 500)
+        const resp = await fetch(
+          `https://openaccess-api.clevelandart.org/api/artworks/?has_image=1&type=Painting&limit=50&skip=${skip}`,
+          { signal: AbortSignal.timeout(6000) }
+        )
+        if (!resp.ok) return null
+        const data = await resp.json()
+        if (!data.data?.length) return null
+        cachedCMARecords = data.data.filter((r: CMARecord) => r.images?.web?.url)
+      }
+
+      if (cachedCMARecords.length === 0) return null
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const rec = cachedCMARecords[Math.floor(Math.random() * cachedCMARecords.length)]
+        if (!rec.images?.web?.url) continue
+
+        return {
+          title: rec.title || 'Untitled',
+          artist: rec.creators?.[0]?.description || 'Unknown',
+          date: rec.creation_date || '',
+          imageUrl: rec.images.web.url,
+          department: 'Cleveland Museum of Art',
+        }
+      }
+    } catch { /* CMA unavailable */ }
+    return null
+  }
+
+  // Unified fetch — races all three sources, picks first success
+  const SOURCE_FETCHERS = [fetchFromMet, fetchFromAIC, fetchFromCMA]
+
+  async function fetchRandomArtwork(): Promise<Artwork | null> {
+    // Shuffle sources so no single API gets hammered first every time
+    const shuffled = [...SOURCE_FETCHERS].sort(() => Math.random() - 0.5)
+
+    // Race all sources — first non-null wins
+    const result = await Promise.any(
+      shuffled.map(fn =>
+        fn().then(art => {
+          if (!art) throw new Error('no result')
+          return art
+        })
+      )
+    ).catch(() => null)
+
+    return result
   }
 
   function loadImage(url: string): Promise<HTMLImageElement | null> {
@@ -1055,7 +1130,7 @@ export function createPalimpsestGalleryRoom(deps: PalimpsestGalleryDeps): Room {
 
         c.font = '11px monospace'
         c.fillStyle = 'rgba(200, 180, 140, 0.05)'
-        c.fillText('The Metropolitan Museum of Art, Open Access', w / 2, drawY + drawH + 55)
+        c.fillText(slot.artwork.department || 'Open Access', w / 2, drawY + drawH + 55)
       }
 
       // --- Thumbnail gallery at bottom ---
