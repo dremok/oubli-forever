@@ -43,6 +43,7 @@ interface NarratorDeps {
   getFeverLevel: () => number
   isImmuneResponding: () => boolean
   getAvgMethylation?: () => number
+  getErosionLevel?: () => number
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -162,6 +163,17 @@ const GENERATORS: NarrationGenerator[] = [
       ]
       return options[Math.floor(Math.random() * options.length)]
     }
+    return null
+  },
+
+  // Erosion narrations
+  (d) => {
+    const erosion = d.getErosionLevel?.()
+    if (erosion === undefined) return null
+    if (erosion > 0.5) return 'the cracks are not metaphor. the house is aging. this cannot be undone.'
+    if (erosion > 0.3) return 'watermarks appear on surfaces that were once clean. the erosion is permanent.'
+    if (erosion > 0.15) return 'age spots. hairline fractures. the house accrues what it cannot shed.'
+    if (erosion > 0.05) return 'something is accumulating that will never go away. the first cracks appear.'
     return null
   },
 

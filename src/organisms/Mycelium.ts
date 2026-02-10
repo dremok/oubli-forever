@@ -577,6 +577,11 @@ export class Mycelium {
   }
 
   /** Get total system ripeness (average across all rooms) */
+  /** Get total count of composted memories */
+  getCompostCount(): number {
+    return this.state.composted?.length ?? 0
+  }
+
   getSystemRipeness(): number {
     const vals = Object.values(this.state.ripeness)
     if (vals.length === 0) return 0

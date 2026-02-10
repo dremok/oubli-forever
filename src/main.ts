@@ -96,6 +96,7 @@ import { Methylation } from './organisms/Methylation'
 import { Narrator } from './organisms/Narrator'
 import { ImmuneSystem } from './organisms/ImmuneSystem'
 import { ScrambledReplay } from './organisms/ScrambledReplay'
+import { Erosion } from './organisms/Erosion'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -727,6 +728,7 @@ narrator.setDeps({
   getFeverLevel: () => immuneSystem.getFeverLevel(),
   isImmuneResponding: () => immuneSystem.isResponding(),
   getAvgMethylation: () => methylation.getAvgMethylation(),
+  getErosionLevel: () => erosion.getLevel(),
 })
 narrator.start()
 
@@ -754,6 +756,21 @@ scrambledReplay.setDeps({
   getSeason: () => seasonalClock.getSeason(),
 })
 scrambledReplay.start()
+
+// The Erosion — irreversible aging of the house
+// Unlike seasonal cycles, erosion never goes back. Cracks, stains, spots accumulate.
+const erosion = new Erosion()
+erosion.setDeps({
+  getAvgDegradation: () => {
+    const mems = journal.getMemories()
+    if (mems.length === 0) return 0
+    return mems.reduce((sum, m) => sum + m.degradation, 0) / mems.length
+  },
+  getParasiteCount: () => parasites.getTotalCount(),
+  getFeverLevel: () => immuneSystem.getFeverLevel(),
+  getCompostCount: () => mycelium.getCompostCount(),
+})
+erosion.start()
 
 let _prevRoom = 'void'
 
