@@ -144,6 +144,11 @@ export class Parasites {
     return this.state.parasites.filter(p => p.room === room)
   }
 
+  /** Get total parasite count across all rooms */
+  getTotalCount(): number {
+    return this.state.parasites.length
+  }
+
   private check() {
     // Grow existing parasites
     for (const p of this.state.parasites) {

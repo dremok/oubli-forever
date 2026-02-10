@@ -571,6 +571,11 @@ export class Mycelium {
     return this.state.lastVisit[room] || 0
   }
 
+  /** Drain nutrients from a room (immune system cost) */
+  drainNutrients(room: string, amount: number) {
+    this.state.nutrients[room] = Math.max(0, (this.state.nutrients[room] || 0) - amount)
+  }
+
   /** Get total system ripeness (average across all rooms) */
   getSystemRipeness(): number {
     const vals = Object.values(this.state.ripeness)

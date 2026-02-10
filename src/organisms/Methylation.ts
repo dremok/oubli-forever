@@ -191,6 +191,13 @@ export class Methylation {
     return this.state.marks[room] ?? 1
   }
 
+  /** Get average methylation across all rooms */
+  getAvgMethylation(): number {
+    const vals = Object.values(this.state.marks)
+    if (vals.length === 0) return 1
+    return vals.reduce((a, b) => a + b, 0) / vals.length
+  }
+
   private tick() {
     // Seasonal modifier: decay faster during fall/decay seasons
     const season = this.getSeason?.() ?? 'growth'

@@ -40,6 +40,8 @@ interface NarratorDeps {
   getMethylation: (room: string) => number
   getParasitesInRoom: (room: string) => { type: string; strength: number }[]
   getTotalDreams: () => number
+  getFeverLevel: () => number
+  isImmuneResponding: () => boolean
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -134,6 +136,16 @@ const GENERATORS: NarrationGenerator[] = [
       const name = failing[0].replace(/([A-Z])/g, ' $1').trim().toLowerCase()
       return `the ${name}'s methylation is failing. its content escapes into the house.`
     }
+    return null
+  },
+
+  // Immune system narrations
+  (d) => {
+    const fever = d.getFeverLevel()
+    const responding = d.isImmuneResponding()
+    if (fever > 0.6) return 'the house is running a fever. golden antibodies swarm the edges.'
+    if (fever > 0.3) return 'warmth rises. the immune system stirs against the decay.'
+    if (responding) return 'golden particles drift outward. the house is defending itself.'
     return null
   },
 

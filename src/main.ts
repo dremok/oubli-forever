@@ -94,6 +94,7 @@ import { Parasites } from './organisms/Parasites'
 import { CroakDream } from './organisms/CroakDream'
 import { Methylation } from './organisms/Methylation'
 import { Narrator } from './organisms/Narrator'
+import { ImmuneSystem } from './organisms/ImmuneSystem'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -721,8 +722,24 @@ narrator.setDeps({
   getMethylation: (room) => methylation.getMethylation(room),
   getParasitesInRoom: (room) => parasites.getParasitesInRoom(room),
   getTotalDreams: () => croakDream.getTotalDreams(),
+  getFeverLevel: () => immuneSystem.getFeverLevel(),
+  isImmuneResponding: () => immuneSystem.isResponding(),
 })
 narrator.start()
+
+// The Immune System — the house defends itself against excessive decay
+// Golden antibodies fight parasites, stabilize methylation, fever when overloaded
+const immuneSystem = new ImmuneSystem()
+immuneSystem.setDeps({
+  getParasiteCount: () => parasites.getTotalCount(),
+  getAvgMethylation: () => methylation.getAvgMethylation(),
+  getSystemRipeness: () => mycelium.getSystemRipeness(),
+  getNutrients: (room) => mycelium.getNutrients(room),
+  drainNutrients: (room, amount) => mycelium.drainNutrients(room, amount),
+  getActiveRoom: () => roomManager.getActiveRoom(),
+  getSeason: () => seasonalClock.getSeason(),
+})
+immuneSystem.start()
 
 let _prevRoom = 'void'
 
