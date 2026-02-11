@@ -418,34 +418,40 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
     const h = canvas.height
 
     // EMaj7add9 chord with proper voicing:
-    // E and B (root+fifth) tend lower, F# G# D# (color tones) tend higher
+    // E and B (root+fifth) can go sub-bass (E1/B1), color tones stay higher
     const pitchRatio = 1 - y / h // 0=low, 1=high
     const baseFreq = 82.41 // E2
 
-    // 5 chord tones across 3 octaves with octave-preference weights
-    // weights: [octave2, octave3, octave4] — higher weight = more likely
+    // E and B have 4 octaves (including sub-bass), color tones have 3
     const voicedNotes = [
-      { semitones: [0, 12, 24],  weights: [0.55, 0.35, 0.10] },  // E: strongly low
-      { semitones: [7, 19, 31],  weights: [0.50, 0.35, 0.15] },  // B: strongly low
-      { semitones: [2, 14, 26],  weights: [0.10, 0.35, 0.55] },  // F#: tends high
-      { semitones: [4, 16, 28],  weights: [0.08, 0.27, 0.65] },  // G#: strongly high
-      { semitones: [11, 23, 35], weights: [0.08, 0.22, 0.70] },  // D#: strongly high
+      { semitones: [-12, 0, 12, 24], weights: [0.12, 0.48, 0.30, 0.10] },  // E: sub-bass E1 (41Hz)
+      { semitones: [-5, 7, 19, 31],  weights: [0.10, 0.45, 0.30, 0.15] },  // B: sub-bass B1 (62Hz)
+      { semitones: [2, 14, 26],       weights: [0.10, 0.35, 0.55] },        // F#: tends high
+      { semitones: [4, 16, 28],       weights: [0.08, 0.27, 0.65] },        // G#: strongly high
+      { semitones: [11, 23, 35],      weights: [0.08, 0.22, 0.70] },        // D#: strongly high
     ]
 
     // Pick a random chord tone
     const note = voicedNotes[Math.floor(Math.random() * voicedNotes.length)]
+    const numOctaves = note.semitones.length
 
     // Y position shifts the octave preference (higher click -> higher octaves)
+    const midIdx = numOctaves === 4 ? 1.5 : 1
     const adjusted = note.weights.map((wt, i) => {
-      const octaveBias = (i - 1) * 0.6 // -0.6, 0, +0.6
+      const octaveBias = (i - midIdx) * 0.5
       return Math.max(0.01, wt * (1 + (pitchRatio - 0.5) * octaveBias))
     })
-    const wSum = adjusted[0] + adjusted[1] + adjusted[2]
+    const wSum = adjusted.reduce((s, w) => s + w, 0)
     const norm = adjusted.map(wt => wt / wSum)
 
     // Weighted random octave selection
+    let octIdx = 0
+    let cumul = 0
     const roll = Math.random()
-    const octIdx = roll < norm[0] ? 0 : roll < norm[0] + norm[1] ? 1 : 2
+    for (let oi = 0; oi < numOctaves; oi++) {
+      cumul += norm[oi]
+      if (roll < cumul) { octIdx = oi; break }
+    }
     const semitone = note.semitones[octIdx]
     const freq = baseFreq * Math.pow(2, semitone / 12)
 
