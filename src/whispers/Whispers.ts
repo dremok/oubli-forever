@@ -588,6 +588,8 @@ export class Whispers {
   private intervalId: number | null = null
   private whisperCallback: ((text: string) => void) | null = null
   private getMemories: (() => { currentText: string; degradation: number }[]) | null = null
+  private getStasisFactor: (() => number) | null = null
+  private running = false
 
   constructor() {
     this.el = document.getElementById('whisper-text')!
@@ -600,6 +602,11 @@ export class Whispers {
     this.getMemories = fn
   }
 
+  /** Connect to stasis — whispers slow as house metabolism decelerates */
+  setStasisSource(fn: () => number) {
+    this.getStasisFactor = fn
+  }
+
   private shuffle() {
     for (let i = fragments.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1))
@@ -607,9 +614,25 @@ export class Whispers {
     }
   }
 
+  private getDelay(): number {
+    const factor = this.getStasisFactor?.() ?? 1
+    // At factor 1.0: 8s. At factor 0.3: ~27s. Whispers slow as house stiffens.
+    return 8000 / Math.max(0.3, factor)
+  }
+
+  private scheduleNext() {
+    if (this.intervalId) clearTimeout(this.intervalId)
+    this.intervalId = window.setTimeout(() => {
+      if (!this.running) return
+      this.showNext()
+      this.scheduleNext()
+    }, this.getDelay())
+  }
+
   begin() {
+    this.running = true
     this.showNext()
-    this.intervalId = window.setInterval(() => this.showNext(), 8000)
+    this.scheduleNext()
   }
 
   /** Register callback for when a whisper is shown */
@@ -692,8 +715,9 @@ export class Whispers {
   }
 
   pause() {
+    this.running = false
     if (this.intervalId) {
-      clearInterval(this.intervalId)
+      clearTimeout(this.intervalId)
       this.intervalId = null
     }
     this.el.classList.remove('visible')
@@ -701,14 +725,16 @@ export class Whispers {
   }
 
   resume() {
-    if (this.intervalId) return
+    if (this.running) return
+    this.running = true
     this.showNext()
-    this.intervalId = window.setInterval(() => this.showNext(), 8000)
+    this.scheduleNext()
   }
 
   stop() {
+    this.running = false
     if (this.intervalId) {
-      clearInterval(this.intervalId)
+      clearTimeout(this.intervalId)
     }
   }
 }

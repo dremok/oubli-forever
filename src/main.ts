@@ -130,6 +130,7 @@ const constellations = new MemoryConstellations()
 // Episodic-semantic merger: the house whispers your own words back at you
 // The brain uses the same regions for all types of memory. So does the house.
 whispers.setMemorySource(() => journal.getMemories())
+whispers.setStasisSource(() => stasis.getTimeFactor())
 
 // Connect ASCII void to the WebGL canvas and memory text
 asciiVoid.setSource(canvas)
