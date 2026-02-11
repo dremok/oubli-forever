@@ -24,11 +24,29 @@
  * - Tarkovsky's "Stalker" — the Zone speaks through what it shows you
  */
 
+import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+
 const MIN_INTERVAL = 30000  // 30s minimum between narrations
 const MAX_INTERVAL = 60000  // 60s maximum
 const DISPLAY_DURATION = 9000  // 9s display time
 const FADE_IN = 1500
 const FADE_OUT = 2500
+const VOICE_CHANCE = 0.15   // 15% chance of speaking aloud
+const VOICE_COOLDOWN = 180000 // 3 min between voice utterances
+
+// Map narration text keywords to audio files
+const VOICE_FILES: Array<{ match: RegExp; file: string }> = [
+  { match: /approaches.*(decay|change)/, file: '/assets/audio/narrator/narrator-season.mp3' },
+  { match: /moss.*creep|reclaimed/, file: '/assets/audio/narrator/narrator-moss.mp3' },
+  { match: /cracks.*not metaphor|house is aging/, file: '/assets/audio/narrator/narrator-cracks.mp3' },
+  { match: /golden fragments|dismantles/, file: '/assets/audio/narrator/narrator-autophagy.mp3' },
+  { match: /fever|antibodies/, file: '/assets/audio/narrator/narrator-fever.mp3' },
+  { match: /house was dreaming|still waking/, file: '/assets/audio/narrator/narrator-dreaming.mp3' },
+  { match: /protective marks|content escapes|methylation/, file: '/assets/audio/narrator/narrator-methylation.mp3' },
+  { match: /sweetness.*temporary/, file: '/assets/audio/narrator/narrator-ripe.mp3' },
+  { match: /void watches|says nothing/, file: '/assets/audio/narrator/narrator-void.mp3' },
+  { match: /moment of goodbye|reveals itself/, file: '/assets/audio/narrator/narrator-departure.mp3' },
+]
 
 interface NarratorDeps {
   getActiveRoom: () => string
@@ -231,6 +249,8 @@ export class Narrator {
   private displayTimer: number | null = null
   private lastNarration = ''
   private usedNarrations = new Set<string>()
+  private lastVoiceTime = 0
+  private voiceBuffers = new Map<string, AudioBuffer>()
 
   constructor() {
     this.el = document.createElement('div')
@@ -258,6 +278,56 @@ export class Narrator {
 
   start() {
     this.scheduleNext()
+    // Preload voice files lazily (don't block)
+    this.preloadVoices()
+  }
+
+  private async preloadVoices() {
+    try {
+      const ctx = await getAudioContext()
+      for (const { file } of VOICE_FILES) {
+        try {
+          const resp = await fetch(file)
+          if (!resp.ok) continue
+          const buf = await resp.arrayBuffer()
+          const audioBuf = await ctx.decodeAudioData(buf)
+          this.voiceBuffers.set(file, audioBuf)
+        } catch { /* silent — individual file failure is fine */ }
+      }
+    } catch { /* audio context not available */ }
+  }
+
+  private maybeSpeak(text: string) {
+    const now = Date.now()
+    if (now - this.lastVoiceTime < VOICE_COOLDOWN) return
+    if (Math.random() > VOICE_CHANCE) return
+
+    // Find matching voice file
+    const match = VOICE_FILES.find(v => v.match.test(text))
+    if (!match) return
+
+    const buffer = this.voiceBuffers.get(match.file)
+    if (!buffer) return
+
+    let dest: AudioNode
+    try {
+      dest = getAudioDestination()
+    } catch { return }
+
+    // Need the audio context for playback
+    getAudioContext().then(ctx => {
+      this.lastVoiceTime = now
+
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0, ctx.currentTime)
+      gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.5)
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + buffer.duration)
+      source.connect(gain)
+      gain.connect(dest)
+      source.start()
+    }).catch(() => { /* silent */ })
   }
 
   private scheduleNext() {
@@ -297,6 +367,8 @@ export class Narrator {
     this.el.textContent = text
     // Fade in
     this.el.style.color = 'rgba(180, 160, 140, 0.18)'
+    // Occasionally speak aloud
+    this.maybeSpeak(text)
 
     // Fade out after display duration
     if (this.displayTimer) clearTimeout(this.displayTimer)
