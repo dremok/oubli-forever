@@ -104,6 +104,7 @@ import { Residue } from './organisms/Residue'
 import { Respiration } from './organisms/Respiration'
 import { Atmosphere } from './organisms/Atmosphere'
 import { Tide } from './organisms/Tide'
+import { Mortality } from './organisms/Mortality'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -829,6 +830,10 @@ const atmosphere = new Atmosphere()
 // Snow drought 2026: water memory vanishing. Presence replenishes, absence drains.
 const _tide = new Tide()
 _tide.start()
+
+// Mortality — the house responds to your device's battery dying
+// Memento mori: awareness of death enriches the experience
+const _mortality = new Mortality()
 
 let _prevRoom = 'void'
 
