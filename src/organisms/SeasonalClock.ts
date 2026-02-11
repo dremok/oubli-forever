@@ -141,8 +141,8 @@ export class SeasonalClock {
     this.tickInterval = window.setInterval(() => this.tick(), 2000)
 
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.render()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
 

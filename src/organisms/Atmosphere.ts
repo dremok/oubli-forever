@@ -83,7 +83,7 @@ const ROOM_CLUSTERS: Record<string, string> = {
 }
 
 const FADE_DURATION = 2000   // 2s crossfade
-const BASE_OPACITY = 0.06   // very subtle
+const BASE_OPACITY = 0.15   // subtle but visible
 
 export class Atmosphere {
   private el: HTMLElement
@@ -116,6 +116,13 @@ export class Atmosphere {
       img.onload = () => {
         this.loaded.add(cluster)
         this.images.set(cluster, img)
+        // If this cluster is the pending one, show it now
+        if (cluster === this.currentCluster) {
+          this.el.style.backgroundImage = `url(${url})`
+          requestAnimationFrame(() => {
+            this.el.style.opacity = String(BASE_OPACITY)
+          })
+        }
       }
       img.src = url
     }

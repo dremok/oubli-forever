@@ -135,8 +135,8 @@ export class Fruiting {
     this.checkInterval = window.setInterval(() => this.check(), CHECK_INTERVAL)
 
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.render()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
   }

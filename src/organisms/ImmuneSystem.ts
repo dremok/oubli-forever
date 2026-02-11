@@ -111,8 +111,8 @@ export class ImmuneSystem {
     setTimeout(() => this.assessThreats(), 20000)
 
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.render()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
   }

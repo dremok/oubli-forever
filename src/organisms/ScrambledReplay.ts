@@ -123,8 +123,8 @@ export class ScrambledReplay {
 
   start() {
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.tick()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
   }

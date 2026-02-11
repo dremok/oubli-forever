@@ -94,8 +94,8 @@ export class Phenotype {
     this.tickInterval = window.setInterval(() => this.tick(), TICK_MS)
 
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.render()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
   }

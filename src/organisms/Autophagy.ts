@@ -107,8 +107,8 @@ export class Autophagy {
   start() {
     this.tickTimer = window.setInterval(() => this.tick(), TICK_INTERVAL)
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.render()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
   }

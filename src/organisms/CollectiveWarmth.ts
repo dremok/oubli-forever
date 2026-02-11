@@ -62,8 +62,8 @@ export class CollectiveWarmth {
     setTimeout(() => this.poll(), 5000)
 
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.render()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
   }

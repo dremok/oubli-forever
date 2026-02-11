@@ -134,8 +134,8 @@ export class Mycelium {
 
     // Start render loop
     const render = () => {
-      this.animFrame = requestAnimationFrame(render)
       this.render()
+      this.animFrame = window.setTimeout(render, 100)
     }
     render()
   }
