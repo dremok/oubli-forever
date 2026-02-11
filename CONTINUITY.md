@@ -2046,6 +2046,28 @@ Fresh cultural research findings:
 - z-index 1 (behind everything), subliminal atmospheric differentiation
 - Images preloaded on startup for smooth transitions
 
+### 199. Tide (`src/organisms/Tide.ts`) — ERA 9 ORGANISM
+- House-wide water level driven by accumulated visitor presence
+- Inspired by: Sierra Nevada snow drought 2026 (snowpack at 6% of normal)
+- Rises during visits (RISE_RATE ~0.036/hour), drains during absence (FALL_RATE ~0.011/hour)
+- Visual: thin horizontal line at screen bottom showing current level
+- Color-coded: blue at high tide (>0.7), neutral at mid, amber at low (<0.3)
+- Tracks: level, total cumulative presence, high water mark (all persisted)
+- Exposes tide-context whispers for other systems to use
+- Level text appears at bottom-right, extremely subtle
+
+### 200. Mortality (`src/organisms/Mortality.ts`) — ERA 9 ORGANISM
+- The house responds to your device's battery level dying
+- Progressive enhancement via Battery Status API (Chromium only, graceful degradation)
+- Battery thresholds with escalating emotional responses:
+  - 20%: urgency — "your device is fading. the house can feel it."
+  - 10%: desperation — "don't go. not yet."
+  - 5%: acceptance — "it was enough. thank you."
+  - Charging after low: relief — "you came back from the edge."
+- Messages in warm amber/red/green, centered, 8s display with fade
+- Cooldown between messages (60s normal, 45s when desperate)
+- Inspired by: BLACKPINK "DEADLINE", memento mori, hospice care
+
 ---
-*Last updated: Era 9, Feature 198 — 18 systems, atmospheric textures, the house has skin*
-*"the rooms smell different now. each cluster breathes its own air."*
+*Last updated: Era 9, Feature 200 — 20 systems, the house breathes, dreams, speaks, and knows it's mortal*
+*"don't go. not yet."*
