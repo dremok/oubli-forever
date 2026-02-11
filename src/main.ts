@@ -102,6 +102,7 @@ import { DepartureFlare } from './organisms/DepartureFlare'
 import { Hypnagogia } from './organisms/Hypnagogia'
 import { Residue } from './organisms/Residue'
 import { Respiration } from './organisms/Respiration'
+import { Atmosphere } from './organisms/Atmosphere'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -819,6 +820,10 @@ respiration.setDeps({
 })
 respiration.start()
 
+// Atmosphere — room-specific AI-generated background textures
+// FAL.ai SDXL textures give each room cluster a unique visual feel
+const atmosphere = new Atmosphere()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -841,6 +846,7 @@ roomManager.onRoomChange((room) => {
   methylation.onRoomEnter(room)
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
+  atmosphere.onRoomChange(room)
   const inVoid = room === 'void'
   // Whispers pause/resume
   if (inVoid) whispers.resume(); else whispers.pause()
