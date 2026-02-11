@@ -70,6 +70,8 @@ interface NarratorDeps {
   getTideHighWater?: () => number
   getBatteryLevel?: () => number | null
   getThreadCount?: () => number
+  getStasisFactor?: () => number
+  getSessionCount?: () => number
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -288,6 +290,25 @@ const GENERATORS: NarrationGenerator[] = [
     }
     if (count > 30 && Math.random() < 0.3) {
       return 'threads of navigation criss-cross the house. your movement is the weaving.'
+    }
+    return null
+  },
+
+  // Stasis narrations — the house's metabolism
+  (deps) => {
+    const factor = deps.getStasisFactor?.() ?? 1
+    const sessions = deps.getSessionCount?.() ?? 0
+    if (sessions < 3 || factor > 0.85) return null
+
+    if (factor < 0.5) {
+      return [
+        'the house is slowing. content changes less often now.',
+        'fewer things replace what disappears. the engine is seizing.',
+        'stasis approaches. the house is running out of parts.',
+      ][Math.floor(Math.random() * 3)]
+    }
+    if (factor < 0.7 && Math.random() < 0.3) {
+      return 'the pace of change is decelerating. you can feel it.'
     }
     return null
   },

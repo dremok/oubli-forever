@@ -106,6 +106,7 @@ import { Atmosphere } from './organisms/Atmosphere'
 import { Tide } from './organisms/Tide'
 import { Mortality } from './organisms/Mortality'
 import { Threads } from './organisms/Threads'
+import { Stasis } from './organisms/Stasis'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -746,6 +747,8 @@ narrator.setDeps({
   getTideHighWater: () => _tide.getHighWaterMark(),
   getBatteryLevel: () => _mortality.getLevel(),
   getThreadCount: () => threads.getTotalTraversals(),
+  getStasisFactor: () => stasis.getTimeFactor(),
+  getSessionCount: () => stasis.getSessionCount(),
 })
 narrator.start()
 
@@ -843,6 +846,9 @@ const _mortality = new Mortality()
 // Shiota "Threads of Life": navigation connections made physical, accumulating
 const threads = new Threads()
 
+// Species turnover slowdown (Nature 2026): the house's metabolism decelerates
+const stasis = new Stasis()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -853,6 +859,7 @@ roomManager.onRoomChange((room) => {
     roomAfterimage.trigger(_prevRoom)
     departureFlare.onDeparture(_prevRoom)
     threads.onTransition(_prevRoom, room)
+    stasis.recordChange()
   }
   // Trigger spacetime ripple when entering destructive rooms
   spacetimeRipple.triggerRoomEvent(room)
