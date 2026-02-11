@@ -69,6 +69,7 @@ interface NarratorDeps {
   getTideLevel?: () => number
   getTideHighWater?: () => number
   getBatteryLevel?: () => number | null
+  getThreadCount?: () => number
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -265,6 +266,30 @@ const GENERATORS: NarrationGenerator[] = [
     if (room === 'lighthouse') poetics.push('the signal repeats. no one answers.')
 
     return poetics.length > 0 ? poetics[Math.floor(Math.random() * poetics.length)] : null
+  },
+
+  // Thread narrations — the navigation web
+  (deps) => {
+    const count = deps.getThreadCount?.() ?? 0
+    if (count < 10) return null
+
+    if (count > 200) {
+      return [
+        'the threads between rooms are denser than the rooms themselves.',
+        'the connections have become the structure. rooms are secondary.',
+        'so many paths walked. the web is becoming opaque.',
+      ][Math.floor(Math.random() * 3)]
+    }
+    if (count > 100) {
+      return [
+        'threads accumulate between rooms. the web is thickening.',
+        'every passage leaves a thread. the house is being stitched together.',
+      ][Math.floor(Math.random() * 2)]
+    }
+    if (count > 30 && Math.random() < 0.3) {
+      return 'threads of navigation criss-cross the house. your movement is the weaving.'
+    }
+    return null
   },
 ]
 

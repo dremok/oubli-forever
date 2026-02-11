@@ -105,6 +105,7 @@ import { Respiration } from './organisms/Respiration'
 import { Atmosphere } from './organisms/Atmosphere'
 import { Tide } from './organisms/Tide'
 import { Mortality } from './organisms/Mortality'
+import { Threads } from './organisms/Threads'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -744,6 +745,7 @@ narrator.setDeps({
   getTideLevel: () => _tide.getLevel(),
   getTideHighWater: () => _tide.getHighWaterMark(),
   getBatteryLevel: () => _mortality.getLevel(),
+  getThreadCount: () => threads.getTotalTraversals(),
 })
 narrator.start()
 
@@ -838,6 +840,9 @@ _tide.start()
 // Memento mori: awareness of death enriches the experience
 const _mortality = new Mortality()
 
+// Shiota "Threads of Life": navigation connections made physical, accumulating
+const threads = new Threads()
+
 let _prevRoom = 'void'
 
 // Room change: toggle void-only text overlays
@@ -847,6 +852,7 @@ roomManager.onRoomChange((room) => {
     membrane.onTransition(_prevRoom, room)
     roomAfterimage.trigger(_prevRoom)
     departureFlare.onDeparture(_prevRoom)
+    threads.onTransition(_prevRoom, room)
   }
   // Trigger spacetime ripple when entering destructive rooms
   spacetimeRipple.triggerRoomEvent(room)
