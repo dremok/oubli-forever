@@ -19,6 +19,7 @@ import type { Room } from './RoomManager'
 import { ROOM_GRAPH as SHARED_GRAPH } from '../navigation/RoomGraph'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
 import { threadTrail } from '../navigation/ThreadTrail'
+import { fetchFootprints, type CollectiveFootprints } from '../shared/FootprintReporter'
 
 interface MapNode {
   name: string
@@ -79,6 +80,7 @@ const ROOM_POEMS: Record<string, string> = {
   aquifer: 'deep water rising',
   midnight: 'the hour between',
   mirror: 'self looking back',
+  postbox: 'letters to tomorrow',
 }
 
 interface MapDeps {
@@ -138,12 +140,22 @@ export function createCartographerRoom(deps: MapDeps): Room {
   let connectionDots: { fromName: string; toName: string; t: number; speed: number }[] = []
   let dotsInitialized = false
 
+  // Collective footprint state
+  let collectiveData: CollectiveFootprints | null = null
+  let collectiveMaxVisits = 1
+  let collectiveMaxTraversals = 1
+  let collectiveFetchTime = 0
+  let collectiveFadeIn = 0 // 0-1 for data appearance animation
+
   // Cultural inscription state
   const INSCRIPTIONS = [
     'the clearest picture of dark matter looks like a neural network',
     'dark matter filaments: the scaffold everything visible grew on',
     'voids in the dark matter map \u2014 places where nothing chose to be',
     'borges dreamed a library of every possible book. this is a map of every possible room.',
+    'desire paths: the grass remembers where everyone actually walks',
+    'the ocean absorbed 23 zettajoules in 2025. every visit is heat, accumulated.',
+    'chiharu shiota: threads of life. the connections become the artwork.',
   ]
   let inscriptionIndex = 0
   let inscriptionFade = 0
@@ -676,6 +688,7 @@ export function createCartographerRoom(deps: MapDeps): Room {
       { solid: true, color: `rgba(255, 215, 0, ${0.12})`, label: 'visited path' },
       { solid: false, color: `rgba(120, 100, 140, ${0.1})`, label: 'undiscovered path' },
       { solid: true, color: `rgba(180, 50, 50, ${0.15})`, label: 'your thread' },
+      { solid: true, color: `rgba(255, 180, 80, ${0.12})`, label: 'desire path (all)' },
     ]
 
     for (let i = 0; i < lineItems.length; i++) {
@@ -700,8 +713,9 @@ export function createCartographerRoom(deps: MapDeps): Room {
   // ═══════════════════════════════════════
 
   function drawDetailPanel(c: CanvasRenderingContext2D, node: MapNode, w: number, h: number) {
+    const hasCollective = collectiveData?.rooms[node.name]
     const panelW = 170
-    const panelH = 104
+    const panelH = hasCollective ? 120 : 104
     // Position near cursor but clamped to canvas
     let px = mouseX + 18
     let py = mouseY - panelH / 2
@@ -757,6 +771,14 @@ export function createCartographerRoom(deps: MapDeps): Room {
       const totalPasses = roomThreads.reduce((s, e) => s + e.count, 0)
       c.fillStyle = `rgba(180, 60, 60, ${textAlpha * 0.6})`
       c.fillText(`threads: ${roomThreads.length} (${totalPasses} passes)`, tx, ty)
+      ty += 12
+    }
+
+    // Collective data for this room
+    if (hasCollective) {
+      const cd = collectiveData!.rooms[node.name]
+      c.fillStyle = `rgba(255, 180, 100, ${textAlpha * 0.7})`
+      c.fillText(`all visitors: ${cd.visits} visits, ${cd.uniqueVisitors} unique`, tx, ty)
       ty += 12
     }
 
@@ -843,6 +865,147 @@ export function createCartographerRoom(deps: MapDeps): Room {
       const w = canvas?.width || 1200
       const h = canvas?.height || 800
       c.fillText(`${totalEdges} threads woven`, 12, h - 6)
+    }
+  }
+
+  // ═══════════════════════════════════════
+  // COLLECTIVE FOOTPRINTS
+  // ═══════════════════════════════════════
+
+  async function loadCollectiveData() {
+    const data = await fetchFootprints()
+    if (!data) return
+    collectiveData = data
+    collectiveFetchTime = time
+
+    // Compute max values for normalization
+    collectiveMaxVisits = 1
+    collectiveMaxTraversals = 1
+    for (const room of Object.values(data.rooms)) {
+      if (room.visits > collectiveMaxVisits) collectiveMaxVisits = room.visits
+    }
+    for (const edge of Object.values(data.edges)) {
+      if (edge.traversals > collectiveMaxTraversals) collectiveMaxTraversals = edge.traversals
+    }
+  }
+
+  function drawCollectiveLayer(c: CanvasRenderingContext2D) {
+    if (!collectiveData || collectiveFadeIn < 0.01) return
+
+    const alpha = collectiveFadeIn
+
+    // Draw collective path wear (edges)
+    for (const [edgeKey, edgeData] of Object.entries(collectiveData.edges)) {
+      const [fromName, toName] = edgeKey.split('--')
+      const fromNode = findNode(fromName)
+      const toNode = findNode(toName)
+      if (!fromNode || !toNode) continue
+
+      const intensity = Math.min(1, edgeData.traversals / collectiveMaxTraversals)
+      if (intensity < 0.05) continue
+
+      // Worn path — warm amber glow proportional to collective use
+      const pathAlpha = alpha * intensity * 0.12
+      const width = 1 + intensity * 4
+
+      // Draw with slight curvature
+      const midX = (fromNode.x + toNode.x) / 2
+      const midY = (fromNode.y + toNode.y) / 2
+      const dx = toNode.x - fromNode.x
+      const dy = toNode.y - fromNode.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const perpX = -dy / (dist || 1)
+      const perpY = dx / (dist || 1)
+      const sag = Math.min(dist * 0.08, 15)
+      const cpX = midX + perpX * sag
+      const cpY = midY + perpY * sag
+
+      // Outer glow
+      c.beginPath()
+      c.moveTo(fromNode.x, fromNode.y)
+      c.quadraticCurveTo(cpX, cpY, toNode.x, toNode.y)
+      c.strokeStyle = `rgba(255, 180, 80, ${pathAlpha * 0.5})`
+      c.lineWidth = width + 4
+      c.stroke()
+
+      // Core path
+      c.beginPath()
+      c.moveTo(fromNode.x, fromNode.y)
+      c.quadraticCurveTo(cpX, cpY, toNode.x, toNode.y)
+      c.strokeStyle = `rgba(255, 200, 120, ${pathAlpha})`
+      c.lineWidth = width
+      c.stroke()
+
+      // Traversal count label for very worn paths
+      if (intensity > 0.3 && edgeData.traversals >= 5) {
+        const labelX = cpX
+        const labelY = cpY - 8
+        c.font = '8px monospace'
+        c.fillStyle = `rgba(255, 200, 120, ${alpha * 0.1})`
+        c.textAlign = 'center'
+        c.fillText(`${edgeData.traversals}`, labelX, labelY)
+      }
+    }
+
+    // Draw collective room heat (nodes)
+    for (const [roomName, roomData] of Object.entries(collectiveData.rooms)) {
+      const node = findNode(roomName)
+      if (!node) continue
+
+      const intensity = Math.min(1, roomData.visits / collectiveMaxVisits)
+      if (intensity < 0.02) continue
+
+      // Heat ring — grows with collective visits
+      const heatRadius = 12 + intensity * 20
+      const heatAlpha = alpha * intensity * 0.08
+      const pulse = Math.sin(time * 0.8 + node.x * 0.005) * 0.3 + 0.7
+
+      const heatGrad = c.createRadialGradient(
+        node.x, node.y, 2,
+        node.x, node.y, heatRadius
+      )
+      heatGrad.addColorStop(0, `rgba(255, 160, 60, ${heatAlpha * pulse * 2})`)
+      heatGrad.addColorStop(0.4, `rgba(255, 120, 40, ${heatAlpha * pulse})`)
+      heatGrad.addColorStop(1, `rgba(255, 80, 20, 0)`)
+
+      c.beginPath()
+      c.arc(node.x, node.y, heatRadius, 0, Math.PI * 2)
+      c.fillStyle = heatGrad
+      c.fill()
+
+      // Visit count
+      if (roomData.visits >= 3) {
+        c.font = '7px monospace'
+        c.fillStyle = `rgba(255, 180, 100, ${alpha * 0.08})`
+        c.textAlign = 'center'
+        c.fillText(`${roomData.uniqueVisitors} visitor${roomData.uniqueVisitors !== 1 ? 's' : ''}`, node.x, node.y - 16)
+      }
+    }
+
+    // Draw active visitor presence (pulsing dots in rooms where others are NOW)
+    if (collectiveData.activeRoomCounts) {
+      for (const [roomName, count] of Object.entries(collectiveData.activeRoomCounts)) {
+        const node = findNode(roomName)
+        if (!node) continue
+
+        const pulsePhase = time * 3 + node.x * 0.01
+        const pulseAlpha = (Math.sin(pulsePhase) * 0.5 + 0.5) * alpha * 0.4
+
+        // Breathing presence indicator
+        const presRadius = 4 + Math.sin(pulsePhase) * 2
+        c.beginPath()
+        c.arc(node.x + 12, node.y - 10, presRadius, 0, Math.PI * 2)
+        c.fillStyle = `rgba(100, 255, 160, ${pulseAlpha})`
+        c.fill()
+
+        // Count label
+        if (count > 1) {
+          c.font = '7px monospace'
+          c.fillStyle = `rgba(100, 255, 160, ${alpha * 0.2})`
+          c.textAlign = 'center'
+          c.fillText(`${count}`, node.x + 12, node.y - 18)
+        }
+      }
     }
   }
 
@@ -1032,7 +1195,15 @@ export function createCartographerRoom(deps: MapDeps): Room {
       ctx.fill()
     }
 
-    // Draw thread trail (Shiota-inspired red threads)
+    // Fade in collective data
+    if (collectiveData) {
+      collectiveFadeIn = Math.min(1, collectiveFadeIn + 0.008)
+    }
+
+    // Draw collective footprints (desire paths from ALL visitors)
+    drawCollectiveLayer(ctx)
+
+    // Draw thread trail (Shiota-inspired red threads — YOUR personal trail)
     drawThreadTrail(ctx)
 
     // Draw nodes
@@ -1215,8 +1386,20 @@ export function createCartographerRoom(deps: MapDeps): Room {
     ctx.font = '12px monospace'
     ctx.fillStyle = 'rgba(200, 190, 180, 0.06)'
     ctx.textAlign = 'left'
-    ctx.fillText(`${visitedCount}/${totalRooms} rooms visited`, 12, h - 30)
-    ctx.fillText(`${hiddenFound}/${hiddenTotal} secrets found`, 12, h - 18)
+    ctx.fillText(`${visitedCount}/${totalRooms} rooms visited`, 12, h - 42)
+    ctx.fillText(`${hiddenFound}/${hiddenTotal} secrets found`, 12, h - 30)
+
+    // Collective stats
+    if (collectiveData && collectiveFadeIn > 0.1) {
+      const cv = collectiveData.activeVisitors
+      const totalCollective = Object.values(collectiveData.rooms).reduce((s, r) => s + r.visits, 0)
+      ctx.fillStyle = `rgba(255, 180, 100, ${collectiveFadeIn * 0.06})`
+      ctx.fillText(`${totalCollective} collective footsteps`, 12, h - 18)
+      if (cv > 0) {
+        ctx.fillStyle = `rgba(100, 255, 160, ${collectiveFadeIn * 0.08})`
+        ctx.fillText(`${cv} visitor${cv !== 1 ? 's' : ''} in the house now`, 12, h - 6)
+      }
+    }
 
     // Hint
     ctx.font = '12px "Cormorant Garamond", serif'
@@ -1350,9 +1533,18 @@ export function createCartographerRoom(deps: MapDeps): Room {
       dotsInitialized = false
       inscriptionTimer = 0
       inscriptionIndex = 0
+      collectiveFadeIn = 0
+      collectiveData = null
       initNodes()
       initAudio()
       render()
+      // Load collective footprint data
+      loadCollectiveData()
+      // Refresh every 30s while active
+      const refreshInterval = setInterval(() => {
+        if (active) loadCollectiveData()
+        else clearInterval(refreshInterval)
+      }, 30000)
     },
 
     deactivate() {

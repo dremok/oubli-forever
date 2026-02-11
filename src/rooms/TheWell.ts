@@ -23,6 +23,7 @@ import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { createSpeechSession, type SpeechSession } from '../voice/SpeechHelper'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { dropWellEcho, fetchWellEchoes } from '../shared/FootprintReporter'
 
 interface WellDeps {
   getMemories: () => StoredMemory[]
@@ -114,6 +115,19 @@ export function createWellRoom(deps: WellDeps): Room {
   let voiceText = ''
   let voiceListening = false
   let voiceTextAlpha = 0 // fades the text display
+
+  // Shared echoes from other visitors
+  interface SharedEcho {
+    text: string
+    age: number
+    displayAlpha: number
+    y: number // vertical position in the well (0-1)
+    x: number // horizontal offset
+    breathePhase: number
+  }
+  let sharedEchoes: SharedEcho[] = []
+  let totalWellEchoes = 0
+  let sharedEchoesLoaded = false
 
   // Audio nodes
   let audioInitialized = false
@@ -490,6 +504,69 @@ export function createWellRoom(deps: WellDeps): Room {
     // Audio: descending tone as memory falls
     playFallingTone()
     updateDroneForWaterLevel()
+    // Share the echo with future visitors
+    dropWellEcho(mem.currentText)
+  }
+
+  async function loadSharedEchoes() {
+    const data = await fetchWellEchoes()
+    if (!data || data.echoes.length === 0) return
+    totalWellEchoes = data.totalEchoes
+    sharedEchoes = data.echoes.map((e, i) => ({
+      text: distortText(e.text), // distort others' echoes too
+      age: e.age,
+      displayAlpha: 0,
+      y: 0.5 + Math.random() * 0.4, // deep in the well
+      x: (Math.random() - 0.5) * 0.6,
+      breathePhase: Math.random() * Math.PI * 2,
+    }))
+    sharedEchoesLoaded = true
+  }
+
+  function drawSharedEchoes() {
+    if (!ctx || !canvas || sharedEchoes.length === 0) return
+    const w = canvas.width
+    const h = canvas.height
+    const wellCenterX = w / 2
+    const wellTopY = h * 0.3
+    const wellBottomY = h * 0.85
+    const wellWidth = 120
+
+    for (const echo of sharedEchoes) {
+      // Slowly fade in
+      echo.displayAlpha = Math.min(0.25, echo.displayAlpha + 0.001)
+
+      const echoY = wellTopY + echo.y * (wellBottomY - wellTopY)
+      const echoX = wellCenterX + echo.x * wellWidth
+
+      // Breathe
+      const breathe = Math.sin(time * 0.4 + echo.breathePhase) * 0.05
+      const alpha = echo.displayAlpha + breathe
+
+      // Older echoes are more distorted/faint
+      const ageFactor = Math.max(0.3, 1 - echo.age / (24 * 60 * 60 * 1000)) // fade over 24h
+
+      // Draw the echo text — ghostly, from another visitor
+      const displayText = echo.text.length > 30 ? echo.text.slice(0, 30) + '...' : echo.text
+      ctx.font = `${9 + ageFactor * 3}px "Cormorant Garamond", serif`
+      ctx.textAlign = 'center'
+
+      // Multiple faint copies (reverb effect)
+      for (let i = 0; i < 2; i++) {
+        const offsetX = (Math.random() - 0.5) * 3 * i
+        const offsetY = (Math.random() - 0.5) * 2 * i
+        ctx.fillStyle = `rgba(80, 130, 200, ${alpha * ageFactor * (1 - i * 0.4)})`
+        ctx.fillText(displayText, echoX + offsetX, echoY + offsetY)
+      }
+    }
+
+    // Show total well echoes at the bottom
+    if (totalWellEchoes > 0) {
+      ctx.font = '10px monospace'
+      ctx.fillStyle = 'rgba(80, 130, 200, 0.06)'
+      ctx.textAlign = 'right'
+      ctx.fillText(`${totalWellEchoes} echoes in the depths`, w - 20, h - 35)
+    }
   }
 
   function render() {
@@ -678,6 +755,9 @@ export function createWellRoom(deps: WellDeps): Room {
 
     // Remove done memories from active rendering (keep in memory for distortion mixing)
     droppedMemories = droppedMemories.filter(dm => dm.phase !== 'done')
+
+    // Draw shared echoes from other visitors — ghostly text deep in the well
+    drawSharedEchoes()
 
     // Well rim top (drawn on top of everything in the well)
     ctx.beginPath()
@@ -1144,6 +1224,8 @@ export function createWellRoom(deps: WellDeps): Room {
 
       // Add a splash ripple
       ripples.push({ radius: 5, alpha: 0.3, x: (canvas?.width || window.innerWidth) / 2 })
+      // Share voice echo with future visitors
+      dropWellEcho(text)
     }
     // Fade out the voice text display
     voiceText = ''
@@ -1329,6 +1411,8 @@ export function createWellRoom(deps: WellDeps): Room {
       voiceListening = false
       voiceTextAlpha = 0
       spaceHeld = false
+      sharedEchoes = []
+      sharedEchoesLoaded = false
       if (navigateTimeout) { clearTimeout(navigateTimeout); navigateTimeout = null }
       rebuildList()
       render()
@@ -1339,6 +1423,8 @@ export function createWellRoom(deps: WellDeps): Room {
       }
       // Audio
       await initAudio()
+      // Load shared echoes from other visitors
+      loadSharedEchoes()
     },
 
     deactivate() {

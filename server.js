@@ -34,11 +34,30 @@ const collectivePulse = {
   lastActivity: Date.now(),
 }
 
+// --- Collective Footprints (room visits + traversals across ALL visitors) ---
+
+/** @type {Map<string, { visits: number, uniqueVisitors: Set<string>, lastVisit: number }>} */
+const roomFootprints = new Map()
+
+/** @type {Map<string, { traversals: number, uniqueVisitors: Set<string> }>} */
+const edgeFootprints = new Map()
+
+/** @type {Map<string, { room: string, lastSeen: number }>} */
+const activeVisitors = new Map()
+
+/** @type {{ text: string, droppedBy: string, droppedAt: number }[]} */
+const wellEchoes = []
+
 // Prune old room activity every 30s
 setInterval(() => {
   const cutoff = Date.now() - 60000 // 1 minute
   for (const [room, ts] of collectivePulse.activeRooms) {
     if (ts < cutoff) collectivePulse.activeRooms.delete(room)
+  }
+  // Prune inactive visitors (no heartbeat for 2 minutes)
+  const visitorCutoff = Date.now() - 120000
+  for (const [vid, info] of activeVisitors) {
+    if (info.lastSeen < visitorCutoff) activeVisitors.delete(vid)
   }
 }, 30000)
 
@@ -164,6 +183,122 @@ async function handleAPI(req, res) {
       seedCount: sharedSeeds.length,
       lastActivity: collectivePulse.lastActivity,
     }))
+    return true
+  }
+
+  // POST /api/footprints — record a room visit + traversal
+  if (url.pathname === '/api/footprints' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { room, from } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!room) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'room required' }))
+        return true
+      }
+
+      // Record room visit
+      if (!roomFootprints.has(room)) {
+        roomFootprints.set(room, { visits: 0, uniqueVisitors: new Set(), lastVisit: 0 })
+      }
+      const rf = roomFootprints.get(room)
+      rf.visits++
+      rf.uniqueVisitors.add(visitor)
+      rf.lastVisit = Date.now()
+
+      // Record edge traversal
+      if (from && from !== room) {
+        const edgeKey = [from, room].sort().join('--')
+        if (!edgeFootprints.has(edgeKey)) {
+          edgeFootprints.set(edgeKey, { traversals: 0, uniqueVisitors: new Set() })
+        }
+        const ef = edgeFootprints.get(edgeKey)
+        ef.traversals++
+        ef.uniqueVisitors.add(visitor)
+      }
+
+      // Update active visitors
+      activeVisitors.set(visitor, { room, lastSeen: Date.now() })
+
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/footprints — get collective footprint data
+  if (url.pathname === '/api/footprints' && req.method === 'GET') {
+    const rooms = {}
+    for (const [name, data] of roomFootprints) {
+      rooms[name] = {
+        visits: data.visits,
+        uniqueVisitors: data.uniqueVisitors.size,
+        lastVisit: data.lastVisit,
+      }
+    }
+    const edges = {}
+    for (const [key, data] of edgeFootprints) {
+      edges[key] = {
+        traversals: data.traversals,
+        uniqueVisitors: data.uniqueVisitors.size,
+      }
+    }
+    // Active visitors: just room distribution (no identifying info)
+    const activeRoomCounts = {}
+    for (const [, info] of activeVisitors) {
+      activeRoomCounts[info.room] = (activeRoomCounts[info.room] || 0) + 1
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      rooms,
+      edges,
+      activeVisitors: activeVisitors.size,
+      activeRoomCounts,
+    }))
+    return true
+  }
+
+  // POST /api/well/echoes — drop words into the shared well
+  if (url.pathname === '/api/well/echoes' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { text } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!text || text.length > 500) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'text required (max 500 chars)' }))
+        return true
+      }
+      wellEchoes.push({ text, droppedBy: visitor, droppedAt: Date.now() })
+      // Keep max 200 echoes
+      if (wellEchoes.length > 200) wellEchoes.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalEchoes: wellEchoes.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/well/echoes — hear echoes from other visitors
+  if (url.pathname === '/api/well/echoes' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    // Return up to 5 echoes from OTHER visitors, weighted toward recent
+    const otherEchoes = wellEchoes.filter(e => e.droppedBy !== visitor)
+    // Shuffle and pick 5
+    const shuffled = otherEchoes.sort(() => Math.random() - 0.5).slice(0, 5)
+    const result = shuffled.map(e => ({
+      text: e.text,
+      age: Date.now() - e.droppedAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ echoes: result, totalEchoes: wellEchoes.length }))
     return true
   }
 

@@ -110,6 +110,7 @@ import { Threads } from './organisms/Threads'
 import { Stasis } from './organisms/Stasis'
 import { ForeverChemical } from './organisms/ForeverChemical'
 import { threadTrail } from './navigation/ThreadTrail'
+import { reportFootprint } from './shared/FootprintReporter'
 
 // OUBLI — a system that remembers by forgetting
 
@@ -885,6 +886,7 @@ roomManager.onRoomChange((room) => {
   houseWeather.setRoom(room)
   roomAmbience.setRoom(room)
   atmosphere.onRoomChange(room)
+  reportFootprint(room)
   const inVoid = room === 'void'
   // Whispers pause/resume
   if (inVoid) whispers.resume(); else whispers.pause()
