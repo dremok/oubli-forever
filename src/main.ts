@@ -99,6 +99,7 @@ import { ScrambledReplay } from './organisms/ScrambledReplay'
 import { Erosion } from './organisms/Erosion'
 import { Autophagy } from './organisms/Autophagy'
 import { DepartureFlare } from './organisms/DepartureFlare'
+import { Hypnagogia } from './organisms/Hypnagogia'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -733,6 +734,8 @@ narrator.setDeps({
   getErosionLevel: () => erosion.getLevel(),
   getAutophagyLevel: (room) => autophagy.getLevel(room),
   getAvgAutophagy: () => autophagy.getAvgLevel(),
+  getDreamIntensity: () => hypnagogia.getDreamIntensity(),
+  getDreamDepth: () => hypnagogia.getDreamDepth(),
 })
 narrator.start()
 
@@ -790,6 +793,14 @@ autophagy.start()
 // The Departure Flare — rooms confess hidden content as you leave
 // Comet 3I/ATLAS brightens at departure. The house does the same.
 const departureFlare = new DepartureFlare()
+
+// Hypnagogia — the house dreams while you're away
+// Northwestern dream engineering: the brain reorganizes memories during sleep
+const hypnagogia = new Hypnagogia()
+hypnagogia.setDeps({
+  getMemoryTexts: () => journal.getMemories().map(m => m.currentText),
+})
+hypnagogia.wake()
 
 let _prevRoom = 'void'
 

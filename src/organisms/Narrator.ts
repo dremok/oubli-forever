@@ -46,6 +46,8 @@ interface NarratorDeps {
   getErosionLevel?: () => number
   getAutophagyLevel?: (room: string) => number
   getAvgAutophagy?: () => number
+  getDreamIntensity?: () => number
+  getDreamDepth?: () => string
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -190,6 +192,18 @@ const GENERATORS: NarrationGenerator[] = [
     if (level > 0.05) return 'autophagy begins. the room dismantles what it no longer needs.'
     const avg = d.getAvgAutophagy?.()
     if (avg !== undefined && avg > 0.2) return 'the house has learned: to endure is to reduce. the longest-lived rooms are the emptiest.'
+    return null
+  },
+
+  // Hypnagogia narrations — the house just woke up
+  (d) => {
+    const intensity = d.getDreamIntensity?.()
+    const depth = d.getDreamDepth?.()
+    if (!intensity || !depth || depth === 'none') return null
+    if (intensity > 0.7) return 'the house barely recognizes you. it was somewhere else entirely.'
+    if (intensity > 0.4) return 'the house is still waking up. its dreams cling to the walls.'
+    if (intensity > 0.1) return 'the rooms are settling. the house was dreaming while you were gone.'
+    if (depth === 'light') return 'a brief sleep. the house dozed. it dreamed of particles.'
     return null
   },
 
