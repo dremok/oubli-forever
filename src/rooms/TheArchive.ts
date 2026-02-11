@@ -114,6 +114,19 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
   }
   const searchGhosts: SearchGhost[] = []
 
+  // ── Personal bookshelf state ──
+  const SHELF_KEY = 'oubli-archive-shelf'
+  interface ShelfBook {
+    title: string
+    author: string
+    coverId: number | null
+    key: string
+    firstPublishYear: number | null
+    savedAt: number
+  }
+  let shelf: ShelfBook[] = []
+  let shelfContainer: HTMLElement | null = null
+
   // --- Cultural inscriptions ---
   let inscriptionIdx = 0
   let inscriptionTimer = 0
@@ -508,6 +521,136 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
     if (searchGhosts.length > 8) searchGhosts.shift()
   }
 
+  // ── Personal bookshelf functions ──
+  function loadShelf() {
+    try {
+      const stored = localStorage.getItem(SHELF_KEY)
+      if (stored) shelf = JSON.parse(stored)
+    } catch { shelf = [] }
+  }
+
+  function saveToShelf(book: BookResult) {
+    if (shelf.find(b => b.key === book.key)) return
+    shelf.push({
+      title: book.title,
+      author: book.author,
+      coverId: book.coverId,
+      key: book.key,
+      firstPublishYear: book.firstPublishYear,
+      savedAt: Date.now(),
+    })
+    if (shelf.length > 100) shelf.shift()
+    try { localStorage.setItem(SHELF_KEY, JSON.stringify(shelf)) } catch {}
+    renderShelf()
+  }
+
+  function removeFromShelf(key: string) {
+    shelf = shelf.filter(b => b.key !== key)
+    try { localStorage.setItem(SHELF_KEY, JSON.stringify(shelf)) } catch {}
+    renderShelf()
+  }
+
+  function isOnShelf(key: string): boolean {
+    return shelf.some(b => b.key === key)
+  }
+
+  function renderShelf() {
+    if (!shelfContainer) return
+    shelfContainer.innerHTML = ''
+
+    if (shelf.length === 0) {
+      shelfContainer.style.display = 'none'
+      return
+    }
+    shelfContainer.style.display = 'block'
+
+    const label = document.createElement('div')
+    label.style.cssText = `
+      font: 10px monospace;
+      color: rgba(180, 160, 120, 0.12);
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    `
+    label.textContent = `your shelf \u00b7 ${shelf.length} book${shelf.length === 1 ? '' : 's'}`
+    shelfContainer.appendChild(label)
+
+    const row = document.createElement('div')
+    row.style.cssText = `
+      display: flex; gap: 3px; align-items: flex-end;
+      overflow-x: auto; padding: 4px 0 12px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(180,160,120,0.1) transparent;
+    `
+
+    for (const book of shelf) {
+      const spine = document.createElement('div')
+      const hue = [...book.title].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+      const h = 24 + Math.min(46, book.title.length * 1.5)
+      spine.style.cssText = `
+        width: 12px; min-width: 12px; height: ${h}px;
+        background: hsla(${hue}, 25%, 25%, 0.5);
+        border: 1px solid hsla(${hue}, 20%, 35%, 0.2);
+        border-radius: 1px;
+        cursor: pointer;
+        transition: transform 0.2s ease, filter 0.2s ease;
+        position: relative;
+      `
+
+      const tip = document.createElement('div')
+      tip.style.cssText = `
+        position: absolute; bottom: 100%; left: 50%;
+        transform: translateX(-50%);
+        background: rgba(25, 20, 15, 0.95);
+        border: 1px solid rgba(180, 160, 120, 0.15);
+        padding: 6px 10px;
+        font: 11px 'Cormorant Garamond', serif;
+        color: rgba(180, 160, 120, 0.5);
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        z-index: 20;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      `
+      tip.innerHTML = `${book.title}<br><span style="font-style:italic;color:rgba(180,160,120,0.3)">${book.author}</span>`
+      spine.appendChild(tip)
+
+      spine.addEventListener('mouseenter', () => {
+        spine.style.transform = 'translateY(-4px)'
+        spine.style.filter = 'brightness(1.3)'
+        tip.style.opacity = '1'
+      })
+      spine.addEventListener('mouseleave', () => {
+        spine.style.transform = 'translateY(0)'
+        spine.style.filter = 'brightness(1)'
+        tip.style.opacity = '0'
+      })
+      spine.addEventListener('click', () => {
+        if (book.key) window.open(`https://openlibrary.org${book.key}`, '_blank')
+      })
+      spine.addEventListener('dblclick', (e) => {
+        e.stopPropagation()
+        removeFromShelf(book.key)
+      })
+
+      row.appendChild(spine)
+    }
+
+    shelfContainer.appendChild(row)
+
+    const hint = document.createElement('div')
+    hint.style.cssText = `
+      font: 9px monospace;
+      color: rgba(180, 160, 120, 0.06);
+      margin-top: -4px;
+    `
+    hint.textContent = 'click to read \u00b7 double-click to remove'
+    shelfContainer.appendChild(hint)
+  }
+
   function drawEffects(time: number) {
     if (!effectCtx || !effectCanvas || !active) return
     const w = effectCanvas.width
@@ -855,6 +998,35 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
 
       card.appendChild(textCol)
 
+      // Save to shelf button
+      const saveBtn = document.createElement('div')
+      const alreadySaved = isOnShelf(book.key)
+      saveBtn.textContent = alreadySaved ? '\u2713' : '+'
+      saveBtn.title = alreadySaved ? 'on your shelf' : 'save to shelf'
+      saveBtn.style.cssText = `
+        font-size: 16px;
+        color: ${alreadySaved ? 'rgba(120, 180, 120, 0.3)' : 'rgba(180, 160, 120, 0.15)'};
+        cursor: pointer;
+        padding: 4px 8px;
+        transition: color 0.2s ease, transform 0.2s ease;
+        user-select: none;
+        min-width: 24px;
+        text-align: center;
+      `
+      if (!alreadySaved) {
+        saveBtn.addEventListener('mouseenter', () => { saveBtn.style.color = 'rgba(180, 160, 120, 0.5)'; saveBtn.style.transform = 'scale(1.2)' })
+        saveBtn.addEventListener('mouseleave', () => { saveBtn.style.color = 'rgba(180, 160, 120, 0.15)'; saveBtn.style.transform = 'scale(1)' })
+        saveBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          saveToShelf(book)
+          saveBtn.textContent = '\u2713'
+          saveBtn.style.color = 'rgba(120, 180, 120, 0.3)'
+          saveBtn.style.transform = 'scale(1)'
+          saveBtn.title = 'on your shelf'
+        })
+      }
+      card.appendChild(saveBtn)
+
       // Click to open on Open Library
       card.addEventListener('click', () => {
         if (book.key) {
@@ -1024,6 +1196,15 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
         suggestions.appendChild(chip)
       }
       overlay.appendChild(suggestions)
+
+      // Personal bookshelf
+      shelfContainer = document.createElement('div')
+      shelfContainer.style.cssText = `
+        width: 480px; max-width: 90vw;
+        margin-bottom: 16px;
+        display: none;
+      `
+      overlay.appendChild(shelfContainer)
 
       // Hint
       const hint = document.createElement('div')
@@ -1258,6 +1439,8 @@ export function createArchiveRoom(deps?: ArchiveDeps): Room {
 
     async activate() {
       active = true
+      loadShelf()
+      renderShelf()
       frameId = requestAnimationFrame(animationLoop)
       await initAudio()
     },
