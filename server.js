@@ -78,6 +78,9 @@ const choirVoices = []
 /** @type {{ fragment: string, sealedBy: string, sealedAt: number, delay: string }[]} */
 const deadLetters = []
 
+/** @type {{ prompt: string, developedBy: string, developedAt: number }[]} */
+const darkroomPrints = []
+
 // Prune old room activity every 30s
 setInterval(() => {
   const cutoff = Date.now() - 60000 // 1 minute
@@ -696,6 +699,42 @@ async function handleAPI(req, res) {
     }))
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ voices: result, totalVoices: choirVoices.length }))
+    return true
+  }
+
+  // POST /api/darkroom/prints — share a developed print prompt
+  if (url.pathname === '/api/darkroom/prints' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { prompt } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!prompt || prompt.length > 500) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'prompt required (max 500 chars)' }))
+        return true
+      }
+      darkroomPrints.push({ prompt: prompt.slice(0, 500), developedBy: visitor, developedAt: Date.now() })
+      while (darkroomPrints.length > 100) darkroomPrints.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalPrints: darkroomPrints.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/darkroom/prints — fetch ghost prints from other visitors
+  if (url.pathname === '/api/darkroom/prints' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const others = darkroomPrints.filter(p => p.developedBy !== visitor)
+    const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 6)
+    const result = shuffled.map(p => ({
+      prompt: p.prompt,
+      age: Date.now() - p.developedAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ prints: result, totalPrints: darkroomPrints.length }))
     return true
   }
 

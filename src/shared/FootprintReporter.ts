@@ -385,6 +385,38 @@ export async function fetchChoirVoices(): Promise<{ voices: SharedChoirVoice[]; 
   }
 }
 
+/** Share a developed print prompt to the darkroom */
+export function shareDarkroomPrint(prompt: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/darkroom/prints`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ prompt: prompt.slice(0, 500) }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface GhostPrint {
+  prompt: string
+  age: number
+}
+
+/** Fetch ghost prints from other visitors */
+export async function fetchDarkroomPrints(): Promise<{ prints: GhostPrint[]; totalPrints: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/darkroom/prints`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
 /** Share a letter fragment to the dead letter office */
 export function shareDeadLetter(fragment: string, delay: string) {
   const visitorId = getVisitorId()

@@ -23,6 +23,7 @@
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareDarkroomPrint, fetchDarkroomPrints, type GhostPrint } from '../shared/FootprintReporter'
 
 interface DarkroomDeps {
   getMemories: () => StoredMemory[]
@@ -119,6 +120,11 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
   let enlargerCanvas: HTMLCanvasElement | null = null
   let enlargerCtx: CanvasRenderingContext2D | null = null
   let enlargerAngle = 0
+
+  // Ghost prints from other visitors
+  let ghostPrints: GhostPrint[] = []
+  let ghostPrintsLoaded = false
+  let ghostGalleryEl: HTMLElement | null = null
 
   function loadPrints(): DevelopedPrint[] {
     try {
@@ -937,6 +943,9 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
     savePrints()
     renderGallery(galleryEl)
 
+    // Share prompt to other visitors' ghost galleries
+    shareDarkroomPrint(prompt)
+
     developing = false
 
     // Fade status
@@ -945,6 +954,92 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       statusEl.textContent = 'ready for another'
       statusEl.style.color = 'rgba(200, 100, 100, 0.2)'
     }
+  }
+
+  function loadGhostPrints() {
+    fetchDarkroomPrints().then(data => {
+      if (data && data.prints.length > 0) {
+        ghostPrints = data.prints
+        ghostPrintsLoaded = true
+        if (ghostGalleryEl) renderGhostGallery(ghostGalleryEl)
+      }
+    })
+  }
+
+  function renderGhostGallery(el: HTMLElement) {
+    el.innerHTML = ''
+    if (ghostPrints.length === 0) return
+
+    const label = document.createElement('div')
+    label.style.cssText = `
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 300; font-size: 12px; font-style: italic;
+      color: rgba(100, 120, 160, 0.2);
+      text-align: center; margin-bottom: 10px;
+      letter-spacing: 2px;
+    `
+    label.textContent = `${ghostPrints.length} prints left by other visitors`
+    el.appendChild(label)
+
+    const grid = document.createElement('div')
+    grid.style.cssText = `
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px; padding: 8px;
+    `
+
+    for (const gp of ghostPrints) {
+      const card = document.createElement('div')
+      card.style.cssText = `
+        position: relative;
+        aspect-ratio: 1;
+        overflow: hidden;
+        border: 1px solid rgba(80, 100, 140, 0.08);
+        cursor: pointer;
+        transition: border-color 0.3s ease;
+      `
+      card.addEventListener('mouseenter', () => {
+        card.style.borderColor = 'rgba(100, 120, 160, 0.25)'
+      })
+      card.addEventListener('mouseleave', () => {
+        card.style.borderColor = 'rgba(80, 100, 140, 0.08)'
+      })
+
+      // Regenerate the print from the prompt (deterministic)
+      const imageUrl = generateProceduralPrint(gp.prompt)
+      const img = document.createElement('img')
+      img.src = imageUrl
+      // Ghost tint — blue-shifted, faded, low contrast
+      const ageHours = gp.age / (1000 * 60 * 60)
+      const fade = Math.min(0.7, ageHours / 48)
+      img.style.cssText = `
+        width: 100%; height: 100%; object-fit: cover;
+        filter: sepia(20%) contrast(${60 - fade * 20}%) brightness(${50 + fade * 10}%) hue-rotate(190deg) saturate(40%);
+        opacity: ${0.5 - fade * 0.2};
+      `
+      card.appendChild(img)
+
+      // Ghost label
+      const lbl = document.createElement('div')
+      lbl.style.cssText = `
+        position: absolute; bottom: 0; left: 0; width: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 4px 6px;
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 10px; font-style: italic;
+        color: rgba(100, 130, 170, 0.35);
+        opacity: 0; transition: opacity 0.3s ease;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      `
+      lbl.textContent = gp.prompt.slice(0, 40) + (gp.prompt.length > 40 ? '…' : '')
+      card.appendChild(lbl)
+      card.addEventListener('mouseenter', () => { lbl.style.opacity = '1' })
+      card.addEventListener('mouseleave', () => { lbl.style.opacity = '0' })
+
+      grid.appendChild(card)
+    }
+
+    el.appendChild(grid)
   }
 
   return {
@@ -1352,10 +1447,20 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       const gallery = document.createElement('div')
       gallery.style.cssText = `
         width: 480px; max-width: 90vw;
-        margin-bottom: 40px;
+        margin-bottom: 24px;
       `
       renderGallery(gallery)
       overlay.appendChild(gallery)
+
+      // Ghost prints from other visitors — clothesline section
+      ghostGalleryEl = document.createElement('div')
+      ghostGalleryEl.style.cssText = `
+        width: 480px; max-width: 90vw;
+        margin-bottom: 40px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(80, 100, 140, 0.06);
+      `
+      overlay.appendChild(ghostGalleryEl)
 
       // Cultural inscription — cycling text at very bottom
       inscriptionEl = document.createElement('div')
@@ -1386,6 +1491,13 @@ export function createDarkroomRoom(deps: DarkroomDeps): Room {
       initAudio()
       initDustMotes()
       renderVisualEffects()
+
+      // Load ghost prints from other visitors
+      ghostPrintsLoaded = false
+      ghostPrints = []
+      setTimeout(() => {
+        if (active) loadGhostPrints()
+      }, 3000)
 
       // Start cultural inscription cycling
       inscriptionIdx = Math.floor(Math.random() * CULTURAL_INSCRIPTIONS.length)
