@@ -103,6 +103,7 @@ import { Hypnagogia } from './organisms/Hypnagogia'
 import { Residue } from './organisms/Residue'
 import { Respiration } from './organisms/Respiration'
 import { Atmosphere } from './organisms/Atmosphere'
+import { Tide } from './organisms/Tide'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -823,6 +824,11 @@ respiration.start()
 // Atmosphere — room-specific AI-generated background textures
 // FAL.ai SDXL textures give each room cluster a unique visual feel
 const atmosphere = new Atmosphere()
+
+// The Tide — accumulated presence raises the water level of the house
+// Snow drought 2026: water memory vanishing. Presence replenishes, absence drains.
+const _tide = new Tide()
+_tide.start()
 
 let _prevRoom = 'void'
 
