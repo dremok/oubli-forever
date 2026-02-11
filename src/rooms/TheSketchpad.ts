@@ -22,6 +22,7 @@
 
 import type { Room } from './RoomManager'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareSketchStroke, fetchSketchStrokes, type SharedStroke } from '../shared/FootprintReporter'
 
 interface Stroke {
   points: { x: number; y: number }[]
@@ -82,6 +83,31 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
   let brushWidth = 2
   let drawing = false
   let totalStrokes = 0
+
+  // Shared ghost strokes from other visitors
+  interface GhostStroke {
+    points: Array<{ x: number; y: number }>
+    hue: number
+    width: number
+    loadedAt: number
+    breathPhase: number
+  }
+  let ghostStrokes: GhostStroke[] = []
+  let ghostStrokesLoaded = false
+
+  async function loadGhostStrokes() {
+    if (ghostStrokesLoaded) return
+    ghostStrokesLoaded = true
+    const data = await fetchSketchStrokes()
+    if (!data || !data.strokes || data.strokes.length === 0) return
+    ghostStrokes = data.strokes.map((s: SharedStroke) => ({
+      points: s.points,
+      hue: s.hue,
+      width: s.width,
+      loadedAt: time,
+      breathPhase: Math.random() * Math.PI * 2,
+    }))
+  }
 
   // Sigil navigation system — draw symbols to navigate
   interface SigilTemplate {
@@ -760,6 +786,15 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
     c.fillStyle = `rgb(${Math.round(breathR)}, ${Math.round(breathG)}, ${Math.round(breathB)})`
     c.fillRect(0, 0, w, h)
 
+    // Draw shared ghost strokes from other visitors — faint, breathing traces
+    for (const gs of ghostStrokes) {
+      if (gs.points.length < 2) continue
+      gs.breathPhase += 0.012
+      const breathAlpha = 0.08 + 0.04 * Math.sin(gs.breathPhase)
+      // Scale points to current canvas size (strokes were drawn at various sizes)
+      drawStrokePath(c, gs.points, gs.hue + 180, gs.width * 0.8, breathAlpha, false, 0)
+    }
+
     // Draw ghost afterimages (faded strokes that linger slightly longer)
     const now = time
     for (const stroke of strokes) {
@@ -1232,6 +1267,8 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
       strokes.push(currentStroke)
       totalStrokes++
       spawnDrips(currentStroke)
+      // Share this stroke with other visitors
+      shareSketchStroke(currentStroke.points, currentStroke.hue, currentStroke.width)
     }
     if (mirrorStroke && mirrorStroke.points.length >= 2) {
       // Store mirrored points directly so they render correctly as a normal stroke
@@ -1356,7 +1393,11 @@ export function createSketchpadRoom(deps: SketchpadDeps = {}): Room {
       strokeEchoes.length = 0
       echoedStrokes.clear()
       evapSpawnTimer = 0
+      ghostStrokesLoaded = false
+      ghostStrokes = []
       render()
+      // Load ghost strokes from other visitors
+      loadGhostStrokes()
     },
 
     deactivate() {

@@ -151,3 +151,72 @@ export async function fetchGardenPlants(): Promise<{ plants: SharedPlant[]; tota
     return null
   }
 }
+
+/** Share a drawing stroke from the Sketchpad */
+export function shareSketchStroke(points: Array<{ x: number; y: number }>, hue: number, width: number) {
+  const visitorId = getVisitorId()
+  // Downsample points to max 100 for bandwidth
+  const step = Math.max(1, Math.floor(points.length / 100))
+  const sampled = points.filter((_, i) => i % step === 0 || i === points.length - 1)
+  fetch(`${API_BASE}/api/sketchpad/strokes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ points: sampled, hue, width }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface SharedStroke {
+  points: Array<{ x: number; y: number }>
+  hue: number
+  width: number
+  age: number
+}
+
+/** Fetch ghost strokes from other visitors */
+export async function fetchSketchStrokes(): Promise<{ strokes: SharedStroke[]; totalStrokes: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/sketchpad/strokes`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+/** Share a writing fragment from the Study */
+export function shareStudyWriting(text: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/study/writings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ text: text.slice(0, 300) }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface GhostWriting {
+  text: string
+  age: number
+}
+
+/** Fetch ghost writings from other visitors */
+export async function fetchGhostWritings(): Promise<{ writings: GhostWriting[]; totalWritings: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/study/writings`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}

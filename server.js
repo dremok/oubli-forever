@@ -54,6 +54,12 @@ const instrumentNotes = []
 /** @type {{ text: string, plantedBy: string, plantedAt: number, degradation: number }[]} */
 const gardenPlants = []
 
+/** @type {{ points: {x: number, y: number}[], hue: number, width: number, drawnBy: string, drawnAt: number }[]} */
+const sharedStrokes = []
+
+/** @type {{ text: string, writtenBy: string, writtenAt: number }[]} */
+const ghostWritings = []
+
 // Prune old room activity every 30s
 setInterval(() => {
   const cutoff = Date.now() - 60000 // 1 minute
@@ -392,6 +398,89 @@ async function handleAPI(req, res) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'invalid JSON' }))
     }
+    return true
+  }
+
+  // POST /api/sketchpad/strokes — share a drawing stroke
+  if (url.pathname === '/api/sketchpad/strokes' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { points, hue, width } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!Array.isArray(points) || points.length < 2 || points.length > 200) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'points array required (2-200)' }))
+        return true
+      }
+      sharedStrokes.push({
+        points: points.slice(0, 200).map(p => ({ x: p.x, y: p.y })),
+        hue: hue || 0,
+        width: width || 2,
+        drawnBy: visitor,
+        drawnAt: Date.now(),
+      })
+      // Keep max 50 strokes
+      while (sharedStrokes.length > 50) sharedStrokes.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalStrokes: sharedStrokes.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/sketchpad/strokes — fetch ghost strokes from other visitors
+  if (url.pathname === '/api/sketchpad/strokes' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const otherStrokes = sharedStrokes.filter(s => s.drawnBy !== visitor)
+    // Return up to 10 strokes
+    const result = otherStrokes.slice(-10).map(s => ({
+      points: s.points,
+      hue: s.hue,
+      width: s.width,
+      age: Date.now() - s.drawnAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ strokes: result, totalStrokes: sharedStrokes.length }))
+    return true
+  }
+
+  // POST /api/study/writings — share writing text
+  if (url.pathname === '/api/study/writings' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { text } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!text || text.length > 300) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'text required (max 300 chars)' }))
+        return true
+      }
+      ghostWritings.push({ text, writtenBy: visitor, writtenAt: Date.now() })
+      // Keep max 100 writings
+      while (ghostWritings.length > 100) ghostWritings.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalWritings: ghostWritings.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/study/writings — fetch ghost writings from other visitors
+  if (url.pathname === '/api/study/writings' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const otherWritings = ghostWritings.filter(w => w.writtenBy !== visitor)
+    // Return up to 5 writings, shuffled
+    const shuffled = otherWritings.sort(() => Math.random() - 0.5).slice(0, 5)
+    const result = shuffled.map(w => ({
+      text: w.text,
+      age: Date.now() - w.writtenAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ writings: result, totalWritings: ghostWritings.length }))
     return true
   }
 

@@ -28,6 +28,7 @@
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareStudyWriting, fetchGhostWritings, type GhostWriting } from '../shared/FootprintReporter'
 
 const STORAGE_KEY = 'oubli-study'
 const QUOTE_API = 'https://stoic-quotes.com/api/quote'
@@ -288,6 +289,36 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
   }
   const marginNotes: MarginNote[] = []
   let lastMarginNoteWord = 0
+
+  // Ghost writings from other visitors — faint text that drifts across the atmosphere
+  interface GhostText {
+    text: string
+    x: number
+    y: number
+    vx: number
+    alpha: number
+    breathPhase: number
+  }
+  let ghostTexts: GhostText[] = []
+  let ghostWritingsLoaded = false
+  let lastShareWordCount = 0
+
+  async function loadGhostWritings() {
+    if (ghostWritingsLoaded) return
+    ghostWritingsLoaded = true
+    const data = await fetchGhostWritings()
+    if (!data || !data.writings || data.writings.length === 0) return
+    const h = atmosCanvas ? atmosCanvas.height : 600
+    const w = atmosCanvas ? atmosCanvas.width : 800
+    ghostTexts = data.writings.map((gw: GhostWriting) => ({
+      text: gw.text.slice(0, 80), // truncate long texts
+      x: w * 0.1 + Math.random() * w * 0.8,
+      y: h * 0.15 + Math.random() * h * 0.7,
+      vx: (Math.random() - 0.5) * 0.08,
+      alpha: 0,
+      breathPhase: Math.random() * Math.PI * 2,
+    }))
+  }
 
   function loadText(): string {
     try {
@@ -885,6 +916,26 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       atmosCtx.fillText(note.text, nx, note.y)
     }
 
+    // --- Ghost writings from other visitors ---
+    for (const gt of ghostTexts) {
+      gt.breathPhase += 0.008
+      gt.x += gt.vx
+      // Fade in slowly, breathe gently
+      const targetAlpha = 0.06 + 0.03 * Math.sin(gt.breathPhase)
+      gt.alpha += (targetAlpha - gt.alpha) * 0.01
+      if (gt.alpha < 0.005) continue
+      // Wrap horizontally
+      if (gt.x < -200) gt.x = w + 100
+      if (gt.x > w + 200) gt.x = -100
+      atmosCtx.save()
+      atmosCtx.font = '11px "Cormorant Garamond", serif'
+      atmosCtx.fillStyle = `rgba(140, 180, 200, ${gt.alpha})`
+      atmosCtx.textAlign = 'center'
+      atmosCtx.globalAlpha = gt.alpha
+      atmosCtx.fillText(gt.text, gt.x, gt.y)
+      atmosCtx.restore()
+    }
+
     // --- Warm quote proximity glow (via cursor affecting quote container) ---
     updateQuoteWarmth()
 
@@ -1111,6 +1162,12 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
             lastWordCount = words
             onNewText(newWords)
           }
+          // Share writing fragment with other visitors every 50 words
+          if (words >= lastShareWordCount + 50) {
+            const fragment = text.split(/\s+/).slice(Math.max(0, words - 15), words).join(' ')
+            shareStudyWriting(fragment)
+            lastShareWordCount = words
+          }
         }
       })
       // Typewriter click sounds on keypress
@@ -1281,6 +1338,9 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       milestoneLabel = ''
       marginNotes.length = 0
       lastMarginNoteWord = 0
+      ghostWritingsLoaded = false
+      ghostTexts = []
+      lastShareWordCount = 0
       // Track word count for new text emissions
       if (textarea) {
         const text = textarea.value.trim()
@@ -1304,6 +1364,8 @@ export function createStudyRoom(getMemoriesOrDeps: (() => StoredMemory[]) | Stud
       await initAudio()
       // Start visual atmosphere
       startAtmosphere()
+      // Load ghost writings from other visitors
+      setTimeout(() => { if (active) loadGhostWritings() }, 2000)
     },
 
     deactivate() {
