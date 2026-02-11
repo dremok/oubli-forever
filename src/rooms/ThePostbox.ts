@@ -21,6 +21,7 @@
  */
 
 import type { Room } from './RoomManager'
+import { shareDeadLetter, fetchDeadLetters, type DeadLetter } from '../shared/FootprintReporter'
 
 interface PostboxDeps {
   switchTo?: (name: string) => void
@@ -139,6 +140,13 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
   // Hover
   let hoverTarget: string | null = null
 
+  // Dead letters from other visitors
+  let deadLetters: DeadLetter[] = []
+  let deadLettersLoaded = false
+  let deadLetterDrawerOpen = false
+  let deadLetterReading: DeadLetter | null = null
+  let deadLetterReadEl: HTMLElement | null = null
+
   // ── Helpers ──
 
   function getDeliverable(): SealedLetter[] {
@@ -199,6 +207,12 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
           opened: false,
         }
         letters.push(letter)
+
+        // Share a fragment to the dead letter office
+        const words = text.trim().split(/\s+/)
+        const start = Math.floor(Math.random() * Math.max(1, words.length - 8))
+        const fragment = words.slice(start, start + Math.min(12, words.length)).join(' ')
+        shareDeadLetter(fragment, DELAY_OPTIONS[selectedDelay].label)
         while (letters.length > MAX_LETTERS) {
           const oldest = letters.findIndex(l => l.opened)
           if (oldest >= 0) letters.splice(oldest, 1)
@@ -852,6 +866,91 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
     ctx.fillStyle = `rgba(200, 170, 120, ${insAlpha})`
     ctx.fillText(CULTURAL_INSCRIPTIONS[inscriptionIdx], w / 2, h - 18, w * 0.85)
 
+    // ── Dead letter drawer ──
+    if (deadLettersLoaded && deadLetters.length > 0 && mode === 'idle' && !deadLetterDrawerOpen) {
+      const drawerX = w / 2
+      const drawerY = h * 0.52 + (h - h * 0.52) * 0.68
+      const isDrawerHover = hoverTarget === 'dead-drawer'
+      const drawerAlpha = isDrawerHover ? 0.3 : (0.1 + Math.sin(time * 0.7) * 0.02)
+
+      // Drawer shape — a small drawer in the desk
+      ctx.fillStyle = `rgba(35, 25, 16, ${drawerAlpha * 2})`
+      ctx.fillRect(drawerX - 75, drawerY - 10, 150, 22)
+      ctx.strokeStyle = `rgba(120, 90, 55, ${drawerAlpha})`
+      ctx.lineWidth = 0.5
+      ctx.strokeRect(drawerX - 75, drawerY - 10, 150, 22)
+
+      // Drawer handle
+      ctx.fillStyle = `rgba(150, 110, 60, ${drawerAlpha * 1.5})`
+      ctx.fillRect(drawerX - 10, drawerY - 2, 20, 6)
+
+      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = `rgba(180, 150, 100, ${drawerAlpha * 0.9})`
+      ctx.fillText(`dead letters · ${deadLetters.length}`, drawerX, drawerY + 26)
+    }
+
+    // ── Open drawer view ──
+    if (deadLetterDrawerOpen && deadLetters.length > 0 && mode === 'idle') {
+      const dY = h * 0.52 + 20
+      const maxShow = Math.min(deadLetters.length, 5)
+
+      // Drawer background
+      ctx.fillStyle = 'rgba(22, 16, 10, 0.85)'
+      ctx.fillRect(w / 2 - 180, dY, 360, maxShow * 42 + 40)
+      ctx.strokeStyle = 'rgba(100, 75, 45, 0.1)'
+      ctx.lineWidth = 0.5
+      ctx.strokeRect(w / 2 - 180, dY, 360, maxShow * 42 + 40)
+
+      ctx.font = '11px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = 'rgba(120, 150, 180, 0.2)'
+      ctx.fillText('uncollected letters from other visitors', w / 2, dY + 18)
+
+      for (let i = 0; i < maxShow; i++) {
+        const dl = deadLetters[i]
+        const ly = dY + 30 + i * 42
+        const isHov = hoverTarget === `dead-${i}`
+        const ageHours = dl.age / (1000 * 60 * 60)
+        const fade = Math.max(0.25, 1 - ageHours / 168) // fade over 1 week
+
+        // Letter background
+        ctx.fillStyle = `rgba(40, 35, 28, ${isHov ? 0.45 : 0.2})`
+        ctx.fillRect(w / 2 - 160, ly, 320, 34)
+
+        if (isHov) {
+          ctx.strokeStyle = 'rgba(100, 130, 170, 0.15)'
+          ctx.lineWidth = 0.5
+          ctx.strokeRect(w / 2 - 160, ly, 320, 34)
+        }
+
+        // Ghost seal
+        ctx.fillStyle = `rgba(80, 90, 120, ${0.2 * fade})`
+        ctx.beginPath()
+        ctx.arc(w / 2 - 145, ly + 17, 4, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Fragment text — partially obscured
+        ctx.font = '13px "Cormorant Garamond", serif'
+        ctx.textAlign = 'left'
+        ctx.fillStyle = `rgba(140, 160, 190, ${0.35 * fade})`
+        const visibleText = dl.fragment.length > 40 ? dl.fragment.slice(0, 40) + '…' : dl.fragment
+        ctx.fillText(`"${visibleText}"`, w / 2 - 130, ly + 20)
+
+        // Delay hint
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.textAlign = 'right'
+        ctx.fillStyle = `rgba(120, 140, 170, ${0.15 * fade})`
+        ctx.fillText(dl.delay ? `sealed for ${dl.delay}` : 'sealed', w / 2 + 150, ly + 20)
+      }
+
+      // Close hint
+      ctx.font = '10px "Cormorant Garamond", serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = 'rgba(150, 130, 100, 0.12)'
+      ctx.fillText('click outside to close', w / 2, dY + maxShow * 42 + 34)
+    }
+
     // ── Navigation portals ──
     if (deps.switchTo) {
       for (const portal of portals) {
@@ -897,8 +996,39 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
       }
     }
 
+    // Dead letter drawer interactions
+    if (mode === 'idle' && deadLettersLoaded && deadLetters.length > 0) {
+      const deskY = h * 0.52
+
+      if (deadLetterDrawerOpen) {
+        const dY = deskY + 20
+        const maxShow = Math.min(deadLetters.length, 5)
+
+        // Check if clicking a dead letter
+        for (let i = 0; i < maxShow; i++) {
+          const ly = dY + 30 + i * 42
+          if (mx > w / 2 - 160 && mx < w / 2 + 160 && my > ly && my < ly + 34) {
+            showDeadLetterReading(deadLetters[i])
+            return
+          }
+        }
+
+        // Click outside drawer → close
+        deadLetterDrawerOpen = false
+        return
+      }
+
+      // Click drawer handle
+      const drawerX = w / 2
+      const drawerY = deskY + (h - deskY) * 0.68
+      if (mx > drawerX - 75 && mx < drawerX + 75 && my > drawerY - 10 && my < drawerY + 30) {
+        deadLetterDrawerOpen = true
+        return
+      }
+    }
+
     // Desk click → compose
-    if (mode === 'idle' && getDeliverable().length === 0) {
+    if (mode === 'idle' && getDeliverable().length === 0 && !deadLetterDrawerOpen) {
       const deskY = h * 0.52
       if (my > deskY * 0.85) {
         showCompose()
@@ -929,13 +1059,160 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
       }
     }
 
+    // Dead letter drawer hover
+    if (mode === 'idle' && deadLettersLoaded && deadLetters.length > 0 && !hoverTarget) {
+      const deskY = h * 0.52
+
+      if (deadLetterDrawerOpen) {
+        const dY = deskY + 20
+        const maxShow = Math.min(deadLetters.length, 5)
+        for (let i = 0; i < maxShow; i++) {
+          const ly = dY + 30 + i * 42
+          if (mx > w / 2 - 160 && mx < w / 2 + 160 && my > ly && my < ly + 34) {
+            hoverTarget = `dead-${i}`
+            cursorStyle = 'pointer'
+            break
+          }
+        }
+      } else {
+        const drawerX = w / 2
+        const drawerY = deskY + (h - deskY) * 0.68
+        if (mx > drawerX - 75 && mx < drawerX + 75 && my > drawerY - 10 && my < drawerY + 30) {
+          hoverTarget = 'dead-drawer'
+          cursorStyle = 'pointer'
+        }
+      }
+    }
+
     // Desk area hover
     const deskY = h * 0.52
-    if (mode === 'idle' && getDeliverable().length === 0 && my > deskY * 0.85 && !hoverTarget) {
+    if (mode === 'idle' && getDeliverable().length === 0 && my > deskY * 0.85 && !hoverTarget && !deadLetterDrawerOpen) {
       cursorStyle = 'pointer'
     }
 
     canvas.style.cursor = cursorStyle
+  }
+
+  // ── Dead letter functions ──
+
+  function loadDeadLetters() {
+    fetchDeadLetters().then(data => {
+      if (data && data.letters.length > 0) {
+        deadLetters = data.letters
+        deadLettersLoaded = true
+      }
+    })
+  }
+
+  function showDeadLetterReading(dl: DeadLetter) {
+    if (deadLetterReadEl) return
+    deadLetterDrawerOpen = false
+
+    deadLetterReadEl = document.createElement('div')
+    deadLetterReadEl.style.cssText = `
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 400px; max-width: 85vw;
+      padding: 32px;
+      background: rgba(20, 22, 30, 0.96);
+      border: 1px solid rgba(100, 130, 170, 0.1);
+      border-radius: 2px;
+      box-shadow: 0 0 50px rgba(0,0,0,0.6);
+      z-index: 10; pointer-events: auto;
+      animation: postbox-fadein 0.8s ease;
+    `
+
+    // Ghost seal
+    const seal = document.createElement('div')
+    seal.style.cssText = 'text-align: center; margin-bottom: 18px;'
+    seal.innerHTML = `
+      <span style="
+        display: inline-block; width: 32px; height: 32px;
+        background: radial-gradient(circle at 38% 35%,
+          rgba(70, 80, 110, 0.4), rgba(50, 55, 75, 0.3));
+        border-radius: 50%;
+        box-shadow: inset 0 0 6px rgba(0,0,0,0.2);
+        line-height: 32px;
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 13px; color: rgba(140, 160, 200, 0.2);
+      ">?</span>
+    `
+    deadLetterReadEl.appendChild(seal)
+
+    const header = document.createElement('div')
+    header.style.cssText = `
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 11px; color: rgba(120, 150, 190, 0.2);
+      letter-spacing: 2px; text-align: center;
+      margin-bottom: 20px;
+    `
+    const ageH = Math.floor(dl.age / (1000 * 60 * 60))
+    const ageStr = ageH < 1 ? 'moments ago' : ageH < 24 ? `${ageH} hours ago` : `${Math.floor(ageH / 24)} days ago`
+    header.textContent = `a stranger sealed this ${ageStr}` + (dl.delay ? ` · meant to arrive in ${dl.delay}` : '')
+    deadLetterReadEl.appendChild(header)
+
+    const content = document.createElement('div')
+    content.style.cssText = `
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 17px; line-height: 1.8;
+      color: rgba(150, 170, 200, 0.5);
+      white-space: pre-wrap; word-wrap: break-word;
+      padding: 18px;
+      border-left: 2px solid rgba(100, 130, 170, 0.08);
+      font-style: italic;
+      min-height: 40px;
+    `
+    // Partially degrade the text — replace some characters with thin spaces
+    let degraded = ''
+    for (let i = 0; i < dl.fragment.length; i++) {
+      if (dl.fragment[i] === ' ') {
+        degraded += ' '
+      } else if (Math.random() < 0.12) {
+        degraded += '\u2009' // thin space — a hole in the text
+      } else {
+        degraded += dl.fragment[i]
+      }
+    }
+    content.textContent = `…${degraded}…`
+    deadLetterReadEl.appendChild(content)
+
+    const note = document.createElement('div')
+    note.style.cssText = `
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 10px; color: rgba(120, 140, 170, 0.12);
+      text-align: center; margin-top: 16px;
+      letter-spacing: 1px;
+    `
+    note.textContent = 'this letter was never collected'
+    deadLetterReadEl.appendChild(note)
+
+    const closeBtn = document.createElement('div')
+    closeBtn.textContent = 'return to drawer'
+    closeBtn.style.cssText = `
+      text-align: center; margin-top: 20px;
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 12px; color: rgba(140, 160, 190, 0.2);
+      cursor: pointer; letter-spacing: 2px;
+      transition: color 0.3s;
+    `
+    closeBtn.addEventListener('mouseenter', () => {
+      closeBtn.style.color = 'rgba(140, 160, 190, 0.4)'
+    })
+    closeBtn.addEventListener('mouseleave', () => {
+      closeBtn.style.color = 'rgba(140, 160, 190, 0.2)'
+    })
+    closeBtn.addEventListener('click', () => {
+      hideDeadLetterReading()
+    })
+    deadLetterReadEl.appendChild(closeBtn)
+
+    overlay?.appendChild(deadLetterReadEl)
+  }
+
+  function hideDeadLetterReading() {
+    deadLetterReadEl?.remove()
+    deadLetterReadEl = null
+    deadLetterReading = null
   }
 
   return {
@@ -988,8 +1265,14 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
       active = true
       letters = loadLetters()
       mode = 'idle'
+      deadLetterDrawerOpen = false
       checkDeliveries()
       render()
+
+      // Load dead letters from other visitors
+      setTimeout(() => {
+        if (active) loadDeadLetters()
+      }, 2500)
     },
 
     deactivate() {
@@ -998,6 +1281,8 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
       hideCompose()
       hideReceived()
       hideReading()
+      hideDeadLetterReading()
+      deadLetterDrawerOpen = false
       mode = 'idle'
     },
 
@@ -1007,6 +1292,7 @@ export function createPostboxRoom(deps: PostboxDeps): Room {
       hideCompose()
       hideReceived()
       hideReading()
+      hideDeadLetterReading()
       overlay?.remove()
     },
   }

@@ -384,3 +384,36 @@ export async function fetchChoirVoices(): Promise<{ voices: SharedChoirVoice[]; 
     return null
   }
 }
+
+/** Share a letter fragment to the dead letter office */
+export function shareDeadLetter(fragment: string, delay: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/postbox/deadletters`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ fragment: fragment.slice(0, 200), delay }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface DeadLetter {
+  fragment: string
+  delay: string
+  age: number
+}
+
+/** Fetch dead letters from other visitors */
+export async function fetchDeadLetters(): Promise<{ letters: DeadLetter[]; totalLetters: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/postbox/deadletters`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}

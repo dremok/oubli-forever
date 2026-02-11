@@ -75,6 +75,9 @@ const furnaceAsh = []
 /** @type {{ x: number, y: number, freq: number, placedBy: string, placedAt: number }[]} */
 const choirVoices = []
 
+/** @type {{ fragment: string, sealedBy: string, sealedAt: number, delay: string }[]} */
+const deadLetters = []
+
 // Prune old room activity every 30s
 setInterval(() => {
   const cutoff = Date.now() - 60000 // 1 minute
@@ -693,6 +696,43 @@ async function handleAPI(req, res) {
     }))
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ voices: result, totalVoices: choirVoices.length }))
+    return true
+  }
+
+  // POST /api/postbox/deadletters — share a letter fragment
+  if (url.pathname === '/api/postbox/deadletters' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { fragment, delay } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!fragment || fragment.length > 200) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'fragment required (max 200 chars)' }))
+        return true
+      }
+      deadLetters.push({ fragment: fragment.slice(0, 200), sealedBy: visitor, sealedAt: Date.now(), delay: delay || '' })
+      while (deadLetters.length > 150) deadLetters.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalLetters: deadLetters.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/postbox/deadletters — find uncollected letters from others
+  if (url.pathname === '/api/postbox/deadletters' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const others = deadLetters.filter(l => l.sealedBy !== visitor)
+    const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 6)
+    const result = shuffled.map(l => ({
+      fragment: l.fragment,
+      delay: l.delay,
+      age: Date.now() - l.sealedAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ letters: result, totalLetters: deadLetters.length }))
     return true
   }
 
