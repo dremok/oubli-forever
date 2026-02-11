@@ -54,12 +54,13 @@ After context compaction/reset:
 - **Intentional imperfection is the 2026 aesthetic** — visible process marks, scan artifacts, hand-drawn textures over digital geometry. "Guaranteed human" is a premium. Oubli should feel made, not generated.
 - **Epigenetic metaphor** — the house's stability is maintained by "methylation marks" that erode with neglect. Content transposes between rooms uninvited when marks decay. Attention protects; absence degrades.
 - **Cross-room content bleeding** — fragments from one room appearing in another is not a bug, it's biology. Transposable elements, methylation decay, memory bleed. The house's genome is becoming unstable.
-- **Scrambled replay as pathology** — UCL Alzheimer's research (Feb 2026): the hippocampus still replays during rest, but the sequences come back scrambled. Not silence — corrupted signal. The house dreams of your path but gets the order wrong.
-- **Irreversible loss mechanics** — UN Global Water Bankruptcy (Jan 2026): some resources never come back. Not everything in Oubli should be cyclical. Some features should permanently drain, permanently scar, permanently forget. Bankruptcy as design principle.
-- **Transformers.js v3 client-side AI** — depth estimation, segmentation, style transfer, small LLMs all run in-browser via WebGPU. No server needed. The house could see, understand, and transform its own content locally.
+- **Irreversible loss mechanics** — some resources never come back. Not everything in Oubli should be cyclical. Some features should permanently drain, permanently scar, permanently forget. Bankruptcy as design principle.
 - **Autophagy as survival** — Vanderbilt ER-phagy (Feb 2026): cells dismantle 70% of their own factory to survive aging. Long-lived organisms do it sooner. The house should strip itself to endure. Emptiness is health.
 - **Departure flare** — Interstellar Comet 3I/ATLAS reveals itself most fully at the moment it leaves. Content should erupt from rooms as visitors depart. The brightest revelations come at goodbye.
 - **Speech contextual biasing** — Chrome 142 Web Speech API now accepts phrase lists. Rooms that listen for specific words (room names, organism terms) can actually recognize them reliably. Voice as navigation.
+- **Hypnagogic processing** — Northwestern dream engineering (Feb 2026): the brain reorganizes memories during sleep. The house should process and reorganize during visitor absence. What changes when no one is watching?
+- **Effort residue as art** — Michael Joo "Sweat Models" (Feb 2026): the invisible labor of interaction (cursor distance, hesitation, deletions) should leave visible traces. Not what you did, but what it cost you.
+- **Respiration as architecture** — the house should breathe. Not metaphorically — literally. Vignette oscillation, asymmetric cycles, seasonal modulation. A house that can stop breathing is a house that's alive.
 
 ## Cultural Grounding — CRITICAL
 - **Every new feature must be inspired by something real** — current events, cultural trends, scientific discoveries, art movements, technological shifts, social phenomena happening NOW (2025-2026).

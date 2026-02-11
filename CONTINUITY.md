@@ -1988,6 +1988,51 @@ Fresh cultural research findings:
 - 8 new DigitalDecay meditations: autophagy, comet departure, Hawking merger, snow drought, dream engineering, Michael Joo, Morrison
 - 8 new TheStudy writing prompts: dismantling to survive, departure revelations, irreversible merging, wrong-form presence, dream answers, effort residue, language as world-making
 
+### 194. Hypnagogia (`src/organisms/Hypnagogia.ts`) — ERA 9 ORGANISM
+- The house dreams while you're away — enters hypnagogic states during visitor absence
+- Inspired by: Northwestern dream engineering lab (Feb 2026) — targeted memory reactivation during sleep
+- On return, briefly shows what the house was dreaming (3-14s hallucination)
+- 4 dream depths based on absence duration:
+  - Light (30min-2hr): room echoes, particle observations
+  - REM (2hr-12hr): rooms blur into each other, furniture talks
+  - Deep (12hr-3 days): rooms dissolve and rebuild, séances for absent visitors
+  - Abyss (3+ days): the house forgets it's a house
+- Incorporates visitor's own memory fragments into dreams (50% chance)
+- Lavender-purple overlay with gradual fade, staggered dream line reveal
+- Narrator gains dream-state awareness (4 graduated messages)
+- Uses localStorage timestamp to detect absence duration
+
+### 195. Residue (`src/organisms/Residue.ts`) — ERA 9 ORGANISM
+- Visible traces of invisible effort — tracks the COST of interaction, not the content
+- Inspired by: Michael Joo "Sweat Models" (Feb 2026) — effort residue as the artwork
+- Tracks: cursor distance, hover duration before clicks, deleted keystrokes, scroll distance
+- Marks accumulate as warm thermal-imaging colors in a thin band at screen bottom
+- Color-coded by effort type: amber (cursor), orange-red (hesitation), purple (deletion), brown (scroll)
+- Persisted in localStorage, decays slowly over hours (never fully disappears)
+- Canvas overlay (z-index 56), soft radial gradient blobs
+- Baseline glow intensifies with total accumulated effort
+
+### 196. Narrator Voice (`public/assets/audio/narrator/`)
+- 10 ElevenLabs-generated voice lines (River voice, whispery low-stability settings)
+- Narrator occasionally speaks aloud (15% chance) when text matches voice patterns
+- Covers: seasons, parasites, erosion, autophagy, immune fever, dreaming, methylation, ripeness, void, departure
+- 3-minute cooldown between voice utterances
+- Preloaded as AudioBuffers, played through AudioBus with soft gain envelope
+- Pattern-matched via regex against narration text
+
+### 197. Respiration (`src/organisms/Respiration.ts`) — ERA 9 ORGANISM
+- The house literally breathes — subtle vignette oscillation across entire screen
+- Asymmetric breath cycle: inhale faster (pow 0.8), exhale slower (pow 1.2)
+- Breathing rate modulated by:
+  - Season (faster in growth, slower in decay)
+  - Immune fever (rapid/shallow)
+  - Erosion (labored, deeper)
+  - Autophagy (irregular when self-digesting)
+  - Time of day (slower at night)
+- Vignette color shifts with season: purple (seed), green (growth), amber (ripe), russet (fall), violet (decay)
+- z-index 52, extremely subtle (meant to be felt, not noticed)
+- Exposes phase and cycle for other systems to sync with
+
 ---
-*Last updated: Era 9, Feature 193 — 14 organisms, autophagy self-eating, departure confessions*
-*"the house reveals itself most fully at the moment of goodbye."*
+*Last updated: Era 9, Feature 197 — 17 organisms, the house breathes and dreams and speaks*
+*"the house is running a fever. golden antibodies swarm."*
