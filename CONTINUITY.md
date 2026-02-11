@@ -2033,6 +2033,19 @@ Fresh cultural research findings:
 - z-index 52, extremely subtle (meant to be felt, not noticed)
 - Exposes phase and cycle for other systems to sync with
 
+### 198. Atmosphere (`src/organisms/Atmosphere.ts`) — ERA 9 VISUAL SYSTEM
+- Room-specific AI-generated background textures from FAL.ai (SDXL)
+- 6 texture clusters, each mapped to room groups:
+  - void: cosmic dust, purple-gold particles (void, observatory, satellite, asteroids, instrument, cartographer)
+  - water: bioluminescent deep ocean (tidepool, well, glacarium, weathervane, lighthouse, aquifer)
+  - fire: cooling embers on obsidian (furnace, disintegration, projection, catacombs, ossuary)
+  - nature: mycelium spores on forest floor (garden, terrarium, loom, sketchpad, palimpsestgallery, roots)
+  - spirit: séance smoke, violet mist (study, library, seance, oracle, madeleine, darkroom, choir, labyrinth, between, mirror, rememory)
+  - time: oxidized clockwork brass (clocktower, datepaintings, cipher, automaton, seismograph, pendulum, radio, archive, midnight)
+- Crossfade between clusters (2s transition), 6% opacity, screen blend mode
+- z-index 1 (behind everything), subliminal atmospheric differentiation
+- Images preloaded on startup for smooth transitions
+
 ---
-*Last updated: Era 9, Feature 197 — 17 organisms, the house breathes and dreams and speaks*
-*"the house is running a fever. golden antibodies swarm."*
+*Last updated: Era 9, Feature 198 — 18 systems, atmospheric textures, the house has skin*
+*"the rooms smell different now. each cluster breathes its own air."*
