@@ -66,6 +66,9 @@ interface NarratorDeps {
   getAvgAutophagy?: () => number
   getDreamIntensity?: () => number
   getDreamDepth?: () => string
+  getTideLevel?: () => number
+  getTideHighWater?: () => number
+  getBatteryLevel?: () => number | null
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -222,6 +225,29 @@ const GENERATORS: NarrationGenerator[] = [
     if (intensity > 0.4) return 'the house is still waking up. its dreams cling to the walls.'
     if (intensity > 0.1) return 'the rooms are settling. the house was dreaming while you were gone.'
     if (depth === 'light') return 'a brief sleep. the house dozed. it dreamed of particles.'
+    return null
+  },
+
+  // Tide narrations — the water level of the house
+  (d) => {
+    const level = d.getTideLevel?.()
+    const highWater = d.getTideHighWater?.()
+    if (level === undefined) return null
+    if (level > 0.8) return 'the tide is high. hidden content surfaces. the house is full of you.'
+    if (level > 0.6) return 'the water rises with your presence. rooms that were dry are filling.'
+    if (level < 0.1 && highWater !== undefined && highWater > 0.5) {
+      return 'the tide has receded past its old watermarks. the drought deepens.'
+    }
+    if (level < 0.2) return 'the house is drying out. presence is scarce. the foundation shows.'
+    return null
+  },
+
+  // Mortality narrations — battery awareness
+  (d) => {
+    const battery = d.getBatteryLevel?.()
+    if (battery === null || battery === undefined) return null
+    if (battery < 0.1) return 'the device flickers. the house holds on.'
+    if (battery < 0.2) return 'your battery is low. the house knows this feeling — running out of time.'
     return null
   },
 

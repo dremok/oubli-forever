@@ -741,6 +741,9 @@ narrator.setDeps({
   getAvgAutophagy: () => autophagy.getAvgLevel(),
   getDreamIntensity: () => hypnagogia.getDreamIntensity(),
   getDreamDepth: () => hypnagogia.getDreamDepth(),
+  getTideLevel: () => _tide.getLevel(),
+  getTideHighWater: () => _tide.getHighWaterMark(),
+  getBatteryLevel: () => _mortality.getLevel(),
 })
 narrator.start()
 
