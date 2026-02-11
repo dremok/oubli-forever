@@ -54,13 +54,14 @@ After context compaction/reset:
 - **Intentional imperfection is the 2026 aesthetic** — visible process marks, scan artifacts, hand-drawn textures over digital geometry. "Guaranteed human" is a premium. Oubli should feel made, not generated.
 - **Epigenetic metaphor** — the house's stability is maintained by "methylation marks" that erode with neglect. Content transposes between rooms uninvited when marks decay. Attention protects; absence degrades.
 - **Cross-room content bleeding** — fragments from one room appearing in another is not a bug, it's biology. Transposable elements, methylation decay, memory bleed. The house's genome is becoming unstable.
-- **Irreversible loss mechanics** — some resources never come back. Not everything in Oubli should be cyclical. Some features should permanently drain, permanently scar, permanently forget. Bankruptcy as design principle.
 - **Autophagy as survival** — Vanderbilt ER-phagy (Feb 2026): cells dismantle 70% of their own factory to survive aging. Long-lived organisms do it sooner. The house should strip itself to endure. Emptiness is health.
 - **Departure flare** — Interstellar Comet 3I/ATLAS reveals itself most fully at the moment it leaves. Content should erupt from rooms as visitors depart. The brightest revelations come at goodbye.
-- **Speech contextual biasing** — Chrome 142 Web Speech API now accepts phrase lists. Rooms that listen for specific words (room names, organism terms) can actually recognize them reliably. Voice as navigation.
 - **Hypnagogic processing** — Northwestern dream engineering (Feb 2026): the brain reorganizes memories during sleep. The house should process and reorganize during visitor absence. What changes when no one is watching?
 - **Effort residue as art** — Michael Joo "Sweat Models" (Feb 2026): the invisible labor of interaction (cursor distance, hesitation, deletions) should leave visible traces. Not what you did, but what it cost you.
 - **Respiration as architecture** — the house should breathe. Not metaphorically — literally. Vignette oscillation, asymmetric cycles, seasonal modulation. A house that can stop breathing is a house that's alive.
+- **Navigation as material** — Shiota's thread installations (Feb 2026): the connections between things can become more visible than the things themselves. Accumulated paths through the house should leave physical residue.
+- **Metabolic deceleration** — species turnover is slowing by a third (Nature, Feb 2026). The house should not stay dynamic forever. Over weeks, content changes less often. The engine seizes. Stasis is not death — it's the absence of replacement.
+- **Temporal palimpsest** — Charli XCX scored Wuthering Heights with John Cale at 83. Four eras in one object (1847/1960s/2024/2026). Rooms can quote other rooms across time. Adaptation is never the original.
 
 ## Cultural Grounding — CRITICAL
 - **Every new feature must be inspired by something real** — current events, cultural trends, scientific discoveries, art movements, technological shifts, social phenomena happening NOW (2025-2026).

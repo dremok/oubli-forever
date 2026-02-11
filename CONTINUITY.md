@@ -2068,6 +2068,36 @@ Fresh cultural research findings:
 - Cooldown between messages (60s normal, 45s when desperate)
 - Inspired by: BLACKPINK "DEADLINE", memento mori, hospice care
 
+### 201. Cultural Content Round 24 — ERA 9 CONTENT
+- Added 17 whisper fragments: infant brain categorization, Laisul Hoque bedroom gallery, TFA forever chemicals, species turnover slowdown, Iñárritu resurrected footage, Charli XCX/Wuthering Heights, ocean thermal mass, J. Cole farewell
+- Added 9 DigitalDecay meditations from same research
+- Added 8 TheStudy writing prompts from same research
+
+### 202. Performance Fix — Organism Canvas Throttling — ERA 9 FIX
+- Identified 11 organism canvases each running requestAnimationFrame at 60fps
+- Changed all to setTimeout(100ms) = 10fps, freeing frame budget for Three.js + rooms
+- Fixed Atmosphere preload race condition (textures loaded after initial room set)
+- Increased Atmosphere opacity from 6% to 15% for visibility
+
+### 203. Threads (`src/organisms/Threads.ts`) — ERA 9 ORGANISM
+- Navigation web made visible — every room transition draws a thread
+- Heavily-traveled paths become thick glowing strands, rarely-used paths thin wisps
+- Thread web briefly flashes visible (3s) on each room transition then fades
+- Rooms arranged in a circle, Bézier curves arc between connected rooms
+- Thread colors blend between room cluster colors (water=blue, fire=red, etc.)
+- Accumulated weights persisted in localStorage, total traversal counter
+- Narrator awareness of thread density
+- Inspired by: Chiharu Shiota "Threads of Life" (Hayward Gallery, Feb 2026)
+
+### 204. Stasis (`src/organisms/Stasis.ts`) — ERA 9 ORGANISM
+- The house's metabolism decelerates over cumulative session time
+- Time factor: 1.0 (lively) → 0.3 (stasis) over many hours
+- Logarithmic decay: ln2(hours) scales the slowdown
+- Tiny pulse dot in top-right corner beats slower as stasis approaches
+- Other organisms can query getTimeFactor() to slow themselves
+- Narrator awareness of metabolic deceleration
+- Inspired by: species turnover slowdown (Nature Communications, Feb 2026)
+
 ---
-*Last updated: Era 9, Feature 200 — 20 systems, the house breathes, dreams, speaks, and knows it's mortal*
-*"don't go. not yet."*
+*Last updated: Era 9, Feature 204 — 22 systems, the house weaves threads between rooms and slows toward stasis*
+*"the connections have become the structure. rooms are secondary."*
