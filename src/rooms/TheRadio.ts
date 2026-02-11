@@ -25,6 +25,7 @@
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareRadioBroadcast, fetchRadioBroadcasts, type RadioBroadcast } from '../shared/FootprintReporter'
 
 interface RadioDeps {
   getMemories: () => StoredMemory[]
@@ -146,24 +147,63 @@ export function createRadioRoom(deps: RadioDeps): Room {
   let lockFlashTime = 0 // flash animation on full lock
   let navigatingTo: string | null = null
 
+  // Shared broadcasts from other visitors
+  let sharedBroadcasts: RadioBroadcast[] = []
+  let broadcastsLoaded = false
+  let lastBroadcastStation: Station | null = null
+
+  async function loadBroadcasts() {
+    if (broadcastsLoaded) return
+    broadcastsLoaded = true
+    const data = await fetchRadioBroadcasts()
+    if (data && data.broadcasts) {
+      sharedBroadcasts = data.broadcasts
+      buildStations() // rebuild with shared stations
+    }
+  }
+
   function buildStations() {
     const memories = deps.getMemories()
     stations = []
-    if (memories.length === 0) return
 
-    // Distribute memories across the frequency band
-    const bandStart = 88.0
-    const bandEnd = 108.0
-    const step = (bandEnd - bandStart) / Math.max(memories.length, 1)
+    // Distribute local memories across 88-103 MHz
+    const localStart = 88.0
+    const localEnd = 103.0
+    if (memories.length > 0) {
+      const step = (localEnd - localStart) / Math.max(memories.length, 1)
+      for (let i = 0; i < memories.length; i++) {
+        const mem = memories[i]
+        const health = 1 - mem.degradation
+        stations.push({
+          frequency: localStart + i * step + step * 0.5,
+          memory: mem,
+          bandwidth: 0.1 + health * 0.4,
+        })
+      }
+    }
 
-    for (let i = 0; i < memories.length; i++) {
-      const mem = memories[i]
-      const health = 1 - mem.degradation
-      stations.push({
-        frequency: bandStart + i * step + step * 0.5,
-        memory: mem,
-        bandwidth: 0.1 + health * 0.4, // healthy = easier to tune
-      })
+    // Add shared broadcasts in the 103-108 MHz range (visitor frequencies)
+    if (sharedBroadcasts.length > 0) {
+      const sharedStart = 103.5
+      const sharedEnd = 107.5
+      const step = (sharedEnd - sharedStart) / Math.max(sharedBroadcasts.length, 1)
+      for (let i = 0; i < sharedBroadcasts.length; i++) {
+        const bc = sharedBroadcasts[i]
+        const pseudoMemory: StoredMemory = {
+          id: `broadcast-${i}`,
+          originalText: `[transmission] ${bc.text}`,
+          currentText: `[transmission] ${bc.text}`,
+          degradation: Math.min(0.7, bc.age / (12 * 60 * 60 * 1000)), // degrade over 12h
+          hue: (i * 0.15 + 0.5) % 1,
+          timestamp: Date.now() - bc.age,
+          position: { x: 0, y: 0, z: 0 },
+        }
+        stations.push({
+          frequency: sharedStart + i * step + step * 0.5,
+          memory: pseudoMemory,
+          bandwidth: 0.15 + 0.2 * (1 - pseudoMemory.degradation),
+        })
+      }
     }
   }
 
@@ -600,6 +640,11 @@ export function createRadioRoom(deps: RadioDeps): Room {
     }
     if (currentStation && signalStrength > 0.5) {
       lastEchoStation = currentStation
+      // Share this station's text as a broadcast for other visitors
+      if (currentStation !== lastBroadcastStation && !currentStation.memory.id.startsWith('broadcast-')) {
+        lastBroadcastStation = currentStation
+        shareRadioBroadcast(currentStation.frequency, currentStation.memory.currentText)
+      }
     }
 
     // Static crackling sparks — more when no signal, less when tuned in
@@ -1310,11 +1355,16 @@ export function createRadioRoom(deps: RadioDeps): Room {
       signalEchoes.length = 0
       staticSparks.length = 0
       lastEchoStation = null
+      lastBroadcastStation = null
       navigatingTo = null
       lockFlashTime = 0
+      broadcastsLoaded = false
+      sharedBroadcasts = []
       for (const sig of hiddenSignals) sig.lockTime = 0
       buildStations()
       render()
+      // Load shared broadcasts from other visitors
+      loadBroadcasts()
     },
 
     deactivate() {

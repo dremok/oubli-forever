@@ -60,6 +60,12 @@ const sharedStrokes = []
 /** @type {{ text: string, writtenBy: string, writtenAt: number }[]} */
 const ghostWritings = []
 
+/** @type {{ question: string, response: string, askedBy: string, askedAt: number }[]} */
+const seanceExchanges = []
+
+/** @type {{ freq: number, text: string, broadcastBy: string, broadcastAt: number }[]} */
+const radioBroadcasts = []
+
 // Prune old room activity every 30s
 setInterval(() => {
   const cutoff = Date.now() - 60000 // 1 minute
@@ -496,6 +502,79 @@ async function handleAPI(req, res) {
     }))
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ plants: result, totalPlants: gardenPlants.length }))
+    return true
+  }
+
+  // POST /api/seance/exchange — store a question + void response
+  if (url.pathname === '/api/seance/exchange' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { question, response } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!question || !response || question.length > 500 || response.length > 500) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'question and response required (max 500 chars)' }))
+        return true
+      }
+      seanceExchanges.push({ question, response, askedBy: visitor, askedAt: Date.now() })
+      while (seanceExchanges.length > 200) seanceExchanges.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalExchanges: seanceExchanges.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/seance/exchange — fetch exchanges from other visitors
+  if (url.pathname === '/api/seance/exchange' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const others = seanceExchanges.filter(e => e.askedBy !== visitor)
+    const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 5)
+    const result = shuffled.map(e => ({
+      question: e.question,
+      response: e.response,
+      age: Date.now() - e.askedAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ exchanges: result, totalExchanges: seanceExchanges.length }))
+    return true
+  }
+
+  // POST /api/radio/broadcast — share a radio transmission
+  if (url.pathname === '/api/radio/broadcast' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { freq, text } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!text || text.length > 300) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'text required (max 300 chars)' }))
+        return true
+      }
+      radioBroadcasts.push({ freq: freq || 0, text, broadcastBy: visitor, broadcastAt: Date.now() })
+      while (radioBroadcasts.length > 100) radioBroadcasts.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalBroadcasts: radioBroadcasts.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/radio/broadcast — fetch radio transmissions from others
+  if (url.pathname === '/api/radio/broadcast' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const others = radioBroadcasts.filter(b => b.broadcastBy !== visitor)
+    const result = others.slice(-8).map(b => ({
+      freq: b.freq,
+      text: b.text,
+      age: Date.now() - b.broadcastAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ broadcasts: result, totalBroadcasts: radioBroadcasts.length }))
     return true
   }
 

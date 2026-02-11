@@ -220,3 +220,69 @@ export async function fetchGhostWritings(): Promise<{ writings: GhostWriting[]; 
     return null
   }
 }
+
+/** Share a séance question + void response */
+export function shareSeanceExchange(question: string, response: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/seance/exchange`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ question: question.slice(0, 500), response: response.slice(0, 500) }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface SeanceExchange {
+  question: string
+  response: string
+  age: number
+}
+
+/** Fetch séance exchanges from other visitors */
+export async function fetchSeanceExchanges(): Promise<{ exchanges: SeanceExchange[]; totalExchanges: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/seance/exchange`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+/** Share a radio broadcast */
+export function shareRadioBroadcast(freq: number, text: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/radio/broadcast`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ freq, text: text.slice(0, 300) }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface RadioBroadcast {
+  freq: number
+  text: string
+  age: number
+}
+
+/** Fetch radio broadcasts from other visitors */
+export async function fetchRadioBroadcasts(): Promise<{ broadcasts: RadioBroadcast[]; totalBroadcasts: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/radio/broadcast`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}

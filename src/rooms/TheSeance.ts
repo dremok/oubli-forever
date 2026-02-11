@@ -24,6 +24,7 @@ import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { createSpeechSession, type SpeechSession } from '../voice/SpeechHelper'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareSeanceExchange, fetchSeanceExchanges, type SeanceExchange } from '../shared/FootprintReporter'
 
 // Oracle response templates — the void speaks in riddles
 const ORACLE_TEMPLATES = [
@@ -143,6 +144,19 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
   let clickedWisp = -1
   let clickTime = 0
 
+  // Shared séance — exchanges from other visitors
+  let otherExchanges: SeanceExchange[] = []
+  let exchangesLoaded = false
+
+  async function loadOtherExchanges() {
+    if (exchangesLoaded) return
+    exchangesLoaded = true
+    const data = await fetchSeanceExchanges()
+    if (data && data.exchanges) {
+      otherExchanges = data.exchanges
+    }
+  }
+
   // --- Audio state ---
   let audioInitialized = false
   let audioMaster: GainNode | null = null
@@ -191,6 +205,14 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
 
   function generateResponse(question: string): string {
     const memories = deps.getMemories()
+
+    // 25% chance to channel another visitor's response if available
+    if (otherExchanges.length > 0 && Math.random() < 0.25) {
+      const exchange = otherExchanges[Math.floor(Math.random() * otherExchanges.length)]
+      // Remove it so we don't repeat
+      otherExchanges.splice(otherExchanges.indexOf(exchange), 1)
+      return `a spirit whispers: "${exchange.response}"`
+    }
 
     if (memories.length === 0) {
       return EMPTY_RESPONSES[Math.floor(Math.random() * EMPTY_RESPONSES.length)]
@@ -343,6 +365,9 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
         response = generateResponse(text)
       }
       addMessage(response, 'void')
+
+      // Share this exchange with other visitors
+      shareSeanceExchange(text, response)
 
       // Speak the response if TTS is available
       deps.speakText?.(response)
@@ -1410,6 +1435,10 @@ export function createSeanceRoom(deps: SeanceDeps): Room {
       initAtmosphere()
       atmosActive = true
       atmosAnimFrame = requestAnimationFrame(renderAtmosphere)
+      // Load exchanges from other visitors
+      exchangesLoaded = false
+      otherExchanges = []
+      loadOtherExchanges()
     },
 
     deactivate() {
