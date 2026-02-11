@@ -165,6 +165,27 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
   }
   let ghostCards: GhostCard[] = []
 
+  // ── Three-card spread state ──
+  const SPREAD_LABELS = ['PAST', 'PRESENT', 'FUTURE']
+  let spreadMode = false
+  let spreadCards: { card: Card; reversed: boolean; flipAnim: number; revealed: boolean; revealTime: number }[] = []
+  let spreadDrawing = false
+
+  // ── Reading journal ──
+  interface JournalEntry {
+    date: number
+    type: 'single' | 'spread'
+    cards: { name: string; suit: string; reading: string; reversed: boolean }[]
+  }
+  const JOURNAL_KEY = 'oubli-oracle-journal'
+  let journal: JournalEntry[] = []
+  let journalOpen = false
+  let journalScroll = 0
+  let journalEl: HTMLElement | null = null
+
+  // ── Key handler ref ──
+  let keyHandler: ((e: KeyboardEvent) => void) | null = null
+
   // Reversed reading modifiers
   const REVERSED_PREFIXES = [
     'inverted: ', 'shadow: ', 'blocked: ', 'resisted: ',
@@ -548,6 +569,273 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     totalDraws++
     saveProgress()
     playCardDrawSound()
+
+    // Save single draw to journal
+    saveJournalEntry('single', [{ card: drawnCard!, reversed: isReversed }])
+  }
+
+  function drawSpread() {
+    if (spreadDrawing || drawing) return
+    spreadMode = true
+    spreadDrawing = true
+    spreadCards = []
+    ghostCards = []
+    drawnCard = null
+    readingRevealed = false
+    particles = []
+    constellationLines = []
+    constellationRevealTimer = 0
+
+    for (let i = 0; i < 3; i++) {
+      if (deckIndex >= deck.length) {
+        deck = generateDeck()
+        deckIndex = 0
+        playShuffleWhisper()
+      }
+      spreadCards.push({
+        card: deck[deckIndex++],
+        reversed: Math.random() < 0.25,
+        flipAnim: -i * 0.4,
+        revealed: false,
+        revealTime: 0,
+      })
+    }
+    totalDraws += 3
+    saveProgress()
+    playCardDrawSound()
+  }
+
+  function loadJournal() {
+    try {
+      const stored = localStorage.getItem(JOURNAL_KEY)
+      if (stored) journal = JSON.parse(stored)
+    } catch { journal = [] }
+  }
+
+  function saveJournalEntry(type: 'single' | 'spread', cards: { card: Card; reversed: boolean }[]) {
+    const entry: JournalEntry = {
+      date: Date.now(),
+      type,
+      cards: cards.map(c => ({
+        name: c.card.name,
+        suit: c.card.suit,
+        reading: c.reversed
+          ? REVERSED_PREFIXES[totalDraws % REVERSED_PREFIXES.length] + c.card.reading
+          : c.card.reading,
+        reversed: c.reversed,
+      })),
+    }
+    journal.unshift(entry)
+    if (journal.length > 50) journal = journal.slice(0, 50)
+    try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(journal)) } catch {}
+  }
+
+  function toggleJournal() {
+    journalOpen = !journalOpen
+    journalScroll = 0
+    if (journalOpen) {
+      showJournalEl()
+    } else {
+      hideJournalEl()
+    }
+  }
+
+  function showJournalEl() {
+    if (journalEl) { journalEl.style.display = 'block'; updateJournalContent(); return }
+    if (!overlay) return
+
+    journalEl = document.createElement('div')
+    journalEl.style.cssText = `
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(8, 5, 15, 0.94);
+      display: flex; flex-direction: column; align-items: center;
+      overflow-y: auto; z-index: 10; padding: 40px 20px;
+      scrollbar-width: thin; scrollbar-color: rgba(100,80,140,0.2) transparent;
+    `
+    journalEl.addEventListener('wheel', (e) => e.stopPropagation())
+    journalEl.addEventListener('click', (e) => {
+      if (e.target === journalEl) toggleJournal()
+    })
+    overlay.appendChild(journalEl)
+    updateJournalContent()
+  }
+
+  function updateJournalContent() {
+    if (!journalEl) return
+    const entries = journal.slice(0, 30)
+
+    let html = `
+      <div style="max-width: 500px; width: 100%;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <div style="font: 16px 'Cormorant Garamond', serif; color: rgba(200,180,220,0.3); letter-spacing: 3px;">READING JOURNAL</div>
+          <div style="font: 11px monospace; color: rgba(140,120,160,0.15); margin-top: 6px;">${journal.length} readings recorded</div>
+        </div>
+    `
+
+    if (entries.length === 0) {
+      html += `<div style="text-align: center; color: rgba(200,180,220,0.1); font: 13px 'Cormorant Garamond', serif; margin-top: 40px;">no readings yet. draw a card to begin.</div>`
+    }
+
+    for (const entry of entries) {
+      const date = new Date(entry.date)
+      const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
+      const isSpread = entry.type === 'spread'
+
+      html += `<div style="border-top: 1px solid rgba(100,80,140,0.08); padding: 16px 0; margin-bottom: 4px;">`
+      html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">`
+      html += `<span style="font: 10px monospace; color: rgba(140,120,160,0.12);">${dateStr}</span>`
+      if (isSpread) html += `<span style="font: 9px monospace; color: rgba(200,160,255,0.15); letter-spacing: 1px;">SPREAD</span>`
+      html += `</div>`
+
+      for (let ci = 0; ci < entry.cards.length; ci++) {
+        const c = entry.cards[ci]
+        const posLabel = isSpread ? `<span style="color: rgba(160,140,200,0.12); font: 9px monospace; margin-right: 8px;">${SPREAD_LABELS[ci]}</span>` : ''
+        html += `<div style="margin: 4px 0;">`
+        html += `${posLabel}<span style="font: 13px 'Cormorant Garamond', serif; color: rgba(200,180,220,0.2);">${c.name}${c.reversed ? ' ↓' : ''}</span>`
+        html += `<span style="font: 10px monospace; color: rgba(140,120,160,0.08); margin-left: 8px;">${c.suit.toLowerCase()}</span>`
+        html += `</div>`
+        html += `<div style="font: 12px 'Cormorant Garamond', serif; color: rgba(200,190,180,0.1); margin: 2px 0 6px ${isSpread ? '40px' : '0'}; font-style: italic;">${c.reading}</div>`
+      }
+      html += `</div>`
+    }
+
+    html += `</div>`
+    journalEl.innerHTML = html
+  }
+
+  function hideJournalEl() {
+    if (journalEl) journalEl.style.display = 'none'
+  }
+
+  function renderSpreadCards(ctx: CanvasRenderingContext2D, w: number, h: number) {
+    const cardW = Math.min(w * 0.22, 160)
+    const cardH = cardW * 1.5
+    const gap = cardW * 0.3
+    const totalCardW = cardW * 3 + gap * 2
+    const startX = (w - totalCardW) / 2
+
+    let allRevealed = true
+    for (const sc of spreadCards) {
+      sc.flipAnim += 0.018
+      if (sc.flipAnim < 1) allRevealed = false
+
+      if (sc.flipAnim >= 0.5 && !sc.revealed) {
+        sc.revealed = true
+        sc.revealTime = time
+        playRevealTone(sc.card.suit)
+        spawnParticles(sc.card, startX + spreadCards.indexOf(sc) * (cardW + gap) + cardW / 2, h / 2 - 20, cardW, cardH)
+      }
+    }
+    if (allRevealed && spreadDrawing) {
+      spreadDrawing = false
+      saveJournalEntry('spread', spreadCards)
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const sc = spreadCards[i]
+      const cx = startX + i * (cardW + gap) + cardW / 2
+      const cy = h / 2 - 20
+      const cardX = cx - cardW / 2
+      const cardY = cy - cardH / 2
+
+      const flipProgress = Math.max(0, Math.min(1, sc.flipAnim))
+      if (flipProgress <= 0) continue // not yet started
+      const scaleX = Math.cos(flipProgress * Math.PI)
+
+      // Shadow
+      if (flipProgress > 0.3) {
+        const sa = (flipProgress - 0.3) * 0.1
+        const sg = ctx.createRadialGradient(cx, cardY + cardH + 5, 0, cx, cardY + cardH + 5, cardW * 0.5)
+        sg.addColorStop(0, `rgba(0,0,0,${sa})`)
+        sg.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.fillStyle = sg
+        ctx.fillRect(cx - cardW, cardY + cardH - 3, cardW * 2, cardW * 0.5)
+      }
+
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.scale(Math.abs(scaleX) || 0.01, 1)
+      ctx.translate(-cx, -cy)
+
+      if (flipProgress >= 0.5) {
+        // Card face
+        ctx.fillStyle = 'rgba(15, 12, 25, 0.95)'
+        ctx.fillRect(cardX, cardY, cardW, cardH)
+        ctx.strokeStyle = `hsla(${sc.card.hue}, 30%, 40%, 0.3)`
+        ctx.lineWidth = 1.5
+        ctx.strokeRect(cardX + 4, cardY + 4, cardW - 8, cardH - 8)
+
+        // Symbol
+        const symRot = (time - sc.revealTime) * 0.1 + (sc.reversed ? Math.PI : 0)
+        ctx.save()
+        ctx.translate(cx, cardY + cardH * 0.3)
+        ctx.rotate(symRot)
+        ctx.translate(-cx, -(cardY + cardH * 0.3))
+        drawSymbol(ctx, sc.card.symbol, cx, cardY + cardH * 0.3, cardW * 0.1, 0.3, sc.reversed ? (sc.card.hue + 180) % 360 : sc.card.hue)
+        ctx.restore()
+
+        // Name
+        ctx.font = `${Math.max(10, cardW * 0.08)}px "Cormorant Garamond", serif`
+        const nh = sc.reversed ? (sc.card.hue + 180) % 360 : sc.card.hue
+        ctx.fillStyle = `hsla(${nh}, 30%, 65%, 0.45)`
+        ctx.textAlign = 'center'
+        ctx.fillText(sc.reversed ? `${sc.card.name} ↓` : sc.card.name, cx, cardY + cardH * 0.5)
+
+        // Suit
+        ctx.font = `${Math.max(8, cardW * 0.06)}px monospace`
+        ctx.fillStyle = `hsla(${nh}, 20%, 50%, 0.15)`
+        ctx.fillText(sc.card.suit.toLowerCase(), cx, cardY + cardH * 0.55)
+
+        // Reading
+        const readText = sc.reversed
+          ? REVERSED_PREFIXES[totalDraws % REVERSED_PREFIXES.length] + sc.card.reading
+          : sc.card.reading
+        const sinceReveal = sc.revealed ? time - sc.revealTime : 0
+        ctx.font = `${Math.max(9, cardW * 0.065)}px "Cormorant Garamond", serif`
+        const rWords = readText.split(' ')
+        const maxRW = cardW - 16
+        const rLines: string[] = []
+        let rLine = ''
+        let rWordIdx = 0
+        for (const word of rWords) {
+          const test = rLine ? rLine + ' ' + word : word
+          if (ctx.measureText(test).width > maxRW && rLine) { rLines.push(rLine); rLine = word }
+          else rLine = test
+          rWordIdx++
+        }
+        if (rLine) rLines.push(rLine)
+        let rY = cardY + cardH * 0.62
+        let globalWordIdx = 0
+        for (const line of rLines) {
+          const wa = Math.min(1, Math.max(0, (sinceReveal - globalWordIdx * 0.08) / 0.3))
+          ctx.fillStyle = `rgba(200, 190, 180, ${0.2 * wa})`
+          ctx.fillText(line, cx, rY)
+          globalWordIdx += line.split(' ').length
+          rY += Math.max(11, cardW * 0.07)
+        }
+      } else {
+        // Card back
+        ctx.fillStyle = 'rgba(20, 15, 35, 0.95)'
+        ctx.fillRect(cardX, cardY, cardW, cardH)
+        ctx.strokeStyle = 'rgba(100, 80, 140, 0.2)'
+        ctx.lineWidth = 1.5
+        ctx.strokeRect(cardX + 4, cardY + 4, cardW - 8, cardH - 8)
+        for (let ri = 0; ri < 3; ri++) {
+          ctx.strokeStyle = 'rgba(100, 80, 140, 0.04)'
+          ctx.beginPath()
+          ctx.arc(cx, cy, 8 + ri * 8, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+      }
+
+      ctx.restore()
+
+      // Position label
+      ctx.font = `${Math.max(9, cardW * 0.06)}px monospace`
+      ctx.fillStyle = `rgba(160, 140, 200, ${0.06 + (sc.revealed ? 0.04 : 0)})`
+      ctx.textAlign = 'center'
+      ctx.fillText(SPREAD_LABELS[i], cx, cy + cardH / 2 + 18)
+    }
   }
 
   function drawSymbol(ctx: CanvasRenderingContext2D, symbol: string, cx: number, cy: number, size: number, alpha: number, hue: number) {
@@ -789,7 +1077,10 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       }
     }
 
-    if (drawnCard) {
+    // ── Spread or single card rendering ──
+    if (spreadMode && spreadCards.length === 3) {
+      renderSpreadCards(ctx, w, h)
+    } else if (drawnCard) {
       const cardW = Math.min(w * 0.4, 280)
       const cardH = cardW * 1.5
       const cardX = w / 2 - cardW / 2
@@ -1189,11 +1480,18 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     }
 
     // Draw prompt
-    if (!drawing) {
+    if (!drawing && !spreadDrawing) {
       ctx.font = '12px "Cormorant Garamond", serif'
-      ctx.fillStyle = `rgba(200, 180, 220, ${0.1 + Math.sin(time * 1.5) * 0.04})`
+      const promptAlpha = 0.1 + Math.sin(time * 1.5) * 0.04
+      ctx.fillStyle = `rgba(200, 180, 220, ${promptAlpha})`
       ctx.textAlign = 'center'
-      ctx.fillText('click to draw', w / 2, h * 0.96)
+      ctx.fillText('click to draw  ·  s for spread', w / 2, h * 0.96)
+      // Journal hint
+      if (journal.length > 0) {
+        ctx.font = '10px monospace'
+        ctx.fillStyle = `rgba(140, 120, 160, ${promptAlpha * 0.4})`
+        ctx.fillText('j — journal', w / 2, h * 0.98)
+      }
     }
 
     // Title
@@ -1276,8 +1574,32 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
             }
           }
         }
+        // Reset spread mode on single draw
+        if (spreadMode && !spreadDrawing) {
+          spreadMode = false
+          spreadCards = []
+        }
         drawCard()
       })
+
+      // Keyboard handler for spread + journal
+      keyHandler = (e: KeyboardEvent) => {
+        if (!active) return
+        if (e.key === 's' || e.key === 'S') {
+          if (journalOpen) return
+          if (spreadMode && !spreadDrawing) {
+            spreadMode = false
+            spreadCards = []
+          }
+          drawSpread()
+        } else if (e.key === 'j' || e.key === 'J') {
+          toggleJournal()
+        } else if (e.key === 'Escape' && journalOpen) {
+          toggleJournal()
+        }
+      }
+      window.addEventListener('keydown', keyHandler)
+
       canvas.addEventListener('mousemove', (e) => {
         if (!canvas) return
         hoveredPortal = -1
@@ -1318,6 +1640,7 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
     activate() {
       active = true
       loadProgress()
+      loadJournal()
       deck = generateDeck()
       deckIndex = 0
       drawnCard = null
@@ -1333,6 +1656,11 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       constellationStars = []
       constellationLines = []
       constellationRevealTimer = 0
+      spreadMode = false
+      spreadCards = []
+      spreadDrawing = false
+      journalOpen = false
+      hideJournalEl()
       initAudio()
       render()
     },
@@ -1341,12 +1669,15 @@ export function createOracleDeckRoom(deps?: OracleDeckDeps): Room {
       active = false
       cancelAnimationFrame(frameId)
       fadeAudioOut()
+      if (journalOpen) { journalOpen = false; hideJournalEl() }
     },
 
     destroy() {
       active = false
       cancelAnimationFrame(frameId)
       cleanupAudio()
+      if (keyHandler) { window.removeEventListener('keydown', keyHandler); keyHandler = null }
+      journalEl?.remove(); journalEl = null
       overlay?.remove()
     },
   }
