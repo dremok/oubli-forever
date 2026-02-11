@@ -107,6 +107,7 @@ import { Tide } from './organisms/Tide'
 import { Mortality } from './organisms/Mortality'
 import { Threads } from './organisms/Threads'
 import { Stasis } from './organisms/Stasis'
+import { ForeverChemical } from './organisms/ForeverChemical'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -166,6 +167,7 @@ function processNewMemory(text: string) {
   palimpsest.addText(text)
   colorMemory.processText(text)
   ripples.addMemory(memory)
+  foreverChemical.deposit('memory')
 }
 
 // Voice of Absence — speak memories into the void (hold spacebar)
@@ -750,6 +752,7 @@ narrator.setDeps({
   getThreadCount: () => threads.getTotalTraversals(),
   getStasisFactor: () => stasis.getTimeFactor(),
   getSessionCount: () => stasis.getSessionCount(),
+  getForeverDeposits: () => foreverChemical.getTotalActs(),
 })
 narrator.start()
 
@@ -849,6 +852,9 @@ const threads = new Threads()
 
 // Species turnover slowdown (Nature 2026): the house's metabolism decelerates
 const stasis = new Stasis()
+
+// TFA forever chemicals (GRL 2026): preservation acts leave permanent residue
+const foreverChemical = new ForeverChemical()
 
 let _prevRoom = 'void'
 

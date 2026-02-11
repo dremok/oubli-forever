@@ -72,6 +72,7 @@ interface NarratorDeps {
   getThreadCount?: () => number
   getStasisFactor?: () => number
   getSessionCount?: () => number
+  getForeverDeposits?: () => number
 }
 
 type NarrationGenerator = (deps: NarratorDeps) => string | null
@@ -309,6 +310,24 @@ const GENERATORS: NarrationGenerator[] = [
     }
     if (factor < 0.7 && Math.random() < 0.3) {
       return 'the pace of change is decelerating. you can feel it.'
+    }
+    return null
+  },
+
+  // Forever chemical narrations — permanent contamination
+  (deps) => {
+    const deposits = deps.getForeverDeposits?.() ?? 0
+    if (deposits < 20) return null
+
+    if (deposits > 200) {
+      return [
+        'the permanent deposits are everywhere now. the cure became the disease.',
+        'every act of preservation leaves traces that never decay.',
+        'the house is contaminated by the desire to remember.',
+      ][Math.floor(Math.random() * 3)]
+    }
+    if (deposits > 50 && Math.random() < 0.25) {
+      return 'crystalline residue from every memory you saved. it never goes away.'
     }
     return null
   },
