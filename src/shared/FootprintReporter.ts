@@ -286,3 +286,101 @@ export async function fetchRadioBroadcasts(): Promise<{ broadcasts: RadioBroadca
     return null
   }
 }
+
+/** Carve graffiti on a labyrinth wall */
+export function shareLabyrinthGraffiti(text: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/labyrinth/graffiti`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ text: text.slice(0, 100) }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface LabyrinthGraffiti {
+  text: string
+  age: number
+}
+
+/** Fetch graffiti from other maze explorers */
+export async function fetchLabyrinthGraffiti(): Promise<{ graffiti: LabyrinthGraffiti[]; totalGraffiti: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/labyrinth/graffiti`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+/** Scatter ash from a burned memory */
+export function shareFurnaceAsh(text: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/furnace/ash`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ text: text.slice(0, 200) }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface FurnaceAsh {
+  text: string
+  age: number
+}
+
+/** Sift through collective ash */
+export async function fetchFurnaceAsh(): Promise<{ ash: FurnaceAsh[]; totalAsh: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/furnace/ash`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+/** Share a voice placement in the choir */
+export function shareChoirVoice(x: number, y: number, freq: number) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/choir/voices`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ x, y, freq }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface SharedChoirVoice {
+  x: number
+  y: number
+  freq: number
+  age: number
+}
+
+/** Fetch voice placements from other visitors */
+export async function fetchChoirVoices(): Promise<{ voices: SharedChoirVoice[]; totalVoices: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/choir/voices`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}

@@ -24,6 +24,7 @@
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareFurnaceAsh, fetchFurnaceAsh } from '../shared/FootprintReporter'
 
 const CULTURAL_INSCRIPTIONS = [
   'the library of alexandria burned for days. what survived, we call history. what didn\'t, we call mystery.',
@@ -157,6 +158,14 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
 
   // --- Ash floor deposits (persist per session) ---
   let ashDeposits: AshDeposit[] = []
+
+  // --- Shared ash from other visitors ---
+  interface SharedAshDeposit extends AshDeposit {
+    isShared: boolean
+    breathPhase: number
+  }
+  let sharedAshDeposits: SharedAshDeposit[] = []
+  let sharedAshLoaded = false
 
   // --- Fire breathing rhythm ---
   let breathPhase = 0
@@ -529,7 +538,6 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
   function addAshDeposit(text: string) {
     if (!canvas) return
     const w = canvas.width
-    const h = canvas.height
     const fireX = w / 2
     // Ash falls near the fire base
     ashDeposits.push({
@@ -540,6 +548,8 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
     })
     // Limit deposits
     if (ashDeposits.length > 40) ashDeposits.shift()
+    // Share the ash with other visitors
+    shareFurnaceAsh(text.substring(0, 60))
   }
 
   function renderAshFloor() {
@@ -559,6 +569,22 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       ctx.fillStyle = `rgba(120, 100, 80, ${dep.alpha * 0.4})`
       ctx.textAlign = 'center'
       ctx.fillText(dep.text, dep.x, floorY + 6)
+    }
+
+    // Shared ash from other visitors — bluer, more ghostly
+    for (const dep of sharedAshDeposits) {
+      dep.breathPhase += 0.02
+      const breathAlpha = dep.alpha * (0.7 + Math.sin(dep.breathPhase) * 0.3)
+      ctx.fillStyle = `rgba(60, 65, 80, ${breathAlpha})`
+      ctx.beginPath()
+      ctx.ellipse(dep.x, floorY + 4 + Math.sin(dep.breathPhase * 0.7) * 2, dep.size * 2, dep.size * 0.5, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Ghost text — blue-tinted ash
+      ctx.font = '7px "Cormorant Garamond", serif'
+      ctx.fillStyle = `rgba(100, 120, 150, ${breathAlpha * 0.35})`
+      ctx.textAlign = 'center'
+      ctx.fillText(dep.text, dep.x, floorY + 10)
     }
   }
 
@@ -1292,6 +1318,29 @@ export function createFurnaceRoom(deps: FurnaceDeps): Room {
       rebuildList()
       initAudio()
       render()
+
+      // Load shared ash from other visitors (2s delay)
+      if (!sharedAshLoaded) {
+        setTimeout(async () => {
+          if (!active || !canvas) return
+          sharedAshLoaded = true
+          const data = await fetchFurnaceAsh()
+          if (data && data.ash.length > 0) {
+            const w = canvas.width
+            const fireX = w / 2
+            for (const a of data.ash) {
+              sharedAshDeposits.push({
+                x: fireX + (Math.random() - 0.5) * 200,
+                size: 2 + Math.random() * 3,
+                alpha: 0.05 + Math.random() * 0.04,
+                text: a.text.substring(0, 12),
+                isShared: true,
+                breathPhase: Math.random() * Math.PI * 2,
+              })
+            }
+          }
+        }, 2000)
+      }
     },
 
     deactivate() {

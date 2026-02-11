@@ -2153,6 +2153,28 @@ Fresh cultural research findings:
 - Both memory drops and voice drops are shared
 - The well becomes a collective memory pool — everyone's words mixing in the depths
 
+### 211. Multi-user: Garden Shared Plants + Instrument Ghost Notes — ERA 10 MULTI-USER
+- Garden: Other visitors' planted memories appear as cyan-shifted ghostly flora with shimmer
+- Garden: `~` label beneath shared plants, hue+160 visual differentiation
+- Instrument: Notes you play are buffered and shared to server every 10s
+- Instrument: Ghost phrases from other visitors injected as quiet, degraded replays (5s delay on load)
+- Server endpoints: /api/garden/plants, /api/instrument/notes (POST/GET pairs)
+
+### 212. Multi-user: Sketchpad Shared Strokes + Study Ghost Writings — ERA 10 MULTI-USER
+- Sketchpad: Completed strokes shared to server (downsampled to max 100 points)
+- Sketchpad: Ghost strokes from others rendered beneath yours, hue+180 shift, breathing alpha
+- Study: Writing fragments shared every 50 words (last 15 words of current text)
+- Study: Ghost writings from others drift as blue-tinted text in atmosphere canvas
+- Server endpoints: /api/sketchpad/strokes, /api/study/writings (POST/GET pairs)
+
+### 213. Multi-user: Séance Spirit Channeling + Radio Visitor Broadcasts — ERA 10 MULTI-USER
+- Séance: Question+response exchanges shared; 25% chance oracle channels another visitor's response
+- Séance: Spirit whispers prefixed with "a spirit whispers:" — consumed after use
+- Radio: Other visitors' tuned stations become broadcasts in 103-108 MHz band
+- Radio: Broadcasts marked as [transmission] with time-based signal degradation
+- Server endpoints: /api/seance/exchange, /api/radio/broadcast (POST/GET pairs)
+- Total multi-user rooms: 8 (cartographer, well, garden, instrument, sketchpad, study, séance, radio)
+
 ---
-*Last updated: Era 10, Feature 210 — multi-user systems active, the house remembers all who pass through*
-*"desire paths: the grass remembers where everyone actually walks."*
+*Last updated: Era 10, Feature 213 — 8 rooms now have multi-user features, the house is shared*
+*"a spirit whispers: someone was here before you."*

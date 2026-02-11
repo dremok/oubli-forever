@@ -21,6 +21,7 @@
 
 import type { Room } from './RoomManager'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareLabyrinthGraffiti, fetchLabyrinthGraffiti } from '../shared/FootprintReporter'
 
 interface LabyrinthDeps {
   onExit?: () => void
@@ -249,6 +250,14 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   // Inscription hint
   let inscriptionText = ''
   let inscriptionAlpha = 0
+
+  // Graffiti system — multi-user wall messages
+  let graffitiTexts: string[] = []
+  let graffitiLoaded = false
+  let graffitiInputActive = false
+  let graffitiInputText = ''
+  let graffitiInputEl: HTMLInputElement | null = null
+  let graffitiCooldown = 0 // prevent spam
 
   // ===== GHOST FIGURE SYSTEM =====
   // Spectral figures that appear in distant corridors and dissolve as you approach
@@ -563,18 +572,21 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
   let cachedAllTexts: string[] | null = null
   let cachedAllTextsTime = -1
 
-  function getInscriptionText(wx: number, wy: number): { text: string; isMemory: boolean } {
+  function getInscriptionText(wx: number, wy: number): { text: string; isMemory: boolean; isGraffiti: boolean } {
     // Rebuild cache every 5 seconds (memories rarely change)
     if (!cachedAllTexts || time - cachedAllTextsTime > 5) {
       const memTexts = deps.getMemories?.().map(m => m.currentText).filter(t => t.length > 3) ?? []
       const weightedMems = [...memTexts.slice(0, 10), ...memTexts.slice(0, 10), ...memTexts.slice(0, 10)]
-      cachedAllTexts = [...WALL_FRAGMENTS, ...weightedMems]
+      // Graffiti from other visitors mixed in — they look like someone carved them
+      const graffitiPrefixed = graffitiTexts.map(t => `⌇ ${t}`)
+      cachedAllTexts = [...WALL_FRAGMENTS, ...weightedMems, ...graffitiPrefixed]
       cachedAllTextsTime = time
     }
     const idx = Math.floor(cellHash2(wx + 3, wy + 7) * cachedAllTexts.length)
     const text = cachedAllTexts[idx % cachedAllTexts.length]
-    const isMemory = idx >= WALL_FRAGMENTS.length
-    return { text, isMemory }
+    const isMemory = idx >= WALL_FRAGMENTS.length && idx < WALL_FRAGMENTS.length + (deps.getMemories?.().length ?? 0) * 3
+    const isGraffiti = text.startsWith('⌇ ')
+    return { text, isMemory, isGraffiti }
   }
 
   // ===== REGION MANAGEMENT =====
@@ -3395,7 +3407,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
     // Raycasting
     const stripW = w / numRays
-    const visibleInscriptions: { text: string; isMemory: boolean; screenX: number; dist: number; brightness: number; wallTop: number; wallHeight: number; wx: number; wy: number }[] = []
+    const visibleInscriptions: { text: string; isMemory: boolean; isGraffiti: boolean; screenX: number; dist: number; brightness: number; wallTop: number; wallHeight: number; wx: number; wy: number }[] = []
     const visibleObjects: { obj: typeof WALL_OBJECTS[0]; screenX: number; wallTop: number; wallHeight: number; dist: number; brightness: number; wx: number; wy: number }[] = []
 
     for (let i = 0; i < numRays; i++) {
@@ -3436,6 +3448,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
         visibleInscriptions.push({
           text: insc.text,
           isMemory: insc.isMemory,
+          isGraffiti: insc.isGraffiti,
           screenX: i * stripW + stripW / 2,
           dist: correctedDist,
           brightness,
@@ -3478,7 +3491,9 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       const wallY = insc.wallTop + insc.wallHeight * (0.3 + yHash * 0.4)
       const fontSize = Math.max(10, Math.min(16, 22 / insc.dist))
       const alpha = Math.min(0.7, insc.brightness * 0.9) * (0.7 + Math.sin(time * 0.3 + insc.wx * 0.7) * 0.1)
-      const color = insc.isMemory
+      const color = insc.isGraffiti
+        ? `rgba(200, 220, 240, ${alpha * 0.9})`  // chalky blue-white — someone scratched this
+        : insc.isMemory
         ? `rgba(220, 185, 100, ${alpha})`
         : `rgba(170, 160, 190, ${alpha * 0.8})`
 
@@ -3649,7 +3664,7 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     ctx.font = '12px "Cormorant Garamond", serif'
     ctx.fillStyle = 'rgba(140, 120, 160, 0.04)'
     ctx.textAlign = 'center'
-    ctx.fillText('WASD to move · click glowing walls · the labyrinth forgets behind you', w / 2, h - 8)
+    ctx.fillText('WASD to move · click glowing walls · G to carve · the labyrinth forgets behind you', w / 2, h - 8)
 
     // Wall effect overlay
     renderWallEffect(w, h)
@@ -3690,6 +3705,17 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
       e.preventDefault()
       triggerWallEffect()
     }
+
+    // G to carve graffiti on the wall
+    if (key === 'g' && !graffitiInputActive && time > graffitiCooldown) {
+      e.preventDefault()
+      openGraffitiInput()
+    }
+    // Escape to close graffiti input
+    if (key === 'escape' && graffitiInputActive) {
+      e.preventDefault()
+      closeGraffitiInput()
+    }
   }
 
   function handleKeyUp(e: KeyboardEvent) {
@@ -3702,6 +3728,57 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
     initAudio() // ensure audio on first click
     if (lookingAtAnomaly) {
       triggerWallEffect()
+    }
+  }
+
+  function openGraffitiInput() {
+    if (!overlay || graffitiInputActive) return
+    graffitiInputActive = true
+    graffitiInputText = ''
+
+    graffitiInputEl = document.createElement('input')
+    graffitiInputEl.type = 'text'
+    graffitiInputEl.maxLength = 80
+    graffitiInputEl.placeholder = 'carve something on the wall...'
+    graffitiInputEl.style.cssText = `
+      position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+      width: 320px; padding: 8px 14px; background: rgba(20, 15, 25, 0.85);
+      border: 1px solid rgba(200, 220, 240, 0.3); border-radius: 4px;
+      color: rgba(200, 220, 240, 0.9); font: italic 14px "Cormorant Garamond", serif;
+      text-align: center; outline: none; z-index: 100;
+    `
+    graffitiInputEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      e.stopPropagation() // prevent WASD movement while typing
+      if (e.key === 'Enter' && graffitiInputEl!.value.trim()) {
+        const text = graffitiInputEl!.value.trim()
+        shareLabyrinthGraffiti(text)
+        graffitiTexts.push(text)
+        cachedAllTexts = null // force rebuild
+        graffitiCooldown = time + 30 // 30s cooldown
+        closeGraffitiInput()
+      } else if (e.key === 'Escape') {
+        closeGraffitiInput()
+      }
+    })
+    overlay.appendChild(graffitiInputEl)
+    graffitiInputEl.focus()
+  }
+
+  function closeGraffitiInput() {
+    graffitiInputActive = false
+    if (graffitiInputEl) {
+      graffitiInputEl.remove()
+      graffitiInputEl = null
+    }
+  }
+
+  async function loadGraffiti() {
+    if (graffitiLoaded) return
+    graffitiLoaded = true
+    const data = await fetchLabyrinthGraffiti()
+    if (data && data.graffiti.length > 0) {
+      graffitiTexts = data.graffiti.map(g => g.text)
+      cachedAllTexts = null // force rebuild to include graffiti
     }
   }
 
@@ -3822,9 +3899,13 @@ export function createLabyrinthRoom(deps: LabyrinthDeps = {}): Room {
 
       initAudio()
       render()
+
+      // Load graffiti from other explorers (3s delay)
+      setTimeout(() => { if (active) loadGraffiti() }, 3000)
     },
 
     deactivate() {
+      closeGraffitiInput()
       active = false
       cancelAnimationFrame(frameId)
       keys.clear()

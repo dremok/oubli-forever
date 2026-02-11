@@ -30,6 +30,7 @@
 
 import type { Room } from './RoomManager'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareChoirVoice, fetchChoirVoices } from '../shared/FootprintReporter'
 
 interface ChoirDeps {
   switchTo?: (name: string) => void
@@ -124,6 +125,7 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
   // Ghost voice system
   const ghostRecords: GhostRecord[] = []
   let ghostTimer: ReturnType<typeof setInterval> | null = null
+  let remoteVoicesLoaded = false
 
   // Candles for visual depth
   let candles: Candle[] = []
@@ -532,6 +534,10 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
         ghostRecords.push({ x, y, freq, xNorm, yNorm })
         // Keep only last 20 records
         if (ghostRecords.length > 20) ghostRecords.shift()
+        // Share voice placement with other visitors
+        if (canvas) {
+          shareChoirVoice(x / canvas.width, y / canvas.height, freq)
+        }
       }
 
       // Schedule fade out
@@ -1361,6 +1367,28 @@ export function createChoirRoom(deps?: ChoirDeps): Room {
       }, 8000 + Math.random() * 7000)
 
       render()
+
+      // Load shared voice placements from other visitors (4s delay, staggered)
+      if (!remoteVoicesLoaded) {
+        setTimeout(async () => {
+          if (!active || !canvas) return
+          remoteVoicesLoaded = true
+          const data = await fetchChoirVoices()
+          if (data && data.voices.length > 0) {
+            const w = canvas.width
+            const h = canvas.height
+            // Stagger remote ghost voices over 10-30s
+            for (let i = 0; i < data.voices.length; i++) {
+              const v = data.voices[i]
+              const delay = 3000 + i * 4000 + Math.random() * 3000
+              setTimeout(() => {
+                if (!active || !canvas) return
+                addVoice(v.x * canvas.width, v.y * canvas.height, true)
+              }, delay)
+            }
+          }
+        }, 4000)
+      }
     },
 
     deactivate() {

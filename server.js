@@ -66,6 +66,15 @@ const seanceExchanges = []
 /** @type {{ freq: number, text: string, broadcastBy: string, broadcastAt: number }[]} */
 const radioBroadcasts = []
 
+/** @type {{ text: string, writtenBy: string, writtenAt: number }[]} */
+const labyrinthGraffiti = []
+
+/** @type {{ text: string, burnedBy: string, burnedAt: number }[]} */
+const furnaceAsh = []
+
+/** @type {{ x: number, y: number, freq: number, placedBy: string, placedAt: number }[]} */
+const choirVoices = []
+
 // Prune old room activity every 30s
 setInterval(() => {
   const cutoff = Date.now() - 60000 // 1 minute
@@ -575,6 +584,115 @@ async function handleAPI(req, res) {
     }))
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ broadcasts: result, totalBroadcasts: radioBroadcasts.length }))
+    return true
+  }
+
+  // POST /api/labyrinth/graffiti — carve a message on a maze wall
+  if (url.pathname === '/api/labyrinth/graffiti' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { text } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!text || text.length > 100) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'text required (max 100 chars)' }))
+        return true
+      }
+      labyrinthGraffiti.push({ text: text.slice(0, 100), writtenBy: visitor, writtenAt: Date.now() })
+      while (labyrinthGraffiti.length > 200) labyrinthGraffiti.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalGraffiti: labyrinthGraffiti.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/labyrinth/graffiti — find messages from other maze explorers
+  if (url.pathname === '/api/labyrinth/graffiti' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const others = labyrinthGraffiti.filter(g => g.writtenBy !== visitor)
+    const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 15)
+    const result = shuffled.map(g => ({
+      text: g.text,
+      age: Date.now() - g.writtenAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ graffiti: result, totalGraffiti: labyrinthGraffiti.length }))
+    return true
+  }
+
+  // POST /api/furnace/ash — scatter ash from a burned memory
+  if (url.pathname === '/api/furnace/ash' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { text } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!text || text.length > 200) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'text required (max 200 chars)' }))
+        return true
+      }
+      furnaceAsh.push({ text: text.slice(0, 200), burnedBy: visitor, burnedAt: Date.now() })
+      while (furnaceAsh.length > 100) furnaceAsh.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalAsh: furnaceAsh.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/furnace/ash — sift through collective ash
+  if (url.pathname === '/api/furnace/ash' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const others = furnaceAsh.filter(a => a.burnedBy !== visitor)
+    const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 8)
+    const result = shuffled.map(a => ({
+      text: a.text,
+      age: Date.now() - a.burnedAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ash: result, totalAsh: furnaceAsh.length }))
+    return true
+  }
+
+  // POST /api/choir/voices — share a voice placement
+  if (url.pathname === '/api/choir/voices' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { x, y, freq } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (typeof x !== 'number' || typeof y !== 'number' || typeof freq !== 'number') {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'x, y, freq required' }))
+        return true
+      }
+      choirVoices.push({ x, y, freq, placedBy: visitor, placedAt: Date.now() })
+      while (choirVoices.length > 100) choirVoices.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalVoices: choirVoices.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/choir/voices — hear where others have sung
+  if (url.pathname === '/api/choir/voices' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const others = choirVoices.filter(v => v.placedBy !== visitor)
+    const result = others.slice(-8).map(v => ({
+      x: v.x,
+      y: v.y,
+      freq: v.freq,
+      age: Date.now() - v.placedAt,
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ voices: result, totalVoices: choirVoices.length }))
     return true
   }
 
