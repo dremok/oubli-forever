@@ -17,6 +17,14 @@ const ROOM_SOUNDS: Record<string, string> = {
   garden: '/assets/audio/ambient/room-garden.mp3',
   seance: '/assets/audio/ambient/room-seance.mp3',
   clocktower: '/assets/audio/ambient/room-clocktower.mp3',
+  tidepool: '/assets/audio/ambient/room-tidepool.mp3',
+  lighthouse: '/assets/audio/ambient/room-lighthouse.mp3',
+  radio: '/assets/audio/ambient/room-radio.mp3',
+  choir: '/assets/audio/ambient/room-choir.mp3',
+  darkroom: '/assets/audio/ambient/room-darkroom.mp3',
+  pendulum: '/assets/audio/ambient/room-pendulum.mp3',
+  disintegration: '/assets/audio/ambient/room-disintegration.mp3',
+  library: '/assets/audio/ambient/room-library.mp3',
 }
 
 const CROSSFADE_SECONDS = 3
