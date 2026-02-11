@@ -101,6 +101,7 @@ import { Autophagy } from './organisms/Autophagy'
 import { DepartureFlare } from './organisms/DepartureFlare'
 import { Hypnagogia } from './organisms/Hypnagogia'
 import { Residue } from './organisms/Residue'
+import { Respiration } from './organisms/Respiration'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -806,6 +807,17 @@ hypnagogia.wake()
 // Residue — visible traces of invisible effort
 // Michael Joo "Sweat Models": the trace of labor IS the artwork
 const _residue = new Residue()
+
+// Respiration — the house breathes
+// Subtle vignette oscillation makes the whole house feel alive
+const respiration = new Respiration()
+respiration.setDeps({
+  getSeason: () => seasonalClock.getSeason(),
+  getFeverLevel: () => immuneSystem.getFeverLevel(),
+  getErosionLevel: () => erosion.getLevel(),
+  getAvgAutophagy: () => autophagy.getAvgLevel(),
+})
+respiration.start()
 
 let _prevRoom = 'void'
 
