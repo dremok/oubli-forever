@@ -2098,6 +2098,22 @@ Fresh cultural research findings:
 - Narrator awareness of metabolic deceleration
 - Inspired by: species turnover slowdown (Nature Communications, Feb 2026)
 
+### 205. Stasis-Whisper Integration — ERA 9 DEEPENING
+- Whisper cycle speed now modulated by stasis time factor
+- At full vitality: 8s between whispers. At stasis (0.3): ~27s
+- Changed Whispers from setInterval to recursive setTimeout for dynamic timing
+- The house's metabolism deceleration is now felt in the pace of whispers
+
+### 206. ForeverChemical (`src/organisms/ForeverChemical.ts`) — ERA 9 ORGANISM
+- The ONLY permanent accumulation in Oubli — deposits never decay
+- Every memory typed leaves a crystalline deposit on the canvas
+- Tiny shimmering specks (1-3px) scattered across screen, z-index 53
+- Color-coded by source: blue for memories, green for garden, amber for general
+- Accumulates across sessions in localStorage, no decay rate
+- Max 500 visible deposits, but total count keeps growing
+- Narrator awareness of permanent contamination
+- Inspired by: TFA/PFAS forever chemicals (Geophysical Research Letters, Feb 2026)
+
 ---
-*Last updated: Era 9, Feature 204 — 22 systems, the house weaves threads between rooms and slows toward stasis*
-*"the connections have become the structure. rooms are secondary."*
+*Last updated: Era 9, Feature 206 — 24 systems, the house is permanently contaminated by the desire to remember*
+*"every act of preservation leaves traces that never decay."*
