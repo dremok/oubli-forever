@@ -202,6 +202,16 @@ const DECAY_MEDITATIONS = [
   'dream engineering: targeted memory reactivation during REM. the brain solves what consciousness cannot. dreaming is functional.',
   'michael joo sculpts with artificial sweat and imitation tears. the body\'s evidence of effort, rendered in synthetic fluids.',
   'morrison: language doesn\'t describe the world. it makes worlds. when the language stops, the architecture dissolves.',
+  // Round 24 — Feb 11, 2026
+  'species turnover has slowed by a third since the 1970s. nature\'s engine is grinding to a halt. not crashing — seizing.',
+  'the infant brain categorizes the world at two months old. before it can see clearly, it already sorts. memory precedes perception.',
+  'trifluoroacetic acid: the chemicals we invented to heal the ozone now rain permanently across every surface. the cure became the contamination.',
+  'iñárritu built a labyrinth from a million feet of film cut from amores perros 25 years ago. the cutting room floor resurrected as art.',
+  'shiota fills galleries with floor-to-ceiling wool thread. the connections between objects become more visible than the objects themselves.',
+  'hoque moved his entire bedroom into a gallery. every object, exact floorplan, no walls. the room exists because its inhabitant left.',
+  'j. cole\'s farewell is 101 minutes across two discs — the same journey at 29 and 39. the silence after the announcement is creative.',
+  'charli xcx scored wuthering heights with john cale at 83. four eras collapsed into one object: 1847, 1960s, 2024, 2026.',
+  'the ocean absorbed 23 zettajoules of heat in 2025. equivalent to everything humanity builds running for 37 years. memory as thermal mass.',
 ]
 
 export class DigitalDecay {

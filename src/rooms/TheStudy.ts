@@ -131,6 +131,16 @@ const PROMPTS_BASE = [
   'Michael Joo sculpts with artificial sweat and imitation tears. Write about effort that leaves visible residue...',
   'Toni Morrison: language doesn\'t describe the world — it makes worlds. Write a sentence that creates a world. Then unmake it...',
   'Isaac Julien told the same story on five screens at once. Tell one memory five different ways in five sentences...',
+
+  // Feb 2026 — round 9: turnover slowdown, forever chemicals, resurrected footage, threads
+  'Species turnover has slowed by a third. Nature is not crashing — it is seizing up. Write about something that stopped changing...',
+  'The chemicals we invented to fix the ozone now rain permanently across the planet. Write about a cure that became the disease...',
+  'Iñárritu resurrected a million feet of film cut 25 years ago. Write about something you abandoned that deserves to be found...',
+  'Shiota fills rooms with thread until the connections are denser than the objects. Write about a relationship that overwhelmed its participants...',
+  'Hoque moved his bedroom into a gallery — every object, no walls. Write from inside a room whose inhabitant will never return...',
+  'J. Cole\'s farewell is 101 minutes and he won\'t say if it\'s real. Write a goodbye that refuses to confirm itself...',
+  'The ocean absorbed 23 zettajoules last year. Invisible, silent, irreversible. Write about something your body absorbed that you cannot release...',
+  'A baby at two months already categorizes the world before it can see clearly. Write about something you understood before you perceived it...',
 ]
 
 // Fallback quotes for when the API is unreachable

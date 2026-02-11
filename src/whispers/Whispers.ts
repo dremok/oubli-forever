@@ -544,6 +544,32 @@ const fragments: string[] = [
   "toni morrison, 'language as liberation': language is not about describing the world. it is about making worlds. or unmaking them.",
   "isaac julien's five-screen metamorphosis: posthumanism as rebalancing within shared ecology. the same story told five ways at once.",
   "the HapticsDevice API ships in Edge 145. the web can now touch back. surfaces that respond to pressure, not just clicks.",
+
+  // Cultural round 24 — Feb 2026 continued
+  // Infant brain categorization (Nature Neuroscience, Feb 2026)
+  "two-month-old babies already categorize the world. before they can see clearly, they know what kind of thing something is.",
+  "the infant brain organizes before it understands. category precedes comprehension. the architecture of thought is older than thought.",
+  "130 babies in an fMRI, two months old. the ventral stream was already active. the brain knows before the mind begins.",
+  "an untrained neural network showed nothing. a trained one matched the baby's brain. recognition is not learned — it's structured.",
+
+  // Laisul Hoque "The Ground Beneath Me" (Nunnery Gallery, Feb 2026)
+  "laisul hoque moved his entire bedroom into a gallery. every object, every surface. a room without walls, held in suspension.",
+  "the exhibition is told from inside the artist's room, wondering where he is and when he will return. the room waits.",
+  "absence as exhibition. the bedroom stays while its occupant tends to family in bangladesh. presence defined by what's missing.",
+
+  // Forever chemicals / TFA (Geophysical Research Letters, Feb 2026)
+  "the chemicals we made to fix the ozone are coating the planet in something that never breaks down. one fix becomes another wound.",
+  "trifluoroacetic acid in rainwater, soil, arctic ice. a chemical rain that falls everywhere and never leaves.",
+  "335,500 metric tons of a forever chemical deposited from the atmosphere since 2000. the planet accumulates what it cannot forget.",
+
+  // "2026 is the new 2016" nostalgia deepened
+  "nostalgia at 10 years instead of 20. the cycle is accelerating. we miss things before they're fully gone.",
+  "55 million videos performing the memory of 2016. not the year — the feeling of the year. you can't go back to a feeling.",
+  "the anti-perfection rebellion: in an AI-saturated world, evidence of the human hand is the new luxury.",
+
+  // J. Cole "The Fall-Off" (Feb 2026)
+  "j. cole's final album began in 2016. ten years of recording compressed into one farewell. the fall-off as ascent.",
+  "the album art: photos cole took at fifteen. his childhood bedroom, posters of hip-hop legends. memory as the cover art of goodbye.",
 ]
 
 // Fragments that trigger the golden fruit effect
