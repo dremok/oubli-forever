@@ -100,6 +100,7 @@ import { Erosion } from './organisms/Erosion'
 import { Autophagy } from './organisms/Autophagy'
 import { DepartureFlare } from './organisms/DepartureFlare'
 import { Hypnagogia } from './organisms/Hypnagogia'
+import { Residue } from './organisms/Residue'
 import { threadTrail } from './navigation/ThreadTrail'
 
 // OUBLI — a system that remembers by forgetting
@@ -801,6 +802,10 @@ hypnagogia.setDeps({
   getMemoryTexts: () => journal.getMemories().map(m => m.currentText),
 })
 hypnagogia.wake()
+
+// Residue — visible traces of invisible effort
+// Michael Joo "Sweat Models": the trace of labor IS the artwork
+const _residue = new Residue()
 
 let _prevRoom = 'void'
 
