@@ -2114,6 +2114,45 @@ Fresh cultural research findings:
 - Narrator awareness of permanent contamination
 - Inspired by: TFA/PFAS forever chemicals (Geophysical Research Letters, Feb 2026)
 
+### 207. The Postbox (`src/rooms/ThePostbox.ts`) — ERA 10 ROOM
+- Letters to your future self with time-delayed delivery
+- Candlelit desk scene with canvas rendering (flickering flame, wax drips, wood grain)
+- Write letters via textarea, choose delivery delay (5min, 1hr, 1day, 1week)
+- Wax seal animation when sealing letters
+- Received letters: break the seal interaction, reading view with fade-in
+- Shelf of opened letters (fading with age), pending letters with countdown
+- Navigation portals to study, clocktower, madeleine, void
+- Cultural inscriptions (Woolf, Kafka, FutureMe, Dickinson, Borges)
+- localStorage persistence for letters
+- Connected to: study, clocktower, madeleine, cipher
+- Inspired by: FutureMe.org, Kafka's letters, Woolf's posthumous instructions
+
+### 208. Multi-user Footprint System (`src/shared/FootprintReporter.ts` + `server.js`) — ERA 10 MULTI-USER
+- Server: /api/footprints tracks room visits and path traversals across ALL visitors
+- Server: /api/well/echoes stores dropped words between visitors
+- Anonymous persistent visitor ID (crypto.randomUUID, localStorage)
+- Every room switch POSTs a footprint to the server (fire-and-forget)
+- Server aggregates: per-room visits + unique visitors, per-edge traversals, active visitors
+
+### 209. Cartographer Collective Visualization — ERA 10 MULTI-USER ENHANCEMENT
+- The Cartographer now shows "desire paths" — worn paths where many visitors have walked
+- Amber glow proportional to collective traversal count on edges
+- Heat rings on nodes proportional to collective visit count
+- Green pulsing dots show rooms where other visitors are RIGHT NOW
+- Active visitor count and total collective footsteps displayed
+- Legend updated with "desire path (all)" entry
+- Data refreshes every 30s while in the room
+- Inspired by: desire paths in parks, Chiharu Shiota, ocean thermal mass (2025)
+
+### 210. Well Shared Echoes — ERA 10 MULTI-USER ENHANCEMENT
+- Words dropped into The Well are now sent to the server
+- Future visitors hear distorted echoes from OTHER visitors deep in the well
+- Echoes appear as ghostly blue text at varying depths, with breathing animation
+- Older echoes are fainter (fade over 24h), all echoes are distorted
+- Total well echo count displayed
+- Both memory drops and voice drops are shared
+- The well becomes a collective memory pool — everyone's words mixing in the depths
+
 ---
-*Last updated: Era 9, Feature 206 — 24 systems, the house is permanently contaminated by the desire to remember*
-*"every act of preservation leaves traces that never decay."*
+*Last updated: Era 10, Feature 210 — multi-user systems active, the house remembers all who pass through*
+*"desire paths: the grass remembers where everyone actually walks."*
