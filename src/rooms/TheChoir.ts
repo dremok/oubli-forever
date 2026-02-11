@@ -93,6 +93,9 @@ const CULTURAL_INSCRIPTIONS = [
   'in 2026 researchers found that group singing releases more oxytocin than any other collective activity.',
   'the ison — a sustained drone note held by half the choir while the other half sings melody above it.',
   'john cage\'s organ2/aslsp in halberstadt: a chord change every few years. the slowest music in the world.',
+  'species turnover slowing since the 1970s — nature\'s chorus losing voices a third faster than it gains new ones.',
+  'infant brains at two months already sort sound into categories. the choir begins before the first word.',
+  'j. cole\'s 101-minute farewell refuses to end. every voice placed here lingers past its own silence.',
 ]
 
 export function createChoirRoom(deps?: ChoirDeps): Room {

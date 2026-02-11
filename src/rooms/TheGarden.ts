@@ -213,6 +213,9 @@ const CULTURAL_INSCRIPTIONS = [
   'three species of seed-bearing plants vanish per year — 500 times the natural rate. the garden thins.',
   'adamatzky found fungal spike trains lasting 1 to 21 hours. the slowest language on earth.',
   'the word "garden" comes from old english "geard" — an enclosure. every garden is a wall against forgetting.',
+  'species turnover has slowed a third since the 1970s — new growth no longer replaces what is lost. the garden thins from within.',
+  'trifluoroacetic acid rains permanently across every leaf. the forever chemical settling into the soil like a memory that won\'t degrade.',
+  'southern africa floods displaced millions — gardens drowned, seeds scattered downstream. what grows where the water recedes?',
 ]
 
 export function createGardenRoom(deps: GardenDeps): Room {

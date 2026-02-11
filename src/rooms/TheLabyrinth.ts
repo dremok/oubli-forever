@@ -118,6 +118,9 @@ const CULTURAL_INSCRIPTIONS = [
   'ruthenium molecules that switch between memory, logic, and learning. matter that remembers.',
   'milan 2026: the olympics chose fire and human voice over AI spectacle. the analog as radical act.',
   'a frozen earth was found hiding in kepler\'s old archives. something real, waiting to be noticed.',
+  'iñárritu built a labyrinth from a million feet of discarded film at LACMA. every dead end is someone else\'s deleted scene.',
+  'charli xcx collapsed four eras into one wuthering heights — 1847, 1960s, 2024, 2026. the labyrinth folds time.',
+  'laisul hoque moved an entire bedroom into a gallery. the room exists because the person who lived there left.',
 ]
 
 // Portal targets for rooms reachable from the labyrinth

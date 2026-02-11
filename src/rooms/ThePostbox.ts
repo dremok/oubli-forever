@@ -58,6 +58,8 @@ const CULTURAL_INSCRIPTIONS = [
   'a message in a bottle from 1886 was found in 2019. 133 years in transit.',
   'the voyager golden record: a letter to aliens. 40,000 years until it reaches another star.',
   'borges imagined a book with infinite pages. every letter you write adds one.',
+  'southern africa flooded — mozambique, zimbabwe, letters washed from houses into rivers. mail that returns to water.',
+  '2026 is the new 2016: people write nostalgic letters to the year they thought was the worst. time forgives everything.',
 ]
 
 function loadLetters(): SealedLetter[] {

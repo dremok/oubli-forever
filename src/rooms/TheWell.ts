@@ -78,6 +78,9 @@ const CULTURAL_INSCRIPTIONS = [
   'the wind telephone in otsuchi: words dropped into the disconnect. no echo, only speaking.',
   'self-destructing plastic (rutgers 2026): even the bucket decays. the well outlasts the rope.',
   'the great meme reset: culture dropped into a well of collective forgetting.',
+  '23 zettajoules sank into the ocean in 2025. the well absorbs everything and shows nothing on its surface.',
+  'shiota\'s threads of life at the hayward: floor-to-ceiling webs engulfing objects. the well is lined with thread.',
+  'CRISPR restored lost memories in mice by editing a single gene. what if the well could be dredged?',
 ]
 
 export function createWellRoom(deps: WellDeps): Room {

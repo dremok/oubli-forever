@@ -2175,6 +2175,20 @@ Fresh cultural research findings:
 - Server endpoints: /api/seance/exchange, /api/radio/broadcast (POST/GET pairs)
 - Total multi-user rooms: 8 (cartographer, well, garden, instrument, sketchpad, study, séance, radio)
 
+### 214. Multi-user: Labyrinth Graffiti + Furnace Ash + Choir Voices — ERA 10 MULTI-USER
+- Labyrinth: 'G' key opens graffiti input — carve messages on labyrinth walls (max 100 chars, 30s cooldown)
+- Labyrinth: Others' graffiti mixed into wall inscriptions with ⌇ prefix, chalky blue-white color
+- Furnace: Burned memories scatter ash text to server — others see blue-tinted ghost ash with breathing animation
+- Choir: Voice placements shared to server — remote voices appear gradually (3-30s stagger) as ghost voices
+- Server endpoints: /api/labyrinth/graffiti, /api/furnace/ash, /api/choir/voices (POST/GET pairs)
+- Total multi-user rooms: 11
+
+### 215. Choir Sub-Bass Octave — ERA 10 DEEPENING
+- E and B notes now have 4 octaves (down to E1=41Hz, B1=62Hz) with weighted probability
+- Sub-bass E1 at 12% probability, B1 at 10% — occasional deep rumble in the chord
+- Click position still biases pitch: top = higher, bottom = lower
+- Generalized octave selection logic to handle variable-length weight arrays per note
+
 ---
-*Last updated: Era 10, Feature 213 — 8 rooms now have multi-user features, the house is shared*
+*Last updated: Era 10, Feature 215 — 11 rooms now have multi-user features, the house is shared*
 *"a spirit whispers: someone was here before you."*

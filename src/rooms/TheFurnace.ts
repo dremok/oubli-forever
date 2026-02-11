@@ -43,6 +43,9 @@ const CULTURAL_INSCRIPTIONS = [
   'the doomsday clock: 85 seconds to midnight (jan 2026). the furnace of civilization burning faster.',
   'spontaneous combustion: medieval monks believed sinners could ignite from within. guilt as accelerant.',
   'controlled burns: forests need fire to regenerate. suppression breeds catastrophe. forgetting is necessary maintenance.',
+  'trifluoroacetic acid rains down on every surface — the forever chemical we made to replace the last forever chemical.',
+  'iñárritu\'s sueño perro: a million feet of cut film resurrected as labyrinth. what was discarded refuses to stay burned.',
+  '23 zettajoules absorbed by the ocean in 2025 — invisible heat accumulating beneath the surface of everything.',
 ]
 
 interface FurnaceDeps {
