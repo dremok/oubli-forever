@@ -28,11 +28,11 @@ export const ROOM_GRAPH: RoomNode[] = [
 
   // Words & Text
   { name: 'study', label: 'the study', hidden: false,
-    connections: ['void', 'library', 'loom', 'cipher', 'instrument'] },
+    connections: ['void', 'library', 'loom', 'cipher', 'instrument', 'postbox'] },
   { name: 'library', label: 'the library', hidden: false,
     connections: ['study', 'archive', 'cipher', 'oracle', 'projection', 'datepaintings'] },
   { name: 'cipher', label: 'the cipher', hidden: false,
-    connections: ['study', 'pendulum', 'library', 'labyrinth'] },
+    connections: ['study', 'pendulum', 'library', 'labyrinth', 'postbox'] },
 
   // Sound & Music
   { name: 'instrument', label: 'the instrument', hidden: false,
@@ -56,7 +56,7 @@ export const ROOM_GRAPH: RoomNode[] = [
   { name: 'oracle', label: 'the oracle deck', hidden: false,
     connections: ['seance', 'madeleine', 'library'] },
   { name: 'madeleine', label: 'the madeleine', hidden: false,
-    connections: ['seance', 'oracle', 'projection', 'garden', 'rememory'] },
+    connections: ['seance', 'oracle', 'projection', 'garden', 'rememory', 'postbox'] },
   { name: 'rememory', label: 'the rememory', hidden: false,
     connections: ['madeleine', 'projection', 'seance'] },
 
@@ -82,7 +82,7 @@ export const ROOM_GRAPH: RoomNode[] = [
 
   // Time
   { name: 'clocktower', label: 'the clock tower', hidden: false,
-    connections: ['observatory', 'datepaintings', 'furnace', 'pendulum'] },
+    connections: ['observatory', 'datepaintings', 'furnace', 'pendulum', 'postbox'] },
   { name: 'datepaintings', label: 'the date paintings', hidden: false,
     connections: ['clocktower', 'library', 'archive'] },
 
@@ -119,6 +119,10 @@ export const ROOM_GRAPH: RoomNode[] = [
   // Beacon
   { name: 'lighthouse', label: 'the lighthouse', hidden: false,
     connections: ['radio', 'tidepool', 'satellite'] },
+
+  // Letters & Time
+  { name: 'postbox', label: 'the postbox', hidden: false,
+    connections: ['study', 'clocktower', 'madeleine', 'cipher'] },
 
   // ══════════════════════════════════
   // HIDDEN ROOMS — discovered through actions

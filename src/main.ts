@@ -72,6 +72,7 @@ import { createMadeleineRoom } from './rooms/TheMadeleine'
 import { createLibraryRoom } from './rooms/TheLibrary'
 import { createPalimpsestGalleryRoom } from './rooms/ThePalimpsestGallery'
 import { createRememoryRoom } from './rooms/TheRememory'
+import { createPostboxRoom } from './rooms/ThePostbox'
 import { SharpWaveRipples } from './replay/SharpWaveRipples'
 import { DreamVisions } from './dreams/DreamVisions'
 import { TippingPoint } from './events/TippingPoint'
@@ -568,6 +569,9 @@ roomManager.addRoom(createPalimpsestGalleryRoom({
 }))
 roomManager.addRoom(createRememoryRoom({
   getMemories: () => journal.getMemories(),
+  switchTo: (name) => roomManager.switchTo(name),
+}))
+roomManager.addRoom(createPostboxRoom({
   switchTo: (name) => roomManager.switchTo(name),
 }))
 
