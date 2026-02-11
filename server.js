@@ -48,6 +48,12 @@ const activeVisitors = new Map()
 /** @type {{ text: string, droppedBy: string, droppedAt: number }[]} */
 const wellEchoes = []
 
+/** @type {{ semitone: number, velocity: number, playedBy: string, playedAt: number }[]} */
+const instrumentNotes = []
+
+/** @type {{ text: string, plantedBy: string, plantedAt: number, degradation: number }[]} */
+const gardenPlants = []
+
 // Prune old room activity every 30s
 setInterval(() => {
   const cutoff = Date.now() - 60000 // 1 minute
@@ -299,6 +305,108 @@ async function handleAPI(req, res) {
     }))
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ echoes: result, totalEchoes: wellEchoes.length }))
+    return true
+  }
+
+  // POST /api/instrument/notes — share played notes
+  if (url.pathname === '/api/instrument/notes' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { notes } = JSON.parse(body) // array of { semitone, velocity }
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!Array.isArray(notes) || notes.length === 0 || notes.length > 20) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'notes array required (1-20)' }))
+        return true
+      }
+      for (const n of notes) {
+        instrumentNotes.push({
+          semitone: n.semitone,
+          velocity: n.velocity || 0.8,
+          playedBy: visitor,
+          playedAt: Date.now(),
+        })
+      }
+      // Keep max 500 notes
+      while (instrumentNotes.length > 500) instrumentNotes.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalNotes: instrumentNotes.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/instrument/notes — fetch ghost notes from other visitors
+  if (url.pathname === '/api/instrument/notes' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    // Return up to 3 phrases (each 3-8 notes) from other visitors
+    const otherNotes = instrumentNotes.filter(n => n.playedBy !== visitor)
+    // Group consecutive notes by visitor into phrases
+    const phrases = []
+    let currentPhrase = []
+    let currentVisitor = ''
+    for (const n of otherNotes) {
+      if (n.playedBy !== currentVisitor && currentPhrase.length > 0) {
+        phrases.push([...currentPhrase])
+        currentPhrase = []
+      }
+      currentVisitor = n.playedBy
+      currentPhrase.push({ semitone: n.semitone, velocity: n.velocity })
+      if (currentPhrase.length >= 8) {
+        phrases.push([...currentPhrase])
+        currentPhrase = []
+      }
+    }
+    if (currentPhrase.length >= 3) phrases.push(currentPhrase)
+    // Return random 3 phrases
+    const shuffled = phrases.sort(() => Math.random() - 0.5).slice(0, 3)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ phrases: shuffled, totalNotes: instrumentNotes.length }))
+    return true
+  }
+
+  // POST /api/garden/plants — share a planted memory
+  if (url.pathname === '/api/garden/plants' && req.method === 'POST') {
+    const body = await readBody(req)
+    try {
+      const { text } = JSON.parse(body)
+      const visitor = req.headers['x-visitor-id'] || 'anonymous'
+      if (!text || text.length > 500) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'text required (max 500 chars)' }))
+        return true
+      }
+      gardenPlants.push({
+        text,
+        plantedBy: visitor,
+        plantedAt: Date.now(),
+        degradation: 0,
+      })
+      // Keep max 100 plants
+      while (gardenPlants.length > 100) gardenPlants.shift()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, totalPlants: gardenPlants.length }))
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid JSON' }))
+    }
+    return true
+  }
+
+  // GET /api/garden/plants — fetch shared plants from other visitors
+  if (url.pathname === '/api/garden/plants' && req.method === 'GET') {
+    const visitor = req.headers['x-visitor-id'] || 'anonymous'
+    const otherPlants = gardenPlants.filter(p => p.plantedBy !== visitor)
+    // Return up to 8 plants, weighted toward recent
+    const result = otherPlants.slice(-8).map(p => ({
+      text: p.text,
+      age: Date.now() - p.plantedAt,
+      degradation: Math.min(0.9, (Date.now() - p.plantedAt) / (24 * 60 * 60 * 1000)), // degrade over 24h
+    }))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ plants: result, totalPlants: gardenPlants.length }))
     return true
   }
 

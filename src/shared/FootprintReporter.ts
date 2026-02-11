@@ -91,3 +91,63 @@ export async function fetchWellEchoes(): Promise<{ echoes: { text: string; age: 
     return null
   }
 }
+
+/** Share played instrument notes with other visitors */
+export function shareInstrumentNotes(notes: Array<{ semitone: number; velocity: number }>) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/instrument/notes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ notes }),
+  }).catch(() => { /* silent */ })
+}
+
+/** Fetch ghost note phrases from other visitors */
+export async function fetchGhostNotes(): Promise<{ phrases: Array<Array<{ semitone: number; velocity: number }>>; totalNotes: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/instrument/notes`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+/** Share a plant/memory in the garden */
+export function shareGardenPlant(text: string) {
+  const visitorId = getVisitorId()
+  fetch(`${API_BASE}/api/garden/plants`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Visitor-Id': visitorId,
+    },
+    body: JSON.stringify({ text: text.slice(0, 500) }),
+  }).catch(() => { /* silent */ })
+}
+
+export interface SharedPlant {
+  text: string
+  age: number
+  degradation: number
+}
+
+/** Fetch shared plants from other visitors' gardens */
+export async function fetchGardenPlants(): Promise<{ plants: SharedPlant[]; totalPlants: number } | null> {
+  try {
+    const visitorId = getVisitorId()
+    const res = await fetch(`${API_BASE}/api/garden/plants`, {
+      headers: { 'X-Visitor-Id': visitorId },
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}

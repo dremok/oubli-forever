@@ -23,6 +23,7 @@
 
 import type { Room } from './RoomManager'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareInstrumentNotes, fetchGhostNotes } from '../shared/FootprintReporter'
 
 // Chromatic note mapping — two octaves starting from C3
 const KEY_MAP: Record<string, number> = {
@@ -223,6 +224,46 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
   let ghostCheckTimer = 0
   const MAX_GHOST_PHRASES = 3
   const MAX_NOTE_HISTORY = 80
+
+  // === SHARED GHOST NOTES — melodies from other visitors ===
+  const shareBuffer: Array<{ semitone: number; velocity: number }> = []
+  let shareFlushTimer = 0
+  let remoteGhostLoaded = false
+
+  function flushShareBuffer() {
+    if (shareBuffer.length === 0) return
+    shareInstrumentNotes([...shareBuffer])
+    shareBuffer.length = 0
+  }
+
+  async function loadRemoteGhosts() {
+    if (remoteGhostLoaded) return
+    remoteGhostLoaded = true
+    const data = await fetchGhostNotes()
+    if (!data || !data.phrases || data.phrases.length === 0) return
+    // Inject remote phrases as ghost phrases with cyan hue and higher degradation
+    for (const remotePhrase of data.phrases) {
+      if (ghostPhrases.length >= MAX_GHOST_PHRASES + 2) break // allow up to 5 for remote
+      const now = performance.now()
+      const phrase: GhostPhrase = {
+        notes: remotePhrase.map((n, i) => ({
+          semitone: n.semitone,
+          velocity: (n.velocity || 0.6) * 0.5, // quieter
+          time: now + i * (200 + Math.random() * 300), // reconstruct timing
+        })),
+        scheduledIds: [],
+        replayCount: 0,
+        maxReplays: 2, // fewer replays for remote
+        degradation: 0.25, // start degraded
+        startedAt: now,
+      }
+      ghostPhrases.push(phrase)
+      // Delay scheduling so they arrive staggered
+      setTimeout(() => {
+        if (active) scheduleGhostReplay(phrase)
+      }, 3000 + Math.random() * 8000)
+    }
+  }
 
   // === SYMPATHETIC RESONANCE — harmonically related notes ring softly ===
   // Like a piano with sustain pedal: unplayed strings vibrate in sympathy
@@ -477,6 +518,8 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
     noteHistory.push({ semitone, time: performance.now(), velocity })
     lastNoteOnTime = performance.now()
     while (noteHistory.length > MAX_NOTE_HISTORY) noteHistory.shift()
+    // Buffer for sharing with other visitors
+    shareBuffer.push({ semitone, velocity })
   }
 
   function checkForGhostPhrase() {
@@ -1422,6 +1465,13 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       ghostCheckTimer = 0
     }
 
+    // Flush shared notes every 10s if there are buffered notes
+    shareFlushTimer += dt
+    if (shareFlushTimer > 10 && shareBuffer.length > 0) {
+      flushShareBuffer()
+      shareFlushTimer = 0
+    }
+
     // Visual evolution — trace opacity builds with play duration
     traceOpacity = Math.min(0.4, playDuration * 0.002)
 
@@ -1616,11 +1666,14 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
 
     async activate() {
       active = true
+      remoteGhostLoaded = false
       await initAudio()
       window.addEventListener('keydown', handleKeyDown, true)
       window.addEventListener('keyup', handleKeyUp, true)
       window.addEventListener('mousemove', handleMouseMove)
       animate()
+      // Load ghost notes from other visitors after a short delay
+      setTimeout(() => { if (active) loadRemoteGhosts() }, 5000)
     },
 
     deactivate() {
@@ -1637,6 +1690,8 @@ export function createInstrumentRoom(onNoteOrDeps?: ((freq: number, velocity: nu
       stopLoop()
       // Stop ghost phrases
       clearGhostPhrases()
+      // Flush remaining shared notes
+      flushShareBuffer()
       // Reset listening mode
       listeningMode = false
       listeningFade = 0

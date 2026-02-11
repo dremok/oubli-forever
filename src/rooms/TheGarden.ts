@@ -21,6 +21,7 @@
 import type { Room } from './RoomManager'
 import type { StoredMemory } from '../memory/MemoryJournal'
 import { getAudioContext, getAudioDestination } from '../sound/AudioBus'
+import { shareGardenPlant, fetchGardenPlants, type SharedPlant } from '../shared/FootprintReporter'
 
 interface GardenDeps {
   getMemories: () => StoredMemory[]
@@ -34,6 +35,7 @@ interface Plant {
   segments: PlantSegment[]
   swayPhase: number
   swaySpeed: number
+  isShared?: boolean // from another visitor
 }
 
 interface PlantSegment {
@@ -744,6 +746,19 @@ export function createGardenRoom(deps: GardenDeps): Room {
 
   let prevPlantCount = 0
 
+  // Shared garden state
+  let sharedPlants: SharedPlant[] = []
+  let sharedPlantsLoaded = false
+
+  async function loadSharedPlants() {
+    const data = await fetchGardenPlants()
+    if (data && data.plants) {
+      sharedPlants = data.plants
+      sharedPlantsLoaded = true
+      buildGarden() // rebuild with shared plants
+    }
+  }
+
   function buildGarden() {
     const memories = deps.getMemories()
     if (!canvas) return
@@ -753,15 +768,37 @@ export function createGardenRoom(deps: GardenDeps): Room {
 
     plants = []
 
-    if (memories.length === 0) { prevPlantCount = 0; return }
+    // Combine local memories with shared plants
+    const allItems: Array<{ memory: StoredMemory; isShared: boolean }> = []
+    for (const m of memories) {
+      allItems.push({ memory: m, isShared: false })
+    }
+    // Add shared plants as pseudo-memories
+    for (const sp of sharedPlants) {
+      const h = hashString(sp.text)
+      const pseudoMemory: StoredMemory = {
+        id: `shared-${h}`,
+        originalText: sp.text,
+        currentText: sp.text,
+        degradation: sp.degradation,
+        hue: (h % 1000) / 1000,
+        timestamp: Date.now() - sp.age,
+        position: { x: 0, y: 0, z: 0 },
+      }
+      allItems.push({ memory: pseudoMemory, isShared: true })
+    }
+
+    if (allItems.length === 0) { prevPlantCount = 0; return }
 
     // Space plants evenly across the ground
-    const spacing = Math.min(80, (w - 80) / memories.length)
-    const startX = (w - (memories.length - 1) * spacing) / 2
+    const spacing = Math.min(80, (w - 80) / allItems.length)
+    const startX = (w - (allItems.length - 1) * spacing) / 2
 
-    for (let i = 0; i < memories.length; i++) {
+    for (let i = 0; i < allItems.length; i++) {
       const x = startX + i * spacing
-      plants.push(generatePlant(memories[i], x, groundY))
+      const plant = generatePlant(allItems[i].memory, x, groundY)
+      plant.isShared = allItems[i].isShared
+      plants.push(plant)
     }
 
     // Growth tone — play when new plants appear
@@ -771,6 +808,12 @@ export function createGardenRoom(deps: GardenDeps): Room {
       }).catch(() => { /* silent */ })
     }
     prevPlantCount = plants.length
+
+    // Share local plants to server (just the most recent one)
+    if (memories.length > 0) {
+      const newest = memories[memories.length - 1]
+      shareGardenPlant(newest.originalText)
+    }
   }
 
   function render() {
@@ -881,6 +924,10 @@ export function createGardenRoom(deps: GardenDeps): Room {
     // Draw plants
     for (const plant of plants) {
       const sway = Math.sin(time * plant.swaySpeed + plant.swayPhase) * 3 + wind * 20
+      // Shared plants: ghostly blue-green tint, lower opacity, gentle shimmer
+      const isShared = plant.isShared
+      const sharedAlpha = isShared ? (0.35 + 0.1 * Math.sin(time * 0.8 + plant.swayPhase)) : 1
+      const sharedHueShift = isShared ? 160 : 0 // shift toward cyan
 
       for (const seg of plant.segments) {
         // Apply sway — more at top (lower y = higher on screen)
@@ -892,17 +939,20 @@ export function createGardenRoom(deps: GardenDeps): Room {
         const sx2 = seg.x2 + sway * swayFactor2
         const sy2 = seg.y2
 
+        const hue = isShared ? (seg.hue + sharedHueShift) % 360 : seg.hue
+        const alpha = seg.alpha * sharedAlpha
+
         if (seg.isFlower) {
           // Draw flower as small circle
           ctx.beginPath()
           ctx.arc(sx2, sy2, seg.thickness, 0, Math.PI * 2)
-          ctx.fillStyle = `hsla(${seg.hue}, ${seg.saturation}%, ${seg.lightness}%, ${seg.alpha})`
+          ctx.fillStyle = `hsla(${hue}, ${seg.saturation}%, ${seg.lightness}%, ${alpha})`
           ctx.fill()
 
           // Glow
           ctx.beginPath()
           ctx.arc(sx2, sy2, seg.thickness * 2, 0, Math.PI * 2)
-          ctx.fillStyle = `hsla(${seg.hue}, ${seg.saturation}%, ${seg.lightness}%, ${seg.alpha * 0.15})`
+          ctx.fillStyle = `hsla(${hue}, ${seg.saturation}%, ${seg.lightness}%, ${alpha * 0.15})`
           ctx.fill()
         } else if (seg.isLeaf) {
           // Draw leaf as small ellipse
@@ -912,7 +962,7 @@ export function createGardenRoom(deps: GardenDeps): Room {
           ctx.scale(1, 0.5)
           ctx.beginPath()
           ctx.arc(0, 0, seg.thickness, 0, Math.PI * 2)
-          ctx.fillStyle = `hsla(${seg.hue}, ${seg.saturation}%, ${seg.lightness}%, ${seg.alpha})`
+          ctx.fillStyle = `hsla(${hue}, ${seg.saturation}%, ${seg.lightness}%, ${alpha})`
           ctx.fill()
           ctx.restore()
         } else {
@@ -920,11 +970,23 @@ export function createGardenRoom(deps: GardenDeps): Room {
           ctx.beginPath()
           ctx.moveTo(sx1, sy1)
           ctx.lineTo(sx2, sy2)
-          ctx.strokeStyle = `hsla(${seg.hue}, ${seg.saturation}%, ${seg.lightness}%, ${seg.alpha})`
+          ctx.strokeStyle = `hsla(${hue}, ${seg.saturation}%, ${seg.lightness}%, ${alpha})`
           ctx.lineWidth = seg.thickness
           ctx.lineCap = 'round'
           ctx.stroke()
         }
+      }
+
+      // Label for shared plants — faint "from another garden" text
+      if (isShared) {
+        const labelY = groundY + 12
+        ctx.save()
+        ctx.globalAlpha = 0.12 + 0.03 * Math.sin(time * 0.5 + plant.swayPhase)
+        ctx.font = '9px "Cormorant Garamond", serif'
+        ctx.fillStyle = 'rgba(120, 220, 200, 0.6)'
+        ctx.textAlign = 'center'
+        ctx.fillText('~', plant.x, labelY)
+        ctx.restore()
       }
     }
 
@@ -1389,8 +1451,13 @@ export function createGardenRoom(deps: GardenDeps): Room {
       fallenLeaves = []
       leafDropTimer = 0
       fireflies = []
+      sharedPlantsLoaded = false
+      sharedPlants = []
       buildGarden()
       render()
+
+      // Load shared plants from other visitors
+      loadSharedPlants()
 
       // Initialize and fade in audio
       initAudio().then(() => {
