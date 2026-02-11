@@ -2189,6 +2189,31 @@ Fresh cultural research findings:
 - Click position still biases pitch: top = higher, bottom = lower
 - Generalized octave selection logic to handle variable-length weight arrays per note
 
+### 216. Cultural Inscriptions Round 25 — ERA 10 DEEPENING
+- Added 2-3 new inscriptions to 6 rooms from research findings
+- Choir: species turnover, infant categorization, J. Cole farewell
+- Furnace: TFA chemicals, Iñárritu resurrected film, ocean heat
+- Labyrinth: LACMA film labyrinth, Charli XCX time-fold, Hoque relocated room
+- Postbox: Southern Africa flood letters, "2026 is the new 2016"
+- Well: ocean zettajoules, Shiota threads, CRISPR memory dredging
+- Garden: species thinning, TFA soil memory, flood-scattered seeds
+
+### 217. Multi-user: Postbox Dead Letters — ERA 10 MULTI-USER
+- When you seal a letter, a random 12-word fragment is shared to the server
+- Other visitors find these fragments in a desk drawer as "dead letters"
+- Click the drawer handle (center desk) to open — shows up to 5 uncollected letters
+- Click a letter to read it: ghost-blue overlay with degraded text (12% char loss)
+- Server: /api/postbox/deadletters POST/GET (cap 150, 6 per fetch)
+- Total multi-user rooms: 12
+
+### 218. Multi-user: Darkroom Ghost Prints — ERA 10 MULTI-USER
+- When you develop a print, the prompt is shared to the server
+- Other visitors see ghost prints regenerated from those prompts
+- Prints are deterministic from text — only prompt is shared, images regenerated client-side
+- Ghost prints appear blue-shifted, faded, low-contrast below your personal gallery
+- Server: /api/darkroom/prints POST/GET (cap 100, 6 per fetch)
+- Total multi-user rooms: 13
+
 ---
-*Last updated: Era 10, Feature 215 — 11 rooms now have multi-user features, the house is shared*
+*Last updated: Era 10, Feature 218 — 13 rooms now have multi-user features, the house is shared*
 *"a spirit whispers: someone was here before you."*
