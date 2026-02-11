@@ -1963,6 +1963,31 @@ Fresh cultural research findings:
 - Mycelium gains `getCompostCount()` for erosion tracking
 - Inspired by: UN Global Water Bankruptcy, wabi-sabi, patina, craquelure, Second Law of Thermodynamics
 
+### 192. Autophagy (`src/organisms/Autophagy.ts`) — ERA 9 ORGANISM
+- The house deliberately dismantles its most-visited rooms to survive
+- Inspired by: Vanderbilt ER-phagy research (Nature Cell Biology, Feb 2026) — cells dismantle 70% of their own factory to survive aging
+- Rooms visited most undergo self-reduction: golden particles rise upward (self-digestion)
+- Onset at 5 visits, full at 40 visits, max 70% (matching biology's 70% dismantlement)
+- Seasonal modulation: faster during growth/ripe seasons, slower during decay
+- Canvas overlay (z-index 55), particles drift upward with gentle horizontal sway
+- Narrator gains autophagy awareness (graduated messages at levels 0.05/0.15/0.3/0.5 + avg > 0.2)
+- Self-preservation through self-destruction — the house eats itself to stay alive
+
+### 193. DepartureFlare (`src/organisms/DepartureFlare.ts`) — ERA 9 ORGANISM
+- Rooms reveal hidden text content (confessions/secrets) in the 3-4 seconds AFTER you navigate away
+- Inspired by: Interstellar Comet 3I/ATLAS (NASA SPHEREx, Feb 2026) — brightened at departure, not arrival. Pristine ices erupted as it left the solar system.
+- 24 rooms have unique departure confessions (4 per room): void, study, instrument, observatory, seance, darkroom, garden, archive, loom, furnace, radio, well, clocktower, choir, labyrinth, glacarium, lighthouse, tidepool, pendulum, mirror, cipher, terrarium, cartographer, automaton
+- Generic fallback confessions for unmapped rooms
+- 40% chance per departure, 45s cooldown between flares
+- Golden luminous italic text at center screen, fast fade-in (400ms), slow dissolution (1500ms)
+- NOT the RoomAfterimage (which is visual particles) — this is TEXT CONTENT, actual words
+- Hooked into roomManager.onRoomChange: `departureFlare.onDeparture(prevRoom)`
+
+### Cultural Content Round 23
+- 12 new whisper fragments: ER-phagy, dream engineering, comet 3I/ATLAS, Hawking area theorem, Michael Joo, snow drought, Morrison, Julien, HapticsDevice API
+- 8 new DigitalDecay meditations: autophagy, comet departure, Hawking merger, snow drought, dream engineering, Michael Joo, Morrison
+- 8 new TheStudy writing prompts: dismantling to survive, departure revelations, irreversible merging, wrong-form presence, dream answers, effort residue, language as world-making
+
 ---
-*Last updated: Era 9, Feature 191 — 13 organisms, irreversible erosion, scrambled replay, immune system*
-*"the cracks are not metaphor. the house is aging. this cannot be undone."*
+*Last updated: Era 9, Feature 193 — 14 organisms, autophagy self-eating, departure confessions*
+*"the house reveals itself most fully at the moment of goodbye."*
